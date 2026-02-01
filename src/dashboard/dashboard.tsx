@@ -39,7 +39,7 @@ import { sharePlugin } from "dashboard/tools/share";
 import { repPlugin } from "dashboard/tools/rep";
 import { hackPlugin } from "dashboard/tools/hack";
 
-const TAB_NAMES = ["Overview", "Nuke", "Pserv", "Share", "Rep", "Hack"];
+const TAB_NAMES = ["Overview", "Hack", "Nuke", "Pserv", "Share", "Rep"];
 
 // === OVERVIEW PANEL ===
 
@@ -53,6 +53,11 @@ function OverviewPanel({ state }: OverviewPanelProps): React.ReactElement {
   return (
     <div style={styles.panel}>
       <div style={styles.grid}>
+        <hackPlugin.OverviewCard
+            status={state.hackStatus}
+            running={pids.hack > 0}
+            toolId="hack"
+        />
         <nukePlugin.OverviewCard
           status={state.nukeStatus}
           running={pids.nuke > 0}
@@ -73,11 +78,6 @@ function OverviewPanel({ state }: OverviewPanelProps): React.ReactElement {
           running={pids.rep > 0}
           toolId="rep"
           error={repError}
-        />
-        <hackPlugin.OverviewCard
-          status={state.hackStatus}
-          running={pids.hack > 0}
-          toolId="hack"
         />
       </div>
     </div>
@@ -105,13 +105,21 @@ function Dashboard({ state }: DashboardProps): React.ReactElement {
         return <OverviewPanel state={state} />;
       case 1:
         return (
+            <hackPlugin.DetailPanel
+                status={state.hackStatus}
+                running={state.pids.hack > 0}
+                toolId="hack"
+            />
+        );
+      case 2:
+        return (
           <nukePlugin.DetailPanel
             status={state.nukeStatus}
             running={state.pids.nuke > 0}
             toolId="nuke"
           />
         );
-      case 2:
+      case 3:
         return (
           <pservPlugin.DetailPanel
             status={state.pservStatus}
@@ -119,7 +127,7 @@ function Dashboard({ state }: DashboardProps): React.ReactElement {
             toolId="pserv"
           />
         );
-      case 3:
+      case 4:
         return (
           <sharePlugin.DetailPanel
             status={state.shareStatus}
@@ -127,21 +135,13 @@ function Dashboard({ state }: DashboardProps): React.ReactElement {
             toolId="share"
           />
         );
-      case 4:
+      case 5:
         return (
           <repPlugin.DetailPanel
             status={state.repStatus}
             running={state.pids.rep > 0}
             toolId="rep"
             error={state.repError}
-          />
-        );
-      case 5:
-        return (
-          <hackPlugin.DetailPanel
-            status={state.hackStatus}
-            running={state.pids.hack > 0}
-            toolId="hack"
           />
         );
       default:
@@ -286,7 +286,7 @@ function processExternalCommand(ns: NS, cmd: DashboardCommand, state: DashboardS
 
   if (cmd.type === "toggle" && cmd.tool && cmd.action) {
     const tools: ToolName[] = cmd.tool === "all"
-      ? ["nuke", "pserv", "share", "rep", "hack"]
+      ? ["hack", "nuke", "pserv", "share", "rep"]
       : [cmd.tool as ToolName];
 
     for (const tool of tools) {

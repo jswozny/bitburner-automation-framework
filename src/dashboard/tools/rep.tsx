@@ -232,6 +232,7 @@ function RepDetailPanel({ status, error, running, toolId }: DetailPanelProps<For
               <tr>
                 <th style={{ ...styles.tableHeader, width: "24px" }}>#</th>
                 <th style={styles.tableHeader}>Augmentation</th>
+                <th style={styles.tableHeader}>Faction</th>
                 <th style={{ ...styles.tableHeader, textAlign: "right" }}>Adjusted</th>
                 <th style={{ ...styles.tableHeader, textAlign: "right" }}>Total</th>
               </tr>
@@ -247,6 +248,9 @@ function RepDetailPanel({ status, error, running, toolId }: DetailPanelProps<For
                     <td style={{ ...styles.tableCell, color: "#888" }}>{i + 1}</td>
                     <td style={{ ...styles.tableCell, color: "#fff" }}>
                       {item.name.substring(0, 32)}
+                    </td>
+                    <td style={{ ...styles.tableCell, color: "#fff" }}>
+                      {item.faction.substring(0, 16)}
                     </td>
                     <td style={{ ...styles.tableCell, textAlign: "right", color: "#00ff00" }}>
                       ${item.adjustedCostFormatted}
