@@ -150,6 +150,12 @@ export async function main(ns: NS): Promise<void> {
           `${COLORS.green}Purchased ${result.purchased.length} program(s): ${result.purchased.map((p) => p.name).join(", ")}${COLORS.reset}`
         );
       }
+
+      // Exit if all programs are owned
+      if (result.ownedCount === result.totalPrograms) {
+        ns.tprint(`${COLORS.green}All darkweb programs owned - exiting.${COLORS.reset}`);
+        return;
+      }
     }
 
     if (!oneShot) {
