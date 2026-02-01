@@ -342,7 +342,7 @@ export async function main(ns: NS): Promise<void> {
           currentWork?.type === "FACTION" &&
           currentWork?.factionName === target.name;
         if (!currentlyWorking || currentWork.factionWorkType !== bestWork) {
-          ns.singularity.workForFaction(target.name, bestWork, false);
+          ns.singularity.workForFaction(target.name, bestWork, ns.singularity.isFocused());
         }
       }
     }
