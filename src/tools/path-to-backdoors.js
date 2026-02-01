@@ -8,6 +8,6 @@ export async function main(ns) {
   ];
 
   for (const host of BACKDOOR) {
-    ns.run("/path-to.js", 1, host);
+    ns.run("/tools/path-to.js", 1, host);
   }
 }
