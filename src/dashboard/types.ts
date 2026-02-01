@@ -20,20 +20,6 @@ export const TOOL_SCRIPTS: Record<ToolName, string> = {
   hack: "hack/distributed.js",
 };
 
-// === COMMAND TYPES ===
-
-export interface DashboardCommand {
-  type: "toggle" | "tab";
-  tool?: ToolName | "all";
-  action?: "start" | "stop";
-  tab?: number;
-}
-
-export interface PendingCommand {
-  tool: ToolName;
-  action: "start" | "stop";
-}
-
 // === FORMATTED STATUS TYPES ===
 
 export interface FormattedNukeStatus {

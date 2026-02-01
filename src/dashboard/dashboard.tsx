@@ -2,31 +2,32 @@
  * React Dashboard for Auto Tools
  *
  * Provides a tabbed interface to monitor and control:
+ * - hack/distributed: Distributed hacking
  * - auto-nuke: Server rooting
  * - auto-pserv: Purchased server management
  * - auto-share: Share power optimization
  * - auto-rep: Reputation grinding (requires Singularity)
  *
- * Modular architecture: add new tools by creating a plugin in tools/
  */
 import React from "lib/react";
 import { NS } from "@ns";
 
+const { useState, useEffect } = React;
+
 // Types and state
+import { DashboardState } from "dashboard/types";
 import {
-  ToolName,
-  DashboardState,
-  DashboardCommand,
-} from "dashboard/types";
-import {
-  currentActiveTab,
+  initCommandPort,
+  readAndExecuteCommands,
+  getActiveTab,
   setActiveTab,
-  processPendingCommands,
   detectRunningTools,
-  startTool,
-  stopTool,
-  COMMAND_PORT,
-} from "dashboard/state";
+  getStateSnapshot,
+  shouldUpdatePlugin,
+  markPluginUpdated,
+  setCachedStatus,
+  setRepError,
+} from "dashboard/state-store";
 
 // Styles and components
 import { styles } from "dashboard/styles";
@@ -86,21 +87,30 @@ function OverviewPanel({ state }: OverviewPanelProps): React.ReactElement {
 
 // === MAIN DASHBOARD ===
 
-interface DashboardProps {
-  state: DashboardState;
-}
+function Dashboard(): React.ReactElement {
+  // React state - polls module-level state and triggers re-renders
+  const [state, setState] = useState<DashboardState>(getStateSnapshot());
+  const [activeTab, setActiveTabLocal] = useState<number>(getActiveTab());
 
-function Dashboard({ state }: DashboardProps): React.ReactElement {
-  const [, forceUpdate] = React.useState(0);
+  // Poll module-level state every 200ms
+  useEffect(() => {
+    const intervalId = setInterval(() => {
+      setState(getStateSnapshot());
+      setActiveTabLocal(getActiveTab());
+    }, 200);
+
+    // Cleanup on unmount (script termination)
+    return () => clearInterval(intervalId);
+  }, []);
 
   const handleTabClick = (index: number) => {
-    setActiveTab(index);
-    forceUpdate(n => n + 1);
+    setActiveTab(index);      // Persist to module state
+    setActiveTabLocal(index); // Immediate UI feedback
   };
 
   // Render the appropriate panel based on active tab
   const renderPanel = () => {
-    switch (currentActiveTab) {
+    switch (activeTab) {
       case 0:
         return <OverviewPanel state={state} />;
       case 1:
@@ -154,74 +164,49 @@ function Dashboard({ state }: DashboardProps): React.ReactElement {
       <div style={styles.header}>
         <h1 style={styles.title}>AUTO TOOLS DASHBOARD</h1>
       </div>
-      <TabBar activeTab={currentActiveTab} tabs={TAB_NAMES} onTabClick={handleTabClick} />
+      <TabBar activeTab={activeTab} tabs={TAB_NAMES} onTabClick={handleTabClick} />
       {renderPanel()}
     </div>
   );
 }
 
-// === MAIN LOOP ===
+// === PLUGIN UPDATE LOGIC ===
 
-export async function main(ns: NS): Promise<void> {
-  ns.disableLog("ALL");
-  ns.ui.openTail();
-  ns.ui.resizeTail(600, 500);
+// Rep gain rate tracking (module-level, persists across calls)
+let lastRep = 0;
+let lastRepTime = Date.now();
+let repGainRate = 0;
+let lastTargetFaction = "";
 
-  const state: DashboardState = {
-    pids: { nuke: 0, pserv: 0, share: 0, rep: 0, hack: 0 },
-    nukeStatus: null,
-    pservStatus: null,
-    shareStatus: null,
-    repStatus: null,
-    repError: null,
-    hackStatus: null,
-  };
+function updatePluginsIfNeeded(ns: NS): void {
+  const now = Date.now();
 
-  // Get command port handle
-  const cmdPort = ns.getPortHandle(COMMAND_PORT);
+  // Update nuke status
+  if (shouldUpdatePlugin("nuke", now)) {
+    setCachedStatus("nuke", nukePlugin.getFormattedStatus(ns));
+    markPluginUpdated("nuke", now);
+  }
 
-  // Rep gain rate tracking
-  let lastRep = 0;
-  let lastRepTime = Date.now();
-  let repGainRate = 0;
-  let lastTargetFaction = "";
+  // Update pserv status
+  if (shouldUpdatePlugin("pserv", now)) {
+    setCachedStatus("pserv", pservPlugin.getFormattedStatus(ns));
+    markPluginUpdated("pserv", now);
+  }
 
-  // Chunked sleep settings for responsive clicks
-  const TICK_MS = 100;
-  const TOTAL_MS = 1000;
+  // Update share status
+  if (shouldUpdatePlugin("share", now)) {
+    setCachedStatus("share", sharePlugin.getFormattedStatus(ns));
+    markPluginUpdated("share", now);
+  }
 
-  while (true) {
-    // === 1. POLL COMMAND PORT ===
-    while (!cmdPort.empty()) {
-      try {
-        const raw = cmdPort.read();
-        if (typeof raw === "string") {
-          const cmd = JSON.parse(raw) as DashboardCommand;
-          processExternalCommand(ns, cmd, state);
-        }
-      } catch {
-        // Ignore malformed commands
-      }
-    }
+  // Update hack status
+  if (shouldUpdatePlugin("hack", now)) {
+    setCachedStatus("hack", hackPlugin.getFormattedStatus(ns));
+    markPluginUpdated("hack", now);
+  }
 
-    // === 2. PROCESS UI COMMANDS (from React clicks) ===
-    processPendingCommands(ns, state);
-
-    // === 3. DETECT RUNNING TOOLS (finds scripts started manually or before restart) ===
-    detectRunningTools(ns, state);
-
-    // === 4. UPDATE STATUS (all NS calls happen here, before React) ===
-
-    // Nuke status
-    state.nukeStatus = nukePlugin.getFormattedStatus(ns);
-
-    // Pserv status
-    state.pservStatus = pservPlugin.getFormattedStatus(ns);
-
-    // Share status
-    state.shareStatus = sharePlugin.getFormattedStatus(ns);
-
-    // Rep status - requires Singularity, with rep gain tracking
+  // Update rep status - requires Singularity, with rep gain tracking
+  if (shouldUpdatePlugin("rep", now)) {
     try {
       const player = ns.getPlayer();
       const favorToUnlock = ns.getFavorToDonate();
@@ -235,7 +220,6 @@ export async function main(ns: NS): Promise<void> {
 
       if (repStatus && repStatus.targetFaction !== "None") {
         const currentRep = repStatus.currentRep;
-        const now = Date.now();
 
         if (lastRep > 0 && lastTargetFaction === repStatus.targetFaction) {
           const timeDelta = (now - lastRepTime) / 1000;
@@ -250,51 +234,50 @@ export async function main(ns: NS): Promise<void> {
       }
 
       // Re-fetch with updated rep gain rate
-      state.repStatus = repPlugin.getFormattedStatus(ns, {
+      const finalRepStatus = repPlugin.getFormattedStatus(ns, {
         playerMoney: player.money,
         repGainRate,
         favorToUnlock,
       });
-      state.repError = null;
+      setCachedStatus("rep", finalRepStatus);
+      setRepError(null);
     } catch {
-      state.repStatus = null;
-      state.repError = "Singularity API not available";
+      setCachedStatus("rep", null);
+      setRepError("Singularity API not available");
     }
-
-    // Hack status
-    state.hackStatus = hackPlugin.getFormattedStatus(ns);
-
-    // === 5. RENDER (no NS calls inside React components) ===
-    ns.clearLog();
-    ns.printRaw(<Dashboard state={state} />);
-
-    // === 6. CHUNKED SLEEP FOR RESPONSIVE CLICKS ===
-    for (let elapsed = 0; elapsed < TOTAL_MS; elapsed += TICK_MS) {
-      // Process pending commands immediately during sleep
-      processPendingCommands(ns, state);
-      await ns.sleep(TICK_MS);
-    }
+    markPluginUpdated("rep", now);
   }
 }
 
-// === EXTERNAL COMMAND PROCESSING ===
+// === MAIN LOOP ===
 
-function processExternalCommand(ns: NS, cmd: DashboardCommand, state: DashboardState): void {
-  if (cmd.type === "tab" && typeof cmd.tab === "number") {
-    setActiveTab(cmd.tab);
-  }
+export async function main(ns: NS): Promise<void> {
+  ns.disableLog("ALL");
+  ns.ui.openTail();
+  ns.ui.resizeTail(600, 700);
 
-  if (cmd.type === "toggle" && cmd.tool && cmd.action) {
-    const tools: ToolName[] = cmd.tool === "all"
-      ? ["hack", "nuke", "pserv", "share", "rep"]
-      : [cmd.tool as ToolName];
+  // Initialize the command port for React→MainLoop communication
+  initCommandPort(ns);
+  ns.clearLog()
+  ns.printRaw(<Dashboard />);
 
-    for (const tool of tools) {
-      if (cmd.action === "start") {
-        startTool(ns, tool, state);
-      } else if (cmd.action === "stop") {
-        stopTool(ns, tool, state);
-      }
+  while (true) {
+    // 1. Process any pending commands first (responsive to clicks)
+    readAndExecuteCommands(ns);
+
+    // 2. Detect running tools (finds scripts started manually or before restart)
+    detectRunningTools(ns);
+
+    // 3. Update plugins with staggered intervals
+    updatePluginsIfNeeded(ns);
+
+    // 5. Short sleep with command polling for responsive UI
+    // Faster total time (500ms) gives better visual feedback
+    const TICK_MS = 100;
+    const TOTAL_MS = 500;
+    for (let elapsed = 0; elapsed < TOTAL_MS; elapsed += TICK_MS) {
+      readAndExecuteCommands(ns);
+      await ns.sleep(TICK_MS);
     }
   }
 }

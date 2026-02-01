@@ -8,7 +8,7 @@
  *      run hack/distributed.js --one-shot
  *      run hack/distributed.js --interval 500 --max-targets 50
  */
-import { NS, Server } from "@ns";
+import { NS  } from "@ns";
 import { COLORS, getAllServers, determineAction, HackAction } from "/lib/utils";
 
 // === TYPES ===

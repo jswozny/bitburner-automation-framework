@@ -8,6 +8,7 @@ import { NS } from "@ns";
 import { ToolPlugin, FormattedNukeStatus, OverviewCardProps, DetailPanelProps } from "dashboard/types";
 import { styles } from "dashboard/styles";
 import { ToolControl } from "dashboard/components/ToolControl";
+import { getPluginUIState, setPluginUIState } from "dashboard/state-store";
 import { getNukeStatus } from "lib/nuke";
 import { getAllServers } from "lib/utils";
 
@@ -105,7 +106,12 @@ function NukeOverviewCard({ status, running, toolId }: OverviewCardProps<Formatt
 }
 
 function NukeDetailPanel({ status, running, toolId }: DetailPanelProps<FormattedNukeStatus>): React.ReactElement {
-  const [showRooted, setShowRooted] = React.useState(false);
+  // Use module-level state instead of useState - persists across printRaw() calls
+  const showRooted = getPluginUIState("nuke", "showRooted", false);
+
+  const handleToggleRooted = () => {
+    setPluginUIState("nuke", "showRooted", !showRooted);
+  };
 
   if (!status) {
     return <div style={styles.panel}>Loading nuke status...</div>;
@@ -213,7 +219,7 @@ function NukeDetailPanel({ status, running, toolId }: DetailPanelProps<Formatted
         <div style={styles.section}>
           <div
             style={styles.collapsibleHeader}
-            onClick={() => setShowRooted(!showRooted)}
+            onClick={handleToggleRooted}
           >
             <span style={styles.collapseIcon}>{showRooted ? "▼" : "▶"}</span>
             <span>Rooted Servers ({status.rooted.length})</span>

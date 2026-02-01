@@ -17,6 +17,7 @@ export const styles = {
     display: "flex",
     flexDirection: "column",
     alignItems: "stretch",
+    justifySelf: "start",
   } as React.CSSProperties,
 
   header: {
