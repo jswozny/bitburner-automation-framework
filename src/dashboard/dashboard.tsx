@@ -277,7 +277,7 @@ function updatePluginsIfNeeded(ns: NS): void {
 // === MAIN LOOP ===
 
 export async function main(ns: NS): Promise<void> {
-  let PAUSED = false;
+  const PAUSED = false;
   ns.disableLog("ALL");
   ns.ui.openTail();
   ns.ui.resizeTail(600, 700);
