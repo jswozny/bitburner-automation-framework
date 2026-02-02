@@ -177,6 +177,22 @@ export interface FormattedWorkStatus {
   lowestCombatStat: number;
   highestCombatStat: number;
   combatBalance: number;
+  balanceRotation: {
+    currentSkill: string;
+    currentSkillDisplay: string;
+    currentValue: number;
+    currentValueFormatted: string;
+    lowestSkill: string;
+    lowestSkillDisplay: string;
+    lowestValue: number;
+    lowestValueFormatted: string;
+    timeSinceSwitch: number;
+    timeUntilEligible: number;
+    timeUntilEligibleFormatted: string;
+    canSwitch: boolean;
+    isTrainingLowest: boolean;
+    skillValues: { skill: string; display: string; value: number; valueFormatted: string }[];
+  } | null;
   crimeInfo: {
     name: string;
     chance: number;

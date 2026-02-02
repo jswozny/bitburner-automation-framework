@@ -70,6 +70,18 @@ export interface TrainingOption {
   travelCost: number;
 }
 
+export interface BalanceRotationStatus {
+  currentSkill: string;
+  currentValue: number;
+  lowestSkill: string;
+  lowestValue: number;
+  timeSinceSwitch: number;
+  timeUntilEligible: number;
+  canSwitch: boolean;
+  isTrainingLowest: boolean;
+  skillValues: { skill: string; value: number }[];
+}
+
 export interface WorkStatus {
   currentFocus: WorkFocus;
   playerCity: string;
@@ -88,6 +100,7 @@ export interface WorkStatus {
   isTraining: boolean;
   skillTimeSpent: Record<string, number>;
   currentCrime: CrimeAnalysis | null;
+  balanceRotation: BalanceRotationStatus | null;
 }
 
 // === CONFIG PERSISTENCE ===
@@ -181,25 +194,62 @@ export function getSkillDisplayName(skill: string): string {
 }
 
 /**
- * Get the next skill to train in balance mode (least time spent)
+ * Get player skill value by short name
  */
-export function getNextBalanceSkill(config: WorkConfig): string | null {
+export function getSkillValue(ns: NS, skill: string): number {
+  const player = ns.getPlayer();
+  const skillMap: Record<string, number> = {
+    str: player.skills.strength,
+    def: player.skills.defense,
+    dex: player.skills.dexterity,
+    agi: player.skills.agility,
+    hacking: player.skills.hacking,
+    charisma: player.skills.charisma,
+  };
+  return skillMap[skill] ?? 0;
+}
+
+/**
+ * Get the next skill to train in balance mode.
+ * Trains the lowest skill. Only switches when:
+ * 1. Current skill exceeds the lowest skill's value, AND
+ * 2. At least BALANCE_ROTATION_INTERVAL (60s) has passed since last switch
+ * This prevents rapid flip-flopping and accounts for travel time/costs.
+ */
+export function getNextBalanceSkill(ns: NS, config: WorkConfig): string | null {
   const skills = getSkillsForFocus(config.focus);
   if (skills.length === 0) return null;
+  if (skills.length === 1) return skills[0];
 
-  // Find skill with least time
-  let minSkill = skills[0];
-  let minTime = config.skillTimeSpent[minSkill] ?? 0;
+  // Get skill values and sort ascending
+  const skillValues = skills.map(skill => ({
+    skill,
+    value: getSkillValue(ns, skill),
+  })).sort((a, b) => a.value - b.value);
 
-  for (const skill of skills) {
-    const time = config.skillTimeSpent[skill] ?? 0;
-    if (time < minTime) {
-      minTime = time;
-      minSkill = skill;
-    }
+  const lowest = skillValues[0];
+
+  // If no skill is currently being trained, start with the lowest
+  if (!config.lastSkillTrained || !skills.includes(config.lastSkillTrained)) {
+    return lowest.skill;
   }
 
-  return minSkill;
+  // If we're already training the lowest, keep training it
+  if (config.lastSkillTrained === lowest.skill) {
+    return lowest.skill;
+  }
+
+  // We're training a skill that's not the lowest - check if we should switch
+  const currentValue = getSkillValue(ns, config.lastSkillTrained);
+  const timeSinceSwitch = Date.now() - config.lastRotationTime;
+
+  // Only switch if current skill exceeds lowest AND enough time has passed
+  if (currentValue > lowest.value && timeSinceSwitch >= BALANCE_ROTATION_INTERVAL) {
+    return lowest.skill;
+  }
+
+  // Keep training current skill
+  return config.lastSkillTrained;
 }
 
 // === TRAINING OPTIONS ===
@@ -435,8 +485,8 @@ export function getWorkStatus(ns: NS): WorkStatus {
     if (skills.length === 1) {
       targetSkill = skills[0];
     } else if (skills.length > 1) {
-      // Balance mode - get skill with least time
-      targetSkill = getNextBalanceSkill(config);
+      // Balance mode - train lowest skill
+      targetSkill = getNextBalanceSkill(ns, config);
     }
 
     if (targetSkill) {
@@ -446,6 +496,39 @@ export function getWorkStatus(ns: NS): WorkStatus {
 
   const isTraining =
     workInfo !== null && (workInfo.type === "class" || workInfo.type === "crime");
+
+  // Compute balance rotation status for balance modes
+  let balanceRotation: BalanceRotationStatus | null = null;
+  const isBalanceMode = config.focus === "balance-combat" || config.focus === "balance-all";
+
+  if (isBalanceMode) {
+    const skills = getSkillsForFocus(config.focus);
+    const skillValues = skills.map(skill => ({
+      skill,
+      value: getSkillValue(ns, skill),
+    })).sort((a, b) => a.value - b.value);
+
+    const lowest = skillValues[0];
+    const currentSkill = config.lastSkillTrained ?? lowest.skill;
+    const currentValue = getSkillValue(ns, currentSkill);
+    const now = Date.now();
+    const timeSinceSwitch = config.lastRotationTime > 0 ? now - config.lastRotationTime : 0;
+    const timeUntilEligible = Math.max(0, BALANCE_ROTATION_INTERVAL - timeSinceSwitch);
+    const isTrainingLowest = currentSkill === lowest.skill;
+    const canSwitch = !isTrainingLowest && currentValue > lowest.value && timeUntilEligible === 0;
+
+    balanceRotation = {
+      currentSkill,
+      currentValue,
+      lowestSkill: lowest.skill,
+      lowestValue: lowest.value,
+      timeSinceSwitch,
+      timeUntilEligible,
+      canSwitch,
+      isTrainingLowest,
+      skillValues,
+    };
+  }
 
   return {
     currentFocus: config.focus,
@@ -467,6 +550,7 @@ export function getWorkStatus(ns: NS): WorkStatus {
     isTraining,
     skillTimeSpent: config.skillTimeSpent,
     currentCrime,
+    balanceRotation,
   };
 }
 
@@ -507,22 +591,22 @@ export function runWorkCycle(ns: NS): boolean {
   if (skills.length === 1) {
     targetSkill = skills[0];
   } else {
-    // Balance mode - check if we should rotate
+    // Balance mode - train lowest skill until it exceeds next lowest
     const now = Date.now();
-    const shouldRotate = now - config.lastRotationTime >= BALANCE_ROTATION_INTERVAL;
+    targetSkill = getNextBalanceSkill(ns, config) ?? skills[0];
 
-    if (shouldRotate || !config.lastSkillTrained) {
-      targetSkill = getNextBalanceSkill(config) ?? skills[0];
+    // Track time spent (for display) and update config if skill changed
+    if (targetSkill !== config.lastSkillTrained) {
+      // Skill changed - update elapsed time for previous skill
+      if (config.lastSkillTrained && config.lastRotationTime > 0) {
+        const elapsed = now - config.lastRotationTime;
+        config.skillTimeSpent[config.lastSkillTrained] =
+          (config.skillTimeSpent[config.lastSkillTrained] ?? 0) + elapsed;
+      }
       config.lastSkillTrained = targetSkill;
       config.lastRotationTime = now;
-    } else {
-      targetSkill = config.lastSkillTrained;
+      writeWorkConfig(ns, config);
     }
-
-    // Update time spent
-    const elapsed = Math.min(now - config.lastRotationTime, BALANCE_ROTATION_INTERVAL);
-    config.skillTimeSpent[targetSkill] = (config.skillTimeSpent[targetSkill] ?? 0) + elapsed;
-    writeWorkConfig(ns, config);
   }
 
   // Check if already training the right thing

@@ -13,12 +13,12 @@ import {
 } from "dashboard/types";
 import { styles } from "dashboard/styles";
 import { ToolControl } from "dashboard/components/ToolControl";
-import { ProgressBar } from "dashboard/components/ProgressBar";
 import {
   getWorkStatus,
   getSkillDisplayName,
   WorkFocus,
   TRAVEL_COST,
+  BALANCE_ROTATION_INTERVAL,
 } from "lib/work";
 import { writeWorkFocusCommand, writeStartTrainingCommand } from "dashboard/state-store";
 
@@ -128,6 +128,31 @@ function formatWorkStatus(ns: NS): FormattedWorkStatus | null {
       lowestCombatStat: lowestCombat,
       highestCombatStat: highestCombat,
       combatBalance: highestCombat > 0 ? lowestCombat / highestCombat : 1,
+      balanceRotation: status.balanceRotation
+        ? {
+            currentSkill: status.balanceRotation.currentSkill,
+            currentSkillDisplay: getSkillDisplayName(status.balanceRotation.currentSkill),
+            currentValue: status.balanceRotation.currentValue,
+            currentValueFormatted: ns.formatNumber(status.balanceRotation.currentValue, 0),
+            lowestSkill: status.balanceRotation.lowestSkill,
+            lowestSkillDisplay: getSkillDisplayName(status.balanceRotation.lowestSkill),
+            lowestValue: status.balanceRotation.lowestValue,
+            lowestValueFormatted: ns.formatNumber(status.balanceRotation.lowestValue, 0),
+            timeSinceSwitch: status.balanceRotation.timeSinceSwitch,
+            timeUntilEligible: status.balanceRotation.timeUntilEligible,
+            timeUntilEligibleFormatted: status.balanceRotation.timeUntilEligible > 0
+              ? `${Math.ceil(status.balanceRotation.timeUntilEligible / 1000)}s`
+              : "Ready",
+            canSwitch: status.balanceRotation.canSwitch,
+            isTrainingLowest: status.balanceRotation.isTrainingLowest,
+            skillValues: status.balanceRotation.skillValues.map(sv => ({
+              skill: sv.skill,
+              display: getSkillDisplayName(sv.skill),
+              value: sv.value,
+              valueFormatted: ns.formatNumber(sv.value, 0),
+            })),
+          }
+        : null,
       crimeInfo: status.currentCrime
         ? {
             name: status.currentCrime.crime,
@@ -436,22 +461,58 @@ function WorkDetailPanel({
         </div>
       )}
 
-      {/* Balance Mode Time Tracking */}
-      {isBalanceMode && status.skillTimeSpent.length > 0 && (
+      {/* Balance Mode Status */}
+      {isBalanceMode && status.balanceRotation && (
         <div style={styles.card}>
           <div style={{ color: "#00ffff", fontSize: "12px", marginBottom: "8px" }}>
             BALANCE ROTATION
           </div>
-          <ProgressBar
-            progress={status.combatBalance}
-            label={`Balance: ${(status.combatBalance * 100).toFixed(0)}%`}
-            fillColor={status.combatBalance >= 0.9 ? "#00aa00" : "#ff8800"}
-          />
-          <div style={{ marginTop: "8px" }}>
-            {status.skillTimeSpent.map((item, i) => (
-              <div key={i} style={styles.stat}>
-                <span style={styles.statLabel}>{item.skillDisplay}</span>
-                <span style={styles.statValue}>{item.timeFormatted}</span>
+
+          {/* Current training status */}
+          <div style={styles.stat}>
+            <span style={styles.statLabel}>Training</span>
+            <span style={styles.statHighlight}>
+              {status.balanceRotation.currentSkillDisplay} ({status.balanceRotation.currentValueFormatted})
+            </span>
+          </div>
+
+          {/* Switch status */}
+          {status.balanceRotation.isTrainingLowest ? (
+            <div style={styles.stat}>
+              <span style={styles.statLabel}>Status</span>
+              <span style={{ color: "#00ff00" }}>Training lowest skill</span>
+            </div>
+          ) : (
+            <>
+              <div style={styles.stat}>
+                <span style={styles.statLabel}>Lowest</span>
+                <span style={{ color: "#ffaa00" }}>
+                  {status.balanceRotation.lowestSkillDisplay} ({status.balanceRotation.lowestValueFormatted})
+                </span>
+              </div>
+              <div style={styles.stat}>
+                <span style={styles.statLabel}>Switch in</span>
+                <span style={{ color: status.balanceRotation.canSwitch ? "#00ff00" : "#fff" }}>
+                  {status.balanceRotation.timeUntilEligibleFormatted}
+                  {status.balanceRotation.canSwitch && " (will switch)"}
+                </span>
+              </div>
+            </>
+          )}
+
+          {/* All skills sorted by value */}
+          <div style={{ marginTop: "8px", borderTop: "1px solid #333", paddingTop: "8px" }}>
+            <div style={{ ...styles.dim, fontSize: "10px", marginBottom: "4px" }}>
+              Skills (lowest → highest)
+            </div>
+            {status.balanceRotation.skillValues.map((sv, i) => (
+              <div key={i} style={{
+                ...styles.stat,
+                color: sv.skill === status.balanceRotation?.currentSkill ? "#00ff00" :
+                       sv.skill === status.balanceRotation?.lowestSkill ? "#ffaa00" : "#888",
+              }}>
+                <span>{sv.display}</span>
+                <span>{sv.valueFormatted}</span>
               </div>
             ))}
           </div>
