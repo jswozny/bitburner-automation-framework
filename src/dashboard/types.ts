@@ -103,6 +103,12 @@ export interface FormattedRepStatus {
   pendingBackdoors: string[];
   hasUnlockedAugs: boolean;
   nonWorkableFactions: NonWorkableFactionProgress[];
+  // Work status
+  isWorkingForFaction: boolean;
+  isOptimalWork: boolean;
+  bestWorkType: "hacking" | "field" | "security";
+  currentWorkType: string | null;
+  isWorkable: boolean;
 }
 
 export interface FormattedDarkwebStatus {

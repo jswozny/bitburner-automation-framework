@@ -20,6 +20,7 @@ import {
   FormattedHackStatus,
   FormattedDarkwebStatus,
 } from "dashboard/types";
+import { startOptimalFactionWork } from "lib/factions";
 
 // === COMMAND PORT ===
 
@@ -27,9 +28,10 @@ const COMMAND_PORT = 20; // Port for dashboard command communication
 
 interface Command {
   tool: ToolName;
-  action: "start" | "stop" | "open-tail" | "run-script";
+  action: "start" | "stop" | "open-tail" | "run-script" | "start-faction-work";
   scriptPath?: string;
   scriptArgs?: string[];
+  factionName?: string;
 }
 
 let commandPort: NetscriptPort | null = null;
@@ -72,6 +74,14 @@ export function runScript(tool: ToolName, scriptPath: string, scriptArgs: string
 }
 
 /**
+ * Start optimal faction work with focus.
+ */
+export function startFactionWork(factionName: string): void {
+  if (!commandPort) return;
+  commandPort.write(JSON.stringify({ tool: "rep", action: "start-faction-work", factionName }));
+}
+
+/**
  * Read and execute all pending commands from the port.
  * Called from main loop - receives fresh NS reference each call.
  */
@@ -108,6 +118,16 @@ function executeCommand(ns: NS, cmd: Command): void {
     case "run-script":
       if (cmd.scriptPath) {
         executeScript(ns, cmd.scriptPath, cmd.scriptArgs || []);
+      }
+      break;
+    case "start-faction-work":
+      if (cmd.factionName) {
+        const player = ns.getPlayer();
+        if (startOptimalFactionWork(ns, player, cmd.factionName)) {
+          ns.toast(`Started ${cmd.factionName} work (focused)`, "success", 2000);
+        } else {
+          ns.toast(`Failed to start work for ${cmd.factionName}`, "error", 3000);
+        }
       }
       break;
   }

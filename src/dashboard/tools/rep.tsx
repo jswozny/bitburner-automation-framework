@@ -10,9 +10,9 @@ import { styles } from "dashboard/styles";
 import { ToolControl } from "dashboard/components/ToolControl";
 import { ProgressBar } from "dashboard/components/ProgressBar";
 import { getRepStatus } from "auto/auto-rep";
-import { findNextWorkableAugmentation, getNonWorkableFactionProgress } from "lib/factions";
+import { findNextWorkableAugmentation, getNonWorkableFactionProgress, getFactionWorkStatus, startOptimalFactionWork } from "lib/factions";
 import { formatTime } from "lib/utils";
-import { runScript } from "dashboard/state-store";
+import { runScript, startFactionWork } from "dashboard/state-store";
 
 // === REP TRACKING STATE (module-level) ===
 
@@ -102,6 +102,11 @@ function formatRepStatus(ns: NS, extra?: PluginContext): FormattedRepStatus | nu
     // Check if there are unlocked augs to buy
     const hasUnlockedAugs = raw.purchasePlan.length > 0;
 
+    // Get work status for target faction
+    const workStatus = targetFaction !== "None"
+      ? getFactionWorkStatus(ns, player, targetFaction)
+      : { isWorkingForFaction: false, isOptimalWork: false, bestWorkType: "hacking" as const, currentWorkType: null, isWorkable: false };
+
     return {
       targetFaction,
       nextAugName: target?.aug?.name ?? null,
@@ -139,6 +144,12 @@ function formatRepStatus(ns: NS, extra?: PluginContext): FormattedRepStatus | nu
         currentRep: ns.formatNumber(item.faction.currentRep),
         requiredRep: ns.formatNumber(item.nextAug.repReq),
       })),
+      // Work status
+      isWorkingForFaction: workStatus.isWorkingForFaction,
+      isOptimalWork: workStatus.isOptimalWork,
+      bestWorkType: workStatus.bestWorkType,
+      currentWorkType: workStatus.currentWorkType,
+      isWorkable: workStatus.isWorkable,
     };
   } catch {
     return null;
@@ -211,6 +222,15 @@ function RepDetailPanel({ status, error, running, toolId, pid }: DetailPanelProp
     runScript("rep", "factions/faction-backdoors.js", []);
   };
 
+  const handleStartWork = () => {
+    if (status.targetFaction !== "None") {
+      startFactionWork(status.targetFaction);
+    }
+  };
+
+  // Show work button when: workable faction, not optimal work, and still need rep
+  const showWorkButton = status.isWorkable && !status.isOptimalWork && status.repGapPositive;
+
   return (
     <div style={styles.panel}>
       {/* Header */}
@@ -232,8 +252,23 @@ function RepDetailPanel({ status, error, running, toolId, pid }: DetailPanelProp
       </div>
 
       {/* Action Buttons */}
-      {(status.hasUnlockedAugs || status.pendingBackdoors.length > 0) && (
-        <div style={{ display: "flex", gap: "8px", marginBottom: "8px" }}>
+      {(status.hasUnlockedAugs || status.pendingBackdoors.length > 0 || showWorkButton) && (
+        <div style={{ display: "flex", gap: "8px", marginBottom: "8px", flexWrap: "wrap" }}>
+          {showWorkButton && (
+            <button
+              style={{
+                ...styles.buttonPlay,
+                marginLeft: 0,
+                padding: "4px 12px",
+                backgroundColor: "#005500",
+                color: "#00ff00",
+              }}
+              onClick={handleStartWork}
+              title={`Start ${status.bestWorkType} work for ${status.targetFaction} with focus`}
+            >
+              Work: {status.bestWorkType}
+            </button>
+          )}
           {status.hasUnlockedAugs && (
             <button
               style={{

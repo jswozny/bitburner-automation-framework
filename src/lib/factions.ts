@@ -304,3 +304,65 @@ export function getAffordableAugs(
 
   return affordable;
 }
+
+// === WORK STATUS ===
+
+export interface FactionWorkStatus {
+  /** Whether we're currently working for the target faction */
+  isWorkingForFaction: boolean;
+  /** Whether we're doing the optimal work type */
+  isOptimalWork: boolean;
+  /** The best work type for our stats */
+  bestWorkType: "hacking" | "field" | "security";
+  /** Current work type if working for faction, null otherwise */
+  currentWorkType: string | null;
+  /** Whether the target faction is workable (not infiltration-only etc) */
+  isWorkable: boolean;
+}
+
+/**
+ * Get the current work status for a target faction
+ * Returns info about whether we're doing optimal work and what we should be doing
+ */
+export function getFactionWorkStatus(
+  ns: NS,
+  player: Player,
+  targetFaction: string
+): FactionWorkStatus {
+  const isWorkable = !NON_WORKABLE_FACTIONS.has(targetFaction);
+  const bestWorkType = selectBestWorkType(ns, player);
+  const currentWork = ns.singularity.getCurrentWork();
+
+  const isWorkingForFaction =
+    currentWork?.type === "FACTION" &&
+    currentWork?.factionName === targetFaction;
+
+  const currentWorkType = isWorkingForFaction
+    ? (currentWork as { factionWorkType?: string }).factionWorkType ?? null
+    : null;
+
+  const isOptimalWork = isWorkingForFaction && currentWorkType === bestWorkType;
+
+  return {
+    isWorkingForFaction,
+    isOptimalWork,
+    bestWorkType,
+    currentWorkType,
+    isWorkable,
+  };
+}
+
+/**
+ * Start optimal faction work with focus
+ */
+export function startOptimalFactionWork(
+  ns: NS,
+  player: Player,
+  factionName: string
+): boolean {
+  if (NON_WORKABLE_FACTIONS.has(factionName)) {
+    return false;
+  }
+  const bestWork = selectBestWorkType(ns, player);
+  return ns.singularity.workForFaction(factionName, bestWork, true);
+}
