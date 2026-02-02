@@ -32,10 +32,10 @@ export interface ProgramPurchaseResult {
  * Check if the player has the TOR router
  */
 export function hasTorRouter(ns: NS): boolean {
-  // If we can get darkweb programs without error, we have TOR
+  // getDarkwebPrograms() returns empty array if TOR isn't owned
   try {
     const programs = ns.singularity.getDarkwebPrograms();
-    return programs.length > 0 || ns.singularity.purchaseProgram("") === false;
+    return programs.length > 0;
   } catch {
     return false;
   }
