@@ -19,8 +19,10 @@ import {
   FormattedRepStatus,
   FormattedHackStatus,
   FormattedDarkwebStatus,
+  FormattedWorkStatus,
 } from "dashboard/types";
 import { startOptimalFactionWork } from "lib/factions";
+import { setWorkFocus, runWorkCycle, WorkFocus } from "lib/work";
 
 // === COMMAND PORT ===
 
@@ -28,10 +30,11 @@ const COMMAND_PORT = 20; // Port for dashboard command communication
 
 interface Command {
   tool: ToolName;
-  action: "start" | "stop" | "open-tail" | "run-script" | "start-faction-work";
+  action: "start" | "stop" | "open-tail" | "run-script" | "start-faction-work" | "set-focus" | "start-training";
   scriptPath?: string;
   scriptArgs?: string[];
   factionName?: string;
+  focus?: string;
 }
 
 let commandPort: NetscriptPort | null = null;
@@ -79,6 +82,22 @@ export function runScript(tool: ToolName, scriptPath: string, scriptArgs: string
 export function startFactionWork(factionName: string): void {
   if (!commandPort) return;
   commandPort.write(JSON.stringify({ tool: "rep", action: "start-faction-work", factionName }));
+}
+
+/**
+ * Set work focus for training.
+ */
+export function writeWorkFocusCommand(focus: string): void {
+  if (!commandPort) return;
+  commandPort.write(JSON.stringify({ tool: "work", action: "set-focus", focus }));
+}
+
+/**
+ * Start training based on current focus.
+ */
+export function writeStartTrainingCommand(): void {
+  if (!commandPort) return;
+  commandPort.write(JSON.stringify({ tool: "work", action: "start-training" }));
 }
 
 /**
@@ -130,6 +149,22 @@ function executeCommand(ns: NS, cmd: Command): void {
         }
       }
       break;
+    case "set-focus":
+      if (cmd.focus) {
+        setWorkFocus(ns, cmd.focus as WorkFocus);
+        ns.toast(`Work focus: ${cmd.focus}`, "success", 2000);
+      }
+      break;
+    case "start-training":
+      {
+        const started = runWorkCycle(ns);
+        if (started) {
+          ns.toast("Training started", "success", 2000);
+        } else {
+          ns.toast("Could not start training", "warning", 3000);
+        }
+      }
+      break;
   }
 }
 
@@ -171,6 +206,7 @@ const uiState: UIState = {
     rep: {},
     hack: {},
     darkweb: {},
+    work: {},
   },
 };
 
@@ -218,11 +254,13 @@ interface CachedData {
   hackStatus: FormattedHackStatus | null;
   darkwebStatus: FormattedDarkwebStatus | null;
   darkwebError: string | null;
+  workStatus: FormattedWorkStatus | null;
+  workError: string | null;
   lastUpdated: Record<ToolName, number>;
 }
 
 const cachedData: CachedData = {
-  pids: { nuke: 0, pserv: 0, share: 0, rep: 0, hack: 0, darkweb: 0 },
+  pids: { nuke: 0, pserv: 0, share: 0, rep: 0, hack: 0, darkweb: 0, work: 0 },
   nukeStatus: null,
   pservStatus: null,
   shareStatus: null,
@@ -231,7 +269,9 @@ const cachedData: CachedData = {
   hackStatus: null,
   darkwebStatus: null,
   darkwebError: null,
-  lastUpdated: { nuke: 0, pserv: 0, share: 0, rep: 0, hack: 0, darkweb: 0 },
+  workStatus: null,
+  workError: null,
+  lastUpdated: { nuke: 0, pserv: 0, share: 0, rep: 0, hack: 0, darkweb: 0, work: 0 },
 };
 
 // === PLUGIN UPDATE INTERVALS ===
@@ -243,6 +283,7 @@ const PLUGIN_INTERVALS: Record<ToolName, number> = {
   rep: 1000,    // Fast - rep changes constantly
   hack: 1500,   // Heavy plugin, moderate interval
   darkweb: 5000, // Slow - program ownership rarely changes
+  work: 1000,   // Fast - training status updates frequently
 };
 
 /**
@@ -266,7 +307,7 @@ export function markPluginUpdated(plugin: ToolName, now: number): void {
  */
 export function setCachedStatus(
   plugin: ToolName,
-  status: FormattedNukeStatus | FormattedPservStatus | FormattedShareStatus | FormattedRepStatus | FormattedHackStatus | FormattedDarkwebStatus | null
+  status: FormattedNukeStatus | FormattedPservStatus | FormattedShareStatus | FormattedRepStatus | FormattedHackStatus | FormattedDarkwebStatus | FormattedWorkStatus | null
 ): void {
   switch (plugin) {
     case "nuke":
@@ -287,6 +328,9 @@ export function setCachedStatus(
     case "darkweb":
       cachedData.darkwebStatus = status as FormattedDarkwebStatus | null;
       break;
+    case "work":
+      cachedData.workStatus = status as FormattedWorkStatus | null;
+      break;
   }
 }
 
@@ -302,6 +346,13 @@ export function setRepError(error: string | null): void {
  */
 export function setDarkwebError(error: string | null): void {
   cachedData.darkwebError = error;
+}
+
+/**
+ * Set the work error message.
+ */
+export function setWorkError(error: string | null): void {
+  cachedData.workError = error;
 }
 
 // === TOOL CONTROL ===
@@ -406,5 +457,7 @@ export function getStateSnapshot(): DashboardState {
     hackStatus: cachedData.hackStatus,
     darkwebStatus: cachedData.darkwebStatus,
     darkwebError: cachedData.darkwebError,
+    workStatus: cachedData.workStatus,
+    workError: cachedData.workError,
   };
 }

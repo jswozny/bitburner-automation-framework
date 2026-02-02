@@ -8,7 +8,7 @@ import { NS } from "@ns";
 
 // === TOOL NAMES ===
 
-export type ToolName = "nuke" | "pserv" | "share" | "rep" | "hack" | "darkweb";
+export type ToolName = "nuke" | "pserv" | "share" | "rep" | "hack" | "darkweb" | "work";
 
 // === TOOL SCRIPTS ===
 
@@ -19,6 +19,7 @@ export const TOOL_SCRIPTS: Record<ToolName, string> = {
   rep: "auto/auto-rep.js",
   hack: "hack/distributed.js",
   darkweb: "auto/auto-buy-programs.js",
+  work: "auto/auto-work.js",
 };
 
 // === FORMATTED STATUS TYPES ===
@@ -131,6 +132,61 @@ export interface FormattedDarkwebStatus {
   allOwned: boolean;
 }
 
+export interface FormattedWorkStatus {
+  currentFocus: string;
+  focusLabel: string;
+  playerCity: string;
+  playerMoney: number;
+  playerMoneyFormatted: string;
+  skills: {
+    strength: number;
+    defense: number;
+    dexterity: number;
+    agility: number;
+    hacking: number;
+    charisma: number;
+    strengthFormatted: string;
+    defenseFormatted: string;
+    dexterityFormatted: string;
+    agilityFormatted: string;
+    hackingFormatted: string;
+    charismaFormatted: string;
+  };
+  activityDisplay: string;
+  activityType: "gym" | "university" | "crime" | "idle" | "other";
+  isTraining: boolean;
+  recommendation: {
+    type: "gym" | "university" | "crime";
+    location: string;
+    city: string;
+    skill: string;
+    skillDisplay: string;
+    expMult: number;
+    expMultFormatted: string;
+    needsTravel: boolean;
+    travelCost: number;
+    travelCostFormatted: string;
+  } | null;
+  canTravelToBest: boolean;
+  skillTimeSpent: {
+    skill: string;
+    skillDisplay: string;
+    timeMs: number;
+    timeFormatted: string;
+  }[];
+  lowestCombatStat: number;
+  highestCombatStat: number;
+  combatBalance: number;
+  crimeInfo: {
+    name: string;
+    chance: number;
+    chanceFormatted: string;
+    moneyPerMin: number;
+    moneyPerMinFormatted: string;
+    combatExpPerMin: number;
+  } | null;
+}
+
 export interface FormattedHackStatus {
   totalRam: string;
   serverCount: number;
@@ -182,6 +238,8 @@ export interface DashboardState {
   hackStatus: FormattedHackStatus | null;
   darkwebStatus: FormattedDarkwebStatus | null;
   darkwebError: string | null;
+  workStatus: FormattedWorkStatus | null;
+  workError: string | null;
 }
 
 // === PLUGIN INTERFACE ===

@@ -28,6 +28,7 @@ import {
   setCachedStatus,
   setRepError,
   setDarkwebError,
+  setWorkError,
 } from "dashboard/state-store";
 
 // Styles and components
@@ -41,8 +42,9 @@ import { sharePlugin } from "dashboard/tools/share";
 import { repPlugin } from "dashboard/tools/rep";
 import { hackPlugin } from "dashboard/tools/hack";
 import { darkwebPlugin } from "dashboard/tools/darkweb";
+import { workPlugin } from "dashboard/tools/work";
 
-const TAB_NAMES = ["Overview", "Hack", "Nuke", "Pserv", "Share", "Rep", "Darkweb"];
+const TAB_NAMES = ["Overview", "Hack", "Nuke", "Pserv", "Share", "Rep", "Work", "Darkweb"];
 
 // === OVERVIEW PANEL ===
 
@@ -51,7 +53,7 @@ interface OverviewPanelProps {
 }
 
 function OverviewPanel({ state }: OverviewPanelProps): React.ReactElement {
-  const { pids, repError, darkwebError } = state;
+  const { pids, repError, darkwebError, workError } = state;
 
   return (
     <div style={styles.panel}>
@@ -86,6 +88,13 @@ function OverviewPanel({ state }: OverviewPanelProps): React.ReactElement {
           toolId="rep"
           error={repError}
           pid={pids.rep}
+        />
+        <workPlugin.OverviewCard
+          status={state.workStatus}
+          running={pids.work > 0}
+          toolId="work"
+          error={workError}
+          pid={pids.work}
         />
         <darkwebPlugin.OverviewCard
           status={state.darkwebStatus}
@@ -188,6 +197,16 @@ function Dashboard(): React.ReactElement {
         );
       case 6:
         return (
+          <workPlugin.DetailPanel
+            status={state.workStatus}
+            running={state.pids.work > 0}
+            toolId="work"
+            error={state.workError}
+            pid={state.pids.work}
+          />
+        );
+      case 7:
+        return (
           <darkwebPlugin.DetailPanel
             status={state.darkwebStatus}
             running={state.pids.darkweb > 0}
@@ -271,6 +290,19 @@ function updatePluginsIfNeeded(ns: NS): void {
       setDarkwebError("Singularity API not available");
     }
     markPluginUpdated("darkweb", now);
+  }
+
+  // Update work status - requires Singularity
+  if (shouldUpdatePlugin("work", now)) {
+    try {
+      const workStatus = workPlugin.getFormattedStatus(ns);
+      setCachedStatus("work", workStatus);
+      setWorkError(null);
+    } catch {
+      setCachedStatus("work", null);
+      setWorkError("Singularity API not available");
+    }
+    markPluginUpdated("work", now);
   }
 }
 
