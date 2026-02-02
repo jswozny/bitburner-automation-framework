@@ -212,10 +212,10 @@ export function calculatePurchasePriority(
 
     for (const aug of faction.availableAugs) {
       if (seen.has(aug.name)) continue;
-      seen.add(aug.name);
 
       // Only include augs we have rep for
       if (faction.currentRep >= aug.repReq) {
+        seen.add(aug.name); // Only mark seen when actually added
         allAugs.push({
           ...aug,
           faction: faction.name,
