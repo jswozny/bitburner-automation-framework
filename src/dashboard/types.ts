@@ -64,6 +64,14 @@ export interface FormattedShareStatus {
   lastKnownThreads: string;
 }
 
+export interface NonWorkableFactionProgress {
+  factionName: string;
+  nextAugName: string;
+  progress: number;
+  currentRep: string;
+  requiredRep: string;
+}
+
 export interface FormattedRepStatus {
   targetFaction: string;
   nextAugName: string | null;
@@ -94,6 +102,7 @@ export interface FormattedRepStatus {
   favorToUnlock: number;
   pendingBackdoors: string[];
   hasUnlockedAugs: boolean;
+  nonWorkableFactions: NonWorkableFactionProgress[];
 }
 
 export interface FormattedDarkwebStatus {
@@ -142,6 +151,9 @@ export interface FormattedTargetAssignment {
   expectedMoneyFormatted: string;
   totalThreads: number;
   completionEta: string | null;
+  hackThreads: number;
+  growThreads: number;
+  weakenThreads: number;
 }
 
 // === DASHBOARD STATE ===

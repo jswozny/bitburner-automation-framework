@@ -40,6 +40,24 @@ const ACTION_COLORS: Record<HackAction, string> = {
   weaken: "#0088ff",
 };
 
+// === TIME FORMATTING ===
+
+/**
+ * Format milliseconds as condensed MM:SS or HH:MM:SS
+ */
+function formatTimeCondensed(ms: number): string {
+  if (ms <= 0) return "0:00";
+  const totalSeconds = Math.ceil(ms / 1000);
+  const hours = Math.floor(totalSeconds / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+  const seconds = totalSeconds % 60;
+
+  if (hours > 0) {
+    return `${hours}:${minutes.toString().padStart(2, "0")}:${seconds.toString().padStart(2, "0")}`;
+  }
+  return `${minutes}:${seconds.toString().padStart(2, "0")}`;
+}
+
 // === RUNNING JOBS SCANNING ===
 
 interface RunningJobs {
@@ -60,7 +78,7 @@ function getRunningJobs(ns: NS): RunningJobs {
   for (const hostname of getAllServers(ns)) {
     for (const proc of ns.ps(hostname)) {
       // Match worker scripts: workers/hack.js, workers/grow.js, workers/weaken.js
-      if (!proc.filename.includes("/workers/")) continue;
+      if (!proc.filename.includes("workers/")) continue;
 
       const target = proc.args[0] as string;
       if (!target) continue;
@@ -100,10 +118,22 @@ function getRunningJobs(ns: NS): RunningJobs {
  */
 function calcExpectedMoney(ns: NS, target: string, hackThreads: number): number {
   if (hackThreads <= 0) return 0;
+
   const server = ns.getServer(target);
+  const moneyAvailable = server.moneyAvailable ?? 0;
+
+  // Use Formulas API if available
+  if (ns.fileExists("Formulas.exe", "home")) {
+    const player = ns.getPlayer();
+    const hackPercent = ns.formulas.hacking.hackPercent(server, player);
+    const hackChance = ns.formulas.hacking.hackChance(server, player);
+    return moneyAvailable * Math.min(hackPercent * hackThreads, 1) * hackChance;
+  }
+
+  // Fallback to standard API
   const hackPercent = ns.hackAnalyze(target) * hackThreads;
   const hackChance = ns.hackAnalyzeChance(target);
-  return (server.moneyAvailable ?? 0) * Math.min(hackPercent, 1) * hackChance;
+  return moneyAvailable * Math.min(hackPercent, 1) * hackChance;
 }
 
 /**
@@ -230,7 +260,7 @@ function formatHackStatus(ns: NS): FormattedHackStatus | null {
       if (jobs.earliestCompletion !== null) {
         const msRemaining = jobs.earliestCompletion - Date.now();
         if (msRemaining > 0) {
-          completionEta = ns.tFormat(msRemaining);
+          completionEta = formatTimeCondensed(msRemaining);
         } else {
           completionEta = "now";
         }
@@ -256,11 +286,14 @@ function formatHackStatus(ns: NS): FormattedHackStatus | null {
         moneyDisplay: `${ns.formatNumber(moneyAvailable)} / ${ns.formatNumber(moneyMax)}`,
         securityDelta: securityDelta > 0 ? `+${securityDelta.toFixed(1)}` : "0",
         securityClean: securityDelta <= 2,
-        eta: ns.tFormat(waitTime),
+        eta: formatTimeCondensed(waitTime),
         expectedMoney,
         expectedMoneyFormatted: expectedMoney > 0 ? `$${ns.formatNumber(expectedMoney)}` : "-",
         totalThreads,
         completionEta,
+        hackThreads: jobs.hack,
+        growThreads: jobs.grow,
+        weakenThreads: jobs.weaken,
       });
     }
 
@@ -277,8 +310,8 @@ function formatHackStatus(ns: NS): FormattedHackStatus | null {
       activeTargets,
       totalTargets: targets.length,
       saturationPercent,
-      shortestWait: shortestWait === Number.MAX_SAFE_INTEGER ? "N/A" : ns.tFormat(shortestWait),
-      longestWait: longestWait === 0 ? "N/A" : ns.tFormat(longestWait),
+      shortestWait: shortestWait === Number.MAX_SAFE_INTEGER ? "N/A" : formatTimeCondensed(shortestWait),
+      longestWait: longestWait === 0 ? "N/A" : formatTimeCondensed(longestWait),
       hackingCount,
       growingCount,
       weakeningCount,
@@ -422,18 +455,19 @@ function HackDetailPanel({ status, running, toolId, pid }: DetailPanelProps<Form
               {status.activeTargets} active | {status.totalTargets} total
             </span>
           </div>
-          <div style={{ maxHeight: "400px", overflowY: "auto" }}>
+          <div style={{ maxHeight: "300px", overflowY: "auto" }}>
             <table style={styles.table}>
               <thead>
                 <tr>
                   <th style={{ ...styles.tableHeader, width: "24px" }}>#</th>
                   <th style={styles.tableHeader}>Target</th>
-                  <th style={{ ...styles.tableHeader, width: "70px" }}>Action</th>
-                  <th style={{ ...styles.tableHeader, textAlign: "right", width: "70px" }}>Threads</th>
+                  <th style={{ ...styles.tableHeader, textAlign: "right", width: "45px", color: ACTION_COLORS.hack }}>H</th>
+                  <th style={{ ...styles.tableHeader, textAlign: "right", width: "45px", color: ACTION_COLORS.grow }}>G</th>
+                  <th style={{ ...styles.tableHeader, textAlign: "right", width: "45px", color: ACTION_COLORS.weaken }}>W</th>
                   <th style={{ ...styles.tableHeader, textAlign: "right", width: "80px" }}>Expected</th>
                   <th style={{ ...styles.tableHeader, textAlign: "right", width: "60px" }}>Money</th>
                   <th style={{ ...styles.tableHeader, textAlign: "right", width: "50px" }}>Sec</th>
-                  <th style={{ ...styles.tableHeader, textAlign: "right", width: "70px" }}>ETA</th>
+                  <th style={{ ...styles.tableHeader, textAlign: "right", width: "55px" }}>ETA</th>
                 </tr>
               </thead>
               <tbody>
@@ -447,15 +481,26 @@ function HackDetailPanel({ status, running, toolId, pid }: DetailPanelProps<Form
                       <td style={{ ...styles.tableCell, color: hasJobs ? "#00ffff" : "#666" }}>
                         {target.hostname.substring(0, 16)}
                       </td>
-                      <td style={{ ...styles.tableCell, color: hasJobs ? ACTION_COLORS[target.action] : "#666" }}>
-                        {hasJobs ? target.action.toUpperCase() : "idle"}
+                      <td style={{
+                        ...styles.tableCell,
+                        textAlign: "right",
+                        color: target.hackThreads > 0 ? ACTION_COLORS.hack : "#666",
+                      }}>
+                        {target.hackThreads > 0 ? target.hackThreads.toLocaleString() : "-"}
                       </td>
                       <td style={{
                         ...styles.tableCell,
                         textAlign: "right",
-                        color: hasJobs ? "#00ff00" : "#666",
+                        color: target.growThreads > 0 ? ACTION_COLORS.grow : "#666",
                       }}>
-                        {hasJobs ? target.totalThreads.toLocaleString() : "-"}
+                        {target.growThreads > 0 ? target.growThreads.toLocaleString() : "-"}
+                      </td>
+                      <td style={{
+                        ...styles.tableCell,
+                        textAlign: "right",
+                        color: target.weakenThreads > 0 ? ACTION_COLORS.weaken : "#666",
+                      }}>
+                        {target.weakenThreads > 0 ? target.weakenThreads.toLocaleString() : "-"}
                       </td>
                       <td style={{
                         ...styles.tableCell,

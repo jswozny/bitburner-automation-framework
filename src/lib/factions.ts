@@ -12,6 +12,13 @@ import { NS, Player } from "@ns";
 /** Augmentation cost multiplier after each purchase */
 export const AUG_COST_MULT = 1.9;
 
+/** Factions that don't support traditional work (hacking/field/security) */
+export const NON_WORKABLE_FACTIONS = new Set([
+  "Shadows of Anarchy",  // Infiltration only
+  "Bladeburners",        // Bladeburner actions only
+  "Church of the Machine God", // Special faction
+]);
+
 // === TYPES ===
 
 export interface AugmentationInfo {
@@ -118,6 +125,63 @@ export function findNextAugmentation(factionData: FactionData[]): NextTarget | n
     faction: bestFaction,
     repGap: smallestGap,
   };
+}
+
+/**
+ * Find the next augmentation to target from WORKABLE factions only
+ * Excludes factions like Shadows of Anarchy that can't be worked for
+ */
+export function findNextWorkableAugmentation(factionData: FactionData[]): NextTarget | null {
+  let bestAug: AugmentationInfo | null = null;
+  let bestFaction: FactionData | null = null;
+  let smallestGap = Infinity;
+
+  for (const faction of factionData) {
+    // Skip non-workable factions
+    if (NON_WORKABLE_FACTIONS.has(faction.name)) continue;
+
+    for (const aug of faction.availableAugs) {
+      const gap = aug.repReq - faction.currentRep;
+      // Only consider augs we don't have rep for yet
+      if (gap > 0 && gap < smallestGap) {
+        smallestGap = gap;
+        bestAug = aug;
+        bestFaction = faction;
+      }
+    }
+  }
+
+  if (!bestFaction || !bestAug) return null;
+
+  return {
+    aug: bestAug,
+    faction: bestFaction,
+    repGap: smallestGap,
+  };
+}
+
+/**
+ * Get progress info for non-workable factions that have available augs
+ */
+export function getNonWorkableFactionProgress(factionData: FactionData[]): {
+  faction: FactionData;
+  nextAug: AugmentationInfo;
+  progress: number;
+}[] {
+  const results: { faction: FactionData; nextAug: AugmentationInfo; progress: number }[] = [];
+
+  for (const faction of factionData) {
+    if (!NON_WORKABLE_FACTIONS.has(faction.name)) continue;
+
+    // Find the next aug they need rep for
+    const nextAug = faction.availableAugs.find(aug => aug.repReq > faction.currentRep);
+    if (nextAug) {
+      const progress = Math.min(1, faction.currentRep / nextAug.repReq);
+      results.push({ faction, nextAug, progress });
+    }
+  }
+
+  return results.sort((a, b) => b.progress - a.progress); // Most progress first
 }
 
 /**

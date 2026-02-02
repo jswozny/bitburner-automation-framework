@@ -10,6 +10,7 @@ import { styles } from "dashboard/styles";
 import { ToolControl } from "dashboard/components/ToolControl";
 import { ProgressBar } from "dashboard/components/ProgressBar";
 import { getRepStatus } from "auto/auto-rep";
+import { findNextWorkableAugmentation, getNonWorkableFactionProgress } from "lib/factions";
 import { formatTime } from "lib/utils";
 import { runScript } from "dashboard/state-store";
 
@@ -53,7 +54,12 @@ function formatRepStatus(ns: NS, extra?: PluginContext): FormattedRepStatus | nu
   try {
     const player = ns.getPlayer();
     const raw = getRepStatus(ns, player);
-    const target = raw.nextTarget;
+
+    // Use workable faction target instead of any faction
+    const target = findNextWorkableAugmentation(raw.factionData);
+
+    // Get non-workable faction progress
+    const nonWorkableProgress = getNonWorkableFactionProgress(raw.factionData);
 
     const repRequired = target?.aug?.repReq ?? 0;
     const currentRep = target?.faction?.currentRep ?? 0;
@@ -126,6 +132,13 @@ function formatRepStatus(ns: NS, extra?: PluginContext): FormattedRepStatus | nu
       favorToUnlock,
       pendingBackdoors,
       hasUnlockedAugs,
+      nonWorkableFactions: nonWorkableProgress.map(item => ({
+        factionName: item.faction.name,
+        nextAugName: item.nextAug.name,
+        progress: item.progress,
+        currentRep: ns.formatNumber(item.faction.currentRep),
+        requiredRep: ns.formatNumber(item.nextAug.repReq),
+      })),
     };
   } catch {
     return null;
@@ -317,6 +330,50 @@ function RepDetailPanel({ status, error, running, toolId, pid }: DetailPanelProp
           </div>
         </div>
       </div>
+
+      {/* Non-workable Factions Hint Box */}
+      {status.nonWorkableFactions.length > 0 && (
+        <div style={{
+          ...styles.card,
+          backgroundColor: "rgba(128, 0, 128, 0.15)",
+          borderLeft: "3px solid #aa00aa",
+        }}>
+          <div style={{ color: "#cc88cc", fontSize: "11px", marginBottom: "6px" }}>
+            PASSIVE PROGRESS (infiltration/special)
+          </div>
+          {status.nonWorkableFactions.map((item, i) => (
+            <div key={i} style={{ marginBottom: i < status.nonWorkableFactions.length - 1 ? "8px" : 0 }}>
+              <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "2px" }}>
+                <span style={{ color: "#ffffff", fontSize: "11px" }}>{item.factionName}</span>
+                <span style={{ color: "#888", fontSize: "10px" }}>
+                  {item.currentRep} / {item.requiredRep}
+                </span>
+              </div>
+              <div style={{
+                height: "6px",
+                backgroundColor: "rgba(0, 0, 0, 0.3)",
+                borderRadius: "3px",
+                overflow: "hidden",
+              }}>
+                <div style={{
+                  height: "100%",
+                  width: `${item.progress * 100}%`,
+                  backgroundColor: "#aa00aa",
+                  borderRadius: "3px",
+                }} />
+              </div>
+              <div style={{ display: "flex", justifyContent: "space-between", marginTop: "2px" }}>
+                <span style={{ color: "#888", fontSize: "10px" }}>
+                  {item.nextAugName.substring(0, 32)}
+                </span>
+                <span style={{ color: "#cc88cc", fontSize: "10px" }}>
+                  {(item.progress * 100).toFixed(0)}%
+                </span>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
 
       {/* Purchase Order Table */}
       {status.purchasePlan.length > 0 && (

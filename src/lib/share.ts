@@ -55,7 +55,9 @@ export function getShareStatus(
   let totalThreads = 0;
 
   for (const hostname of getAllServers(ns)) {
-    const procs = ns.ps(hostname).filter((p) => p.filename === shareScript);
+    const procs = ns.ps(hostname).filter((p) =>
+      p.filename === shareScript || p.filename.endsWith("workers/share.js")
+    );
     const threads = procs.reduce((sum, p) => sum + p.threads, 0);
 
     if (threads > 0) {

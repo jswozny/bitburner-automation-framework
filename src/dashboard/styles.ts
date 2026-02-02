@@ -65,7 +65,9 @@ export const styles = {
     padding: "12px",
     borderRadius: "4px",
     flexGrow: 1,
-    flexShrink: 0,
+    flexShrink: 1,
+    maxHeight: "580px",
+    overflowY: "auto",
   } as React.CSSProperties,
 
   card: {
