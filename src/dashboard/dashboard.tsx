@@ -109,11 +109,13 @@ function Dashboard(): React.ReactElement {
 
   useEffect(() => {
     if (!rootRef.current) return;
-    let parent = rootRef.current.parentElement;
-    while (parent) {
-      console.log(parent);
-      parent.style.justifyContent = 'start';
+    let parent = rootRef.current.parentElement?.parentElement;
+    if(parent) {
+      parent.style.overflowY = 'auto';
       parent = parent.parentElement;
+    }
+    if (parent) {
+      parent.style.justifyContent = 'start';
     }
   }, []);
 
