@@ -226,6 +226,23 @@ export interface FormattedTargetAssignment {
   weakenThreads: number;
 }
 
+// === BITNODE COMPLETION STATUS ===
+
+export interface BitnodeStatus {
+  augmentations: number;
+  augmentationsRequired: number;
+  money: number;
+  moneyRequired: number;
+  moneyFormatted: string;
+  moneyRequiredFormatted: string;
+  hacking: number;
+  hackingRequired: number;
+  augsComplete: boolean;
+  moneyComplete: boolean;
+  hackingComplete: boolean;
+  allComplete: boolean;
+}
+
 // === DASHBOARD STATE ===
 
 export interface DashboardState {
@@ -240,6 +257,7 @@ export interface DashboardState {
   darkwebError: string | null;
   workStatus: FormattedWorkStatus | null;
   workError: string | null;
+  bitnodeStatus: BitnodeStatus | null;
 }
 
 // === PLUGIN INTERFACE ===

@@ -20,6 +20,7 @@ import {
   FormattedHackStatus,
   FormattedDarkwebStatus,
   FormattedWorkStatus,
+  BitnodeStatus,
 } from "dashboard/types";
 import { startOptimalFactionWork } from "lib/factions";
 import { setWorkFocus, runWorkCycle, WorkFocus } from "lib/work";
@@ -256,6 +257,7 @@ interface CachedData {
   darkwebError: string | null;
   workStatus: FormattedWorkStatus | null;
   workError: string | null;
+  bitnodeStatus: BitnodeStatus | null;
   lastUpdated: Record<ToolName, number>;
 }
 
@@ -271,6 +273,7 @@ const cachedData: CachedData = {
   darkwebError: null,
   workStatus: null,
   workError: null,
+  bitnodeStatus: null,
   lastUpdated: { nuke: 0, pserv: 0, share: 0, rep: 0, hack: 0, darkweb: 0, work: 0 },
 };
 
@@ -353,6 +356,13 @@ export function setDarkwebError(error: string | null): void {
  */
 export function setWorkError(error: string | null): void {
   cachedData.workError = error;
+}
+
+/**
+ * Set the bitnode completion status.
+ */
+export function setBitnodeStatus(status: BitnodeStatus | null): void {
+  cachedData.bitnodeStatus = status;
 }
 
 // === TOOL CONTROL ===
@@ -459,5 +469,6 @@ export function getStateSnapshot(): DashboardState {
     darkwebError: cachedData.darkwebError,
     workStatus: cachedData.workStatus,
     workError: cachedData.workError,
+    bitnodeStatus: cachedData.bitnodeStatus,
   };
 }

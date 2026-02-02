@@ -36,6 +36,7 @@ export const styles = {
   // === TABS ===
   tabBar: {
     display: "flex",
+    flexWrap: "wrap",
     gap: "4px",
     marginBottom: "12px",
   } as React.CSSProperties,

@@ -29,7 +29,9 @@ import {
   setRepError,
   setDarkwebError,
   setWorkError,
+  setBitnodeStatus,
 } from "dashboard/state-store";
+import { BitnodeStatusBar, getBitnodeStatus } from "dashboard/components/BitnodeStatus";
 
 // Styles and components
 import { styles } from "dashboard/styles";
@@ -225,6 +227,7 @@ function Dashboard(): React.ReactElement {
       <div style={styles.header}>
         <h1 style={styles.title}>AUTO TOOLS DASHBOARD</h1>
       </div>
+      <BitnodeStatusBar status={state.bitnodeStatus} />
       <TabBar activeTab={activeTab} tabs={TAB_NAMES} onTabClick={handleTabClick} />
       {renderPanel()}
     </div>
@@ -272,9 +275,13 @@ function updatePluginsIfNeeded(ns: NS): void {
       });
       setCachedStatus("rep", repStatus);
       setRepError(null);
+
+      // Also update bitnode status (same Singularity dependency, same interval)
+      setBitnodeStatus(getBitnodeStatus(ns));
     } catch {
       setCachedStatus("rep", null);
       setRepError("Singularity API not available");
+      setBitnodeStatus(null);
     }
     markPluginUpdated("rep", now);
   }
@@ -304,6 +311,7 @@ function updatePluginsIfNeeded(ns: NS): void {
     }
     markPluginUpdated("work", now);
   }
+
 }
 
 // === MAIN LOOP ===
