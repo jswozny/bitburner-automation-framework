@@ -103,6 +103,14 @@ export interface FormattedRepStatus {
   pendingBackdoors: string[];
   hasUnlockedAugs: boolean;
   nonWorkableFactions: NonWorkableFactionProgress[];
+  // Sequential purchase augs (e.g., Shadows of Anarchy)
+  sequentialAugs: {
+    faction: string;
+    augName: string;
+    cost: number;
+    costFormatted: string;
+    canAfford: boolean;
+  }[];
   // Work status
   isWorkingForFaction: boolean;
   isOptimalWork: boolean;

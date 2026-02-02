@@ -18,6 +18,7 @@ import {
   calculatePurchasePriority,
   getOwnedAugs,
   getAffordableAugs,
+  getSequentialPurchaseAugs,
 } from "/lib/factions";
 
 // === TYPES ===
@@ -176,6 +177,23 @@ export async function main(ns: NS): Promise<void> {
     ns.tprint(
       `${C.yellow}${remaining} more aug${remaining > 1 ? "s" : ""} unlocked but not affordable${C.reset}`
     );
+  }
+
+  // Check for sequential purchase augs (Shadows of Anarchy, etc.)
+  const sequentialAugs = getSequentialPurchaseAugs(ns, factionData, availableMoney);
+  if (sequentialAugs.length > 0) {
+    ns.tprint("");
+    ns.tprint(`${C.magenta}${"─".repeat(70)}${C.reset}`);
+    ns.tprint(`${C.magenta}SEQUENTIAL PURCHASE ONLY (one at a time)${C.reset}`);
+    for (const item of sequentialAugs) {
+      const affordStr = item.canAfford
+        ? `${C.green}✓ Can afford${C.reset}`
+        : `${C.red}✗ Need $${ns.formatNumber(item.aug.basePrice)}${C.reset}`;
+      ns.tprint(
+        `  ${C.white}${item.aug.name}${C.reset} from ${C.cyan}${item.faction}${C.reset} - ${affordStr}`
+      );
+    }
+    ns.tprint(`${C.dim}These augs increase rep requirements after each purchase.${C.reset}`);
   }
 
   ns.tprint("");

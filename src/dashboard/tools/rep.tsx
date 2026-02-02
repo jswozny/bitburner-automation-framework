@@ -10,7 +10,7 @@ import { styles } from "dashboard/styles";
 import { ToolControl } from "dashboard/components/ToolControl";
 import { ProgressBar } from "dashboard/components/ProgressBar";
 import { getRepStatus } from "auto/auto-rep";
-import { findNextWorkableAugmentation, getNonWorkableFactionProgress, getFactionWorkStatus } from "lib/factions";
+import { findNextWorkableAugmentation, getNonWorkableFactionProgress, getFactionWorkStatus, getSequentialPurchaseAugs } from "lib/factions";
 import { formatTime } from "lib/utils";
 import { runScript, startFactionWork } from "dashboard/state-store";
 
@@ -107,6 +107,9 @@ function formatRepStatus(ns: NS, extra?: PluginContext): FormattedRepStatus | nu
       ? getFactionWorkStatus(ns, player, targetFaction)
       : { isWorkingForFaction: false, isOptimalWork: false, bestWorkType: "hacking" as const, currentWorkType: null, isWorkable: false };
 
+    // Get sequential purchase augs (Shadows of Anarchy, etc.)
+    const sequentialAugs = getSequentialPurchaseAugs(ns, raw.factionData, playerMoney);
+
     return {
       targetFaction,
       nextAugName: target?.aug?.name ?? null,
@@ -143,6 +146,14 @@ function formatRepStatus(ns: NS, extra?: PluginContext): FormattedRepStatus | nu
         progress: item.progress,
         currentRep: ns.formatNumber(item.faction.currentRep),
         requiredRep: ns.formatNumber(item.nextAug.repReq),
+      })),
+      // Sequential purchase augs
+      sequentialAugs: sequentialAugs.map(item => ({
+        faction: item.faction,
+        augName: item.aug.name,
+        cost: item.aug.basePrice,
+        costFormatted: ns.formatNumber(item.aug.basePrice),
+        canAfford: item.canAfford,
       })),
       // Work status
       isWorkingForFaction: workStatus.isWorkingForFaction,
@@ -462,6 +473,37 @@ function RepDetailPanel({ status, error, running, toolId, pid }: DetailPanelProp
               )}
             </tbody>
           </table>
+        </div>
+      )}
+
+      {/* Sequential Purchase Augs (Shadows of Anarchy, etc.) */}
+      {status.sequentialAugs.length > 0 && (
+        <div style={{
+          ...styles.card,
+          backgroundColor: "rgba(255, 170, 0, 0.1)",
+          borderLeft: "3px solid #ffaa00",
+          marginTop: "8px",
+        }}>
+          <div style={{ color: "#ffaa00", fontSize: "11px", marginBottom: "6px" }}>
+            SEQUENTIAL ONLY (one at a time)
+          </div>
+          {status.sequentialAugs.map((item, i) => (
+            <div key={i} style={{ display: "flex", justifyContent: "space-between", marginBottom: "4px" }}>
+              <span style={{ color: "#fff", fontSize: "11px" }}>
+                {item.augName.substring(0, 28)}
+              </span>
+              <span style={{ fontSize: "11px" }}>
+                <span style={{ color: "#888" }}>{item.faction}</span>
+                {" - "}
+                <span style={{ color: item.canAfford ? "#00ff00" : "#ff4444" }}>
+                  {item.canAfford ? "✓" : "✗"} ${item.costFormatted}
+                </span>
+              </span>
+            </div>
+          ))}
+          <div style={{ color: "#888", fontSize: "10px", marginTop: "4px" }}>
+            Rep requirement increases after each purchase
+          </div>
         </div>
       )}
     </div>

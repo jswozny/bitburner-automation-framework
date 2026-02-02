@@ -19,6 +19,14 @@ export const NON_WORKABLE_FACTIONS = new Set([
   "Church of the Machine God", // Special faction
 ]);
 
+/**
+ * Factions where augs must be purchased one at a time
+ * (rep requirement increases after each purchase)
+ */
+export const SEQUENTIAL_PURCHASE_FACTIONS = new Set([
+  "Shadows of Anarchy",
+]);
+
 // === TYPES ===
 
 export interface AugmentationInfo {
@@ -188,6 +196,7 @@ export function getNonWorkableFactionProgress(factionData: FactionData[]): {
  * Calculate optimal purchase priority across all factions
  * Only includes augs where we have the required reputation
  * Sorted by base price descending (most expensive first minimizes total cost)
+ * Excludes factions that require sequential purchases (like Shadows of Anarchy)
  */
 export function calculatePurchasePriority(
   ns: NS,
@@ -198,6 +207,9 @@ export function calculatePurchasePriority(
   const seen = new Set<string>();
 
   for (const faction of factionData) {
+    // Skip factions that require sequential purchases
+    if (SEQUENTIAL_PURCHASE_FACTIONS.has(faction.name)) continue;
+
     for (const aug of faction.availableAugs) {
       if (seen.has(aug.name)) continue;
       seen.add(aug.name);
@@ -303,6 +315,45 @@ export function getAffordableAugs(
   }
 
   return affordable;
+}
+
+// === SEQUENTIAL PURCHASE FACTIONS (e.g., Shadows of Anarchy) ===
+
+export interface SequentialAugInfo {
+  faction: string;
+  aug: AugmentationInfo;
+  canAfford: boolean;
+}
+
+/**
+ * Get available augs from sequential-purchase factions (one at a time only)
+ * Returns only the NEXT aug that can be purchased from each such faction
+ */
+export function getSequentialPurchaseAugs(
+  ns: NS,
+  factionData: FactionData[],
+  playerMoney: number
+): SequentialAugInfo[] {
+  const results: SequentialAugInfo[] = [];
+
+  for (const faction of factionData) {
+    if (!SEQUENTIAL_PURCHASE_FACTIONS.has(faction.name)) continue;
+
+    // Find the first aug we have rep for (they're sorted by rep requirement)
+    const nextAug = faction.availableAugs.find(
+      (aug) => faction.currentRep >= aug.repReq
+    );
+
+    if (nextAug) {
+      results.push({
+        faction: faction.name,
+        aug: nextAug,
+        canAfford: playerMoney >= nextAug.basePrice,
+      });
+    }
+  }
+
+  return results;
 }
 
 // === WORK STATUS ===
