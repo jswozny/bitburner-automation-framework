@@ -15,6 +15,41 @@ import { getPservStatus } from "lib/pserv";
 function formatPservStatus(ns: NS): FormattedPservStatus {
   const raw = getPservStatus(ns);
 
+  // Calculate maxed count
+  const servers = raw.servers.map(hostname => {
+    const ram = ns.getServerMaxRam(hostname);
+    return {
+      hostname,
+      ram,
+      ramFormatted: ns.formatRam(ram),
+    };
+  });
+
+  const maxedCount = servers.filter(s => s.ram >= raw.maxPossibleRam).length;
+  const upgradeProgress = raw.serverCount > 0
+    ? `${maxedCount}/${raw.serverCount} at max`
+    : "No servers";
+
+  // Calculate next upgrade info
+  let nextUpgrade: FormattedPservStatus["nextUpgrade"] = null;
+  if (!raw.allMaxed && raw.serverCount > 0) {
+    // Find smallest server
+    const smallest = servers.reduce((min, s) => s.ram < min.ram ? s : min);
+    if (smallest.ram < raw.maxPossibleRam) {
+      const nextRam = smallest.ram * 2;
+      const cost = ns.getPurchasedServerUpgradeCost(smallest.hostname, nextRam);
+      const playerMoney = ns.getServerMoneyAvailable("home");
+      nextUpgrade = {
+        hostname: smallest.hostname,
+        currentRam: ns.formatRam(smallest.ram),
+        nextRam: ns.formatRam(nextRam),
+        cost,
+        costFormatted: ns.formatNumber(cost),
+        canAfford: playerMoney >= cost,
+      };
+    }
+  }
+
   return {
     serverCount: raw.serverCount,
     serverCap: raw.serverCap,
@@ -24,25 +59,20 @@ function formatPservStatus(ns: NS): FormattedPservStatus {
     maxPossibleRam: ns.formatRam(raw.maxPossibleRam),
     allMaxed: raw.allMaxed,
     maxPossibleRamNum: raw.maxPossibleRam,
-    servers: raw.servers.map(hostname => {
-      const ram = ns.getServerMaxRam(hostname);
-      return {
-        hostname,
-        ram,
-        ramFormatted: ns.formatRam(ram),
-      };
-    }),
+    servers,
+    upgradeProgress,
+    nextUpgrade,
   };
 }
 
 // === COMPONENTS ===
 
-function PservOverviewCard({ status, running, toolId }: OverviewCardProps<FormattedPservStatus>): React.ReactElement {
+function PservOverviewCard({ status, running, toolId, pid }: OverviewCardProps<FormattedPservStatus>): React.ReactElement {
   return (
     <div style={styles.card}>
       <div style={styles.cardTitle}>
         <span>PSERV</span>
-        <ToolControl tool={toolId} running={running} />
+        <ToolControl tool={toolId} running={running} pid={pid} />
       </div>
       {status && (
         <>
@@ -59,7 +89,7 @@ function PservOverviewCard({ status, running, toolId }: OverviewCardProps<Format
           <div style={styles.stat}>
             <span style={styles.statLabel}>Status</span>
             <span style={status.allMaxed ? styles.statHighlight : styles.statValue}>
-              {status.allMaxed ? "MAXED" : `${status.minRam} - ${status.maxRam}`}
+              {status.allMaxed ? "ALL MAXED" : status.upgradeProgress}
             </span>
           </div>
         </>
@@ -72,6 +102,15 @@ interface ServerCellProps {
   server: { hostname: string; ram: number; ramFormatted: string } | null;
   maxRam: number;
   index: number;
+}
+
+/**
+ * Format RAM in a compact way for display in cells
+ */
+function formatCompactRam(ram: number): string {
+  if (ram >= 1024 * 1024) return `${Math.round(ram / (1024 * 1024))}P`;
+  if (ram >= 1024) return `${Math.round(ram / 1024)}T`;
+  return `${ram}G`;
 }
 
 function ServerCell({ server, maxRam, index }: ServerCellProps): React.ReactElement {
@@ -89,6 +128,7 @@ function ServerCell({ server, maxRam, index }: ServerCellProps): React.ReactElem
   // Calculate fill percentage using log scale
   const fillPercent = Math.round((Math.log2(server.ram) / Math.log2(maxRam)) * 100);
   const isMaxed = server.ram >= maxRam;
+  const compactRam = formatCompactRam(server.ram);
 
   return (
     <div
@@ -104,13 +144,21 @@ function ServerCell({ server, maxRam, index }: ServerCellProps): React.ReactElem
         height: `${fillPercent}%`,
         backgroundColor: isMaxed ? "#00aa00" : "#006600",
       }} />
-      {/* Star on top for maxed servers */}
-      {isMaxed && <span style={{ position: "relative", zIndex: 1 }}>★</span>}
+      {/* RAM text or star for maxed servers */}
+      <span style={{
+        position: "relative",
+        zIndex: 1,
+        fontSize: "9px",
+        fontWeight: "bold",
+        textShadow: "0 0 3px #000, 0 0 3px #000",
+      }}>
+        {isMaxed ? "★" : compactRam}
+      </span>
     </div>
   );
 }
 
-function PservDetailPanel({ status, running, toolId }: DetailPanelProps<FormattedPservStatus>): React.ReactElement {
+function PservDetailPanel({ status, running, toolId, pid }: DetailPanelProps<FormattedPservStatus>): React.ReactElement {
   if (!status) {
     return <div style={styles.panel}>Loading pserv status...</div>;
   }
@@ -137,7 +185,7 @@ function PservDetailPanel({ status, running, toolId }: DetailPanelProps<Formatte
             <span style={styles.statHighlight}>{status.totalRam}</span>
           </span>
         </div>
-        <ToolControl tool={toolId} running={running} />
+        <ToolControl tool={toolId} running={running} pid={pid} />
       </div>
 
       {/* 5x5 Server Grid */}
@@ -191,11 +239,29 @@ function PservDetailPanel({ status, running, toolId }: DetailPanelProps<Formatte
           <div style={styles.stat}>
             <span style={styles.statLabel}>Status</span>
             <span style={status.allMaxed ? styles.statHighlight : styles.statValue}>
-              {status.allMaxed ? "ALL MAXED" : "Upgrading..."}
+              {status.allMaxed ? "ALL MAXED" : status.upgradeProgress}
             </span>
           </div>
         </div>
       </div>
+
+      {/* Next Upgrade Info */}
+      {status.nextUpgrade && (
+        <div style={styles.card}>
+          <div style={styles.stat}>
+            <span style={styles.statLabel}>Next Upgrade</span>
+            <span style={styles.statValue}>
+              {status.nextUpgrade.hostname}: {status.nextUpgrade.currentRam} → {status.nextUpgrade.nextRam}
+            </span>
+          </div>
+          <div style={styles.stat}>
+            <span style={styles.statLabel}>Cost</span>
+            <span style={status.nextUpgrade.canAfford ? styles.statHighlight : { color: "#ff4444" }}>
+              {status.nextUpgrade.canAfford ? "✓" : "✗"} ${status.nextUpgrade.costFormatted}
+            </span>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

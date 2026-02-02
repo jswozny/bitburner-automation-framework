@@ -40,9 +40,6 @@ const ACTION_COLORS: Record<HackAction, string> = {
   weaken: "#0088ff",
 };
 
-// Maximum targets to display in the UI
-const MAX_DISPLAY = 15;
-
 // === RUNNING JOBS SCANNING ===
 
 interface RunningJobs {
@@ -194,9 +191,8 @@ function formatHackStatus(ns: NS): FormattedHackStatus | null {
 
     const formattedTargets: FormattedTargetAssignment[] = [];
 
-    // Show top targets by value, with their running job info
-    const displayCount = Math.min(targets.length, MAX_DISPLAY);
-    for (let i = 0; i < displayCount; i++) {
+    // Show all targets by value, with their running job info
+    for (let i = 0; i < targets.length; i++) {
       const target = targets[i];
       const jobs = runningJobs[target.hostname] || { hack: 0, grow: 0, weaken: 0, earliestCompletion: null };
       const server = ns.getServer(target.hostname);
@@ -271,8 +267,8 @@ function formatHackStatus(ns: NS): FormattedHackStatus | null {
     // Count active targets (those with running jobs)
     const activeTargets = formattedTargets.filter(t => t.totalThreads > 0).length;
 
-    // Calculate saturation (targets with jobs / display count)
-    const saturationPercent = displayCount > 0 ? (activeTargets / displayCount) * 100 : 0;
+    // Calculate saturation (targets with jobs / total targets)
+    const saturationPercent = targets.length > 0 ? (activeTargets / targets.length) * 100 : 0;
 
     return {
       totalRam: ns.formatRam(totalRam),
@@ -298,12 +294,12 @@ function formatHackStatus(ns: NS): FormattedHackStatus | null {
 
 // === COMPONENTS ===
 
-function HackOverviewCard({ status, running, toolId }: OverviewCardProps<FormattedHackStatus>): React.ReactElement {
+function HackOverviewCard({ status, running, toolId, pid }: OverviewCardProps<FormattedHackStatus>): React.ReactElement {
   return (
     <div style={styles.card}>
       <div style={styles.cardTitle}>
         <span>HACK</span>
-        <ToolControl tool={toolId} running={running} />
+        <ToolControl tool={toolId} running={running} pid={pid} />
       </div>
       {status ? (
         <>
@@ -333,11 +329,11 @@ function HackOverviewCard({ status, running, toolId }: OverviewCardProps<Formatt
   );
 }
 
-function HackDetailPanel({ status, running, toolId }: DetailPanelProps<FormattedHackStatus>): React.ReactElement {
+function HackDetailPanel({ status, running, toolId, pid }: DetailPanelProps<FormattedHackStatus>): React.ReactElement {
   if (!status) {
     return (
       <div style={styles.panel}>
-        <ToolControl tool={toolId} running={running} />
+        <ToolControl tool={toolId} running={running} pid={pid} />
         <div style={{ ...styles.dim, marginTop: "12px" }}>No hackable targets found</div>
       </div>
     );
@@ -372,7 +368,7 @@ function HackDetailPanel({ status, running, toolId }: DetailPanelProps<Formatted
             <span style={styles.statValue}>{status.serverCount}</span>
           </span>
         </div>
-        <ToolControl tool={toolId} running={running} />
+        <ToolControl tool={toolId} running={running} pid={pid} />
       </div>
 
       {/* Expected Money Display */}
@@ -421,81 +417,76 @@ function HackDetailPanel({ status, running, toolId }: DetailPanelProps<Formatted
       {status.targets.length > 0 && (
         <div style={styles.section}>
           <div style={styles.sectionTitle}>
-            TOP TARGETS BY VALUE
+            TARGETS BY VALUE
             <span style={{ ...styles.dim, marginLeft: "8px", fontWeight: "normal" }}>
               {status.activeTargets} active | {status.totalTargets} total
             </span>
           </div>
-          <table style={styles.table}>
-            <thead>
-              <tr>
-                <th style={{ ...styles.tableHeader, width: "24px" }}>#</th>
-                <th style={styles.tableHeader}>Target</th>
-                <th style={{ ...styles.tableHeader, width: "70px" }}>Action</th>
-                <th style={{ ...styles.tableHeader, textAlign: "right", width: "70px" }}>Threads</th>
-                <th style={{ ...styles.tableHeader, textAlign: "right", width: "80px" }}>Expected</th>
-                <th style={{ ...styles.tableHeader, textAlign: "right", width: "60px" }}>Money</th>
-                <th style={{ ...styles.tableHeader, textAlign: "right", width: "50px" }}>Sec</th>
-                <th style={{ ...styles.tableHeader, textAlign: "right", width: "70px" }}>ETA</th>
-              </tr>
-            </thead>
-            <tbody>
-              {status.targets.slice(0, 12).map((target, i) => {
-                const rowStyle = i % 2 === 0 ? styles.tableRow : styles.tableRowAlt;
-                const hasJobs = target.totalThreads > 0;
-
-                return (
-                  <tr key={target.hostname} style={rowStyle}>
-                    <td style={{ ...styles.tableCell, color: "#888" }}>{target.rank}</td>
-                    <td style={{ ...styles.tableCell, color: hasJobs ? "#00ffff" : "#666" }}>
-                      {target.hostname.substring(0, 16)}
-                    </td>
-                    <td style={{ ...styles.tableCell, color: hasJobs ? ACTION_COLORS[target.action] : "#666" }}>
-                      {target.action.toUpperCase()}
-                    </td>
-                    <td style={{
-                      ...styles.tableCell,
-                      textAlign: "right",
-                      color: hasJobs ? "#00ff00" : "#666",
-                    }}>
-                      {hasJobs ? target.totalThreads.toLocaleString() : "-"}
-                    </td>
-                    <td style={{
-                      ...styles.tableCell,
-                      textAlign: "right",
-                      color: target.expectedMoney > 0 ? "#00ff00" : "#666",
-                    }}>
-                      {target.expectedMoneyFormatted}
-                    </td>
-                    <td style={{
-                      ...styles.tableCell,
-                      textAlign: "right",
-                      color: getMoneyColor(target.moneyPercent),
-                    }}>
-                      {target.moneyPercent.toFixed(0)}%
-                    </td>
-                    <td style={{
-                      ...styles.tableCell,
-                      textAlign: "right",
-                      color: getSecurityColor(target.securityClean, target.securityDelta),
-                    }}>
-                      {target.securityDelta}
-                    </td>
-                    <td style={{ ...styles.tableCell, textAlign: "right", color: "#888" }}>
-                      {target.completionEta || target.eta}
-                    </td>
-                  </tr>
-                );
-              })}
-              {status.targets.length > 12 && (
-                <tr style={styles.tableRowAlt}>
-                  <td style={{ ...styles.tableCell, ...styles.dim }} colSpan={8}>
-                    ... +{status.targets.length - 12} more
-                  </td>
+          <div style={{ maxHeight: "400px", overflowY: "auto" }}>
+            <table style={styles.table}>
+              <thead>
+                <tr>
+                  <th style={{ ...styles.tableHeader, width: "24px" }}>#</th>
+                  <th style={styles.tableHeader}>Target</th>
+                  <th style={{ ...styles.tableHeader, width: "70px" }}>Action</th>
+                  <th style={{ ...styles.tableHeader, textAlign: "right", width: "70px" }}>Threads</th>
+                  <th style={{ ...styles.tableHeader, textAlign: "right", width: "80px" }}>Expected</th>
+                  <th style={{ ...styles.tableHeader, textAlign: "right", width: "60px" }}>Money</th>
+                  <th style={{ ...styles.tableHeader, textAlign: "right", width: "50px" }}>Sec</th>
+                  <th style={{ ...styles.tableHeader, textAlign: "right", width: "70px" }}>ETA</th>
                 </tr>
-              )}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {status.targets.map((target, i) => {
+                  const rowStyle = i % 2 === 0 ? styles.tableRow : styles.tableRowAlt;
+                  const hasJobs = target.totalThreads > 0;
+
+                  return (
+                    <tr key={target.hostname} style={rowStyle}>
+                      <td style={{ ...styles.tableCell, color: "#888" }}>{target.rank}</td>
+                      <td style={{ ...styles.tableCell, color: hasJobs ? "#00ffff" : "#666" }}>
+                        {target.hostname.substring(0, 16)}
+                      </td>
+                      <td style={{ ...styles.tableCell, color: hasJobs ? ACTION_COLORS[target.action] : "#666" }}>
+                        {hasJobs ? target.action.toUpperCase() : "idle"}
+                      </td>
+                      <td style={{
+                        ...styles.tableCell,
+                        textAlign: "right",
+                        color: hasJobs ? "#00ff00" : "#666",
+                      }}>
+                        {hasJobs ? target.totalThreads.toLocaleString() : "-"}
+                      </td>
+                      <td style={{
+                        ...styles.tableCell,
+                        textAlign: "right",
+                        color: target.expectedMoney > 0 ? "#00ff00" : "#666",
+                      }}>
+                        {target.expectedMoneyFormatted}
+                      </td>
+                      <td style={{
+                        ...styles.tableCell,
+                        textAlign: "right",
+                        color: getMoneyColor(target.moneyPercent),
+                      }}>
+                        {target.moneyPercent.toFixed(0)}%
+                      </td>
+                      <td style={{
+                        ...styles.tableCell,
+                        textAlign: "right",
+                        color: getSecurityColor(target.securityClean, target.securityDelta),
+                      }}>
+                        {target.securityDelta}
+                      </td>
+                      <td style={{ ...styles.tableCell, textAlign: "right", color: "#888" }}>
+                        {target.completionEta || target.eta}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
         </div>
       )}
 

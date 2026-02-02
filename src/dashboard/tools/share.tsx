@@ -10,37 +10,92 @@ import { styles } from "dashboard/styles";
 import { ToolControl } from "dashboard/components/ToolControl";
 import { getShareStatus, DEFAULT_SHARE_SCRIPT } from "lib/share";
 
+// === CYCLE TRACKING STATE (module-level) ===
+
+const GRACE_PERIOD_MS = 2000; // 2 second grace period between share() cycles
+
+let lastKnownThreads = 0;
+let lastKnownThreadsFormatted = "0";
+let lastSeenTime = 0;
+let lastServerStats: { hostname: string; threads: string }[] = [];
+
 // === STATUS FORMATTING ===
 
 function formatShareStatus(ns: NS): FormattedShareStatus {
   const raw = getShareStatus(ns, DEFAULT_SHARE_SCRIPT);
+  const now = Date.now();
 
-  return {
-    totalThreads: raw.totalThreads.toLocaleString(),
-    sharePower: `${raw.sharePower.toFixed(3)}x`,
-    shareRam: ns.formatRam(raw.shareRam),
-    serversWithShare: raw.serversWithShare,
-    serverStats: raw.serverStats.map(s => ({
+  // Determine cycle status
+  let cycleStatus: "active" | "cycle" | "idle";
+  let displayThreads: string;
+  let displayLastKnown: string;
+
+  if (raw.totalThreads > 0) {
+    // Active - update tracking
+    lastKnownThreads = raw.totalThreads;
+    lastKnownThreadsFormatted = raw.totalThreads.toLocaleString();
+    lastSeenTime = now;
+    lastServerStats = raw.serverStats.map(s => ({
       hostname: s.hostname,
       threads: s.threads.toLocaleString(),
-    })),
+    }));
+
+    cycleStatus = "active";
+    displayThreads = lastKnownThreadsFormatted;
+    displayLastKnown = lastKnownThreadsFormatted;
+  } else if (lastKnownThreads > 0 && (now - lastSeenTime) < GRACE_PERIOD_MS) {
+    // Within grace period - show last known with cycle indicator
+    cycleStatus = "cycle";
+    displayThreads = lastKnownThreadsFormatted;
+    displayLastKnown = lastKnownThreadsFormatted;
+  } else {
+    // Idle - no active threads and past grace period
+    cycleStatus = "idle";
+    displayThreads = "0";
+    displayLastKnown = lastKnownThreads > 0 ? lastKnownThreadsFormatted : "0";
+    // Reset tracking when truly idle for a while
+    if (now - lastSeenTime > GRACE_PERIOD_MS * 2) {
+      lastKnownThreads = 0;
+      lastKnownThreadsFormatted = "0";
+    }
+  }
+
+  // Use last known server stats during cycle, otherwise use current
+  const serverStats = cycleStatus === "cycle" ? lastServerStats : raw.serverStats.map(s => ({
+    hostname: s.hostname,
+    threads: s.threads.toLocaleString(),
+  }));
+
+  return {
+    totalThreads: displayThreads,
+    sharePower: `${raw.sharePower.toFixed(3)}x`,
+    shareRam: ns.formatRam(raw.shareRam),
+    serversWithShare: cycleStatus === "cycle" ? lastServerStats.length : raw.serversWithShare,
+    serverStats,
+    cycleStatus,
+    lastKnownThreads: displayLastKnown,
   };
 }
 
 // === COMPONENTS ===
 
-function ShareOverviewCard({ status, running, toolId }: OverviewCardProps<FormattedShareStatus>): React.ReactElement {
+function ShareOverviewCard({ status, running, toolId, pid }: OverviewCardProps<FormattedShareStatus>): React.ReactElement {
   return (
     <div style={styles.card}>
       <div style={styles.cardTitle}>
         <span>SHARE</span>
-        <ToolControl tool={toolId} running={running} />
+        <ToolControl tool={toolId} running={running} pid={pid} />
       </div>
       {status && (
         <>
           <div style={styles.stat}>
             <span style={styles.statLabel}>Threads</span>
-            <span style={styles.statHighlight}>{status.totalThreads}</span>
+            <span style={styles.statHighlight}>
+              {status.totalThreads}
+              {status.cycleStatus === "cycle" && (
+                <span style={{ color: "#ffaa00", marginLeft: "4px" }}>(cycle)</span>
+              )}
+            </span>
           </div>
           <div style={styles.stat}>
             <span style={styles.statLabel}>Share Power</span>
@@ -56,7 +111,7 @@ function ShareOverviewCard({ status, running, toolId }: OverviewCardProps<Format
   );
 }
 
-function ShareDetailPanel({ status, running, toolId }: DetailPanelProps<FormattedShareStatus>): React.ReactElement {
+function ShareDetailPanel({ status, running, toolId, pid }: DetailPanelProps<FormattedShareStatus>): React.ReactElement {
   if (!status) {
     return <div style={styles.panel}>Loading share status...</div>;
   }
@@ -67,7 +122,12 @@ function ShareDetailPanel({ status, running, toolId }: DetailPanelProps<Formatte
         <div style={styles.rowLeft}>
           <span>
             <span style={styles.statLabel}>Threads: </span>
-            <span style={styles.statHighlight}>{status.totalThreads}</span>
+            <span style={styles.statHighlight}>
+              {status.totalThreads}
+              {status.cycleStatus === "cycle" && (
+                <span style={{ color: "#ffaa00", marginLeft: "4px" }}>(cycle)</span>
+              )}
+            </span>
           </span>
           <span style={styles.dim}>|</span>
           <span>
@@ -75,7 +135,7 @@ function ShareDetailPanel({ status, running, toolId }: DetailPanelProps<Formatte
             <span style={styles.statHighlight}>{status.sharePower}</span>
           </span>
         </div>
-        <ToolControl tool={toolId} running={running} />
+        <ToolControl tool={toolId} running={running} pid={pid} />
       </div>
 
       <div style={styles.card}>

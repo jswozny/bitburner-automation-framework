@@ -11,6 +11,41 @@ import { ToolControl } from "dashboard/components/ToolControl";
 import { ProgressBar } from "dashboard/components/ProgressBar";
 import { getRepStatus } from "auto/auto-rep";
 import { formatTime } from "lib/utils";
+import { runScript } from "dashboard/state-store";
+
+// === REP TRACKING STATE (module-level) ===
+
+let lastRep = 0;
+let lastRepTime = Date.now();
+let repGainRate = 0;
+let lastTargetFaction = "";
+
+// === FACTION BACKDOOR SERVERS ===
+
+const FACTION_BACKDOOR_SERVERS: Record<string, string> = {
+  "CyberSec": "CSEC",
+  "NiteSec": "avmnite-02h",
+  "The Black Hand": "I.I.I.I",
+  "BitRunners": "run4theh111z",
+};
+
+/**
+ * Get list of faction servers that need backdoors installed
+ */
+function getPendingBackdoors(ns: NS): string[] {
+  const pending: string[] = [];
+  for (const [faction, server] of Object.entries(FACTION_BACKDOOR_SERVERS)) {
+    try {
+      const serverObj = ns.getServer(server);
+      if (serverObj.hasAdminRights && !serverObj.backdoorInstalled) {
+        pending.push(faction);
+      }
+    } catch {
+      // Server might not exist or not be accessible
+    }
+  }
+  return pending;
+}
 
 // === STATUS FORMATTING ===
 
@@ -25,9 +60,25 @@ function formatRepStatus(ns: NS, extra?: PluginContext): FormattedRepStatus | nu
     const repGap = Math.max(0, repRequired - currentRep);
     const repProgress = repRequired > 0 ? Math.min(1, currentRep / repRequired) : 0;
 
-    const repGainRate = extra?.repGainRate ?? 0;
     const favorToUnlock = extra?.favorToUnlock ?? 150;
     const playerMoney = extra?.playerMoney ?? player.money;
+
+    // Update rep gain rate tracking internally
+    const now = Date.now();
+    const targetFaction = target?.faction?.name ?? "None";
+
+    if (targetFaction !== "None") {
+      if (lastRep > 0 && lastTargetFaction === targetFaction) {
+        const timeDelta = (now - lastRepTime) / 1000;
+        if (timeDelta > 0) {
+          const repDelta = currentRep - lastRep;
+          repGainRate = repGainRate * 0.7 + (repDelta / timeDelta) * 0.3;
+        }
+      }
+      lastRep = currentRep;
+      lastRepTime = now;
+      lastTargetFaction = targetFaction;
+    }
 
     // Calculate ETA
     let eta = "???";
@@ -39,8 +90,14 @@ function formatRepStatus(ns: NS, extra?: PluginContext): FormattedRepStatus | nu
 
     const nextAugCost = target?.aug?.basePrice ?? 0;
 
+    // Get pending backdoors
+    const pendingBackdoors = getPendingBackdoors(ns);
+
+    // Check if there are unlocked augs to buy
+    const hasUnlockedAugs = raw.purchasePlan.length > 0;
+
     return {
-      targetFaction: target?.faction?.name ?? "None",
+      targetFaction,
       nextAugName: target?.aug?.name ?? null,
       repRequired,
       repRequiredFormatted: ns.formatNumber(repRequired),
@@ -67,6 +124,8 @@ function formatRepStatus(ns: NS, extra?: PluginContext): FormattedRepStatus | nu
       canAffordNextAug: playerMoney >= nextAugCost,
       favor: target?.faction?.favor ?? 0,
       favorToUnlock,
+      pendingBackdoors,
+      hasUnlockedAugs,
     };
   } catch {
     return null;
@@ -75,12 +134,12 @@ function formatRepStatus(ns: NS, extra?: PluginContext): FormattedRepStatus | nu
 
 // === COMPONENTS ===
 
-function RepOverviewCard({ status, running, toolId, error }: OverviewCardProps<FormattedRepStatus>): React.ReactElement {
+function RepOverviewCard({ status, running, toolId, error, pid }: OverviewCardProps<FormattedRepStatus>): React.ReactElement {
   return (
     <div style={styles.card}>
       <div style={styles.cardTitle}>
         <span>REP</span>
-        <ToolControl tool={toolId} running={running} error={!!error} />
+        <ToolControl tool={toolId} running={running} error={!!error} pid={pid} />
       </div>
       {error ? (
         <div style={{ color: "#ffaa00", fontSize: "11px" }}>{error}</div>
@@ -106,11 +165,11 @@ function RepOverviewCard({ status, running, toolId, error }: OverviewCardProps<F
   );
 }
 
-function RepDetailPanel({ status, error, running, toolId }: DetailPanelProps<FormattedRepStatus>): React.ReactElement {
+function RepDetailPanel({ status, error, running, toolId, pid }: DetailPanelProps<FormattedRepStatus>): React.ReactElement {
   if (error) {
     return (
       <div style={styles.panel}>
-        <ToolControl tool={toolId} running={running} error={true} />
+        <ToolControl tool={toolId} running={running} error={true} pid={pid} />
         <div style={{ color: "#ffaa00", marginTop: "12px" }}>{error}</div>
         <div style={{ ...styles.dim, marginTop: "8px", fontSize: "11px" }}>
           Requires Singularity API (Source-File 4)
@@ -131,6 +190,14 @@ function RepDetailPanel({ status, error, running, toolId }: DetailPanelProps<For
   });
   const totalCost = runningTotal;
 
+  const handleBuyAugs = () => {
+    runScript("rep", "factions/rep-purchase.js", ["--confirm"]);
+  };
+
+  const handleBackdoors = () => {
+    runScript("rep", "factions/faction-backdoors.js", []);
+  };
+
   return (
     <div style={styles.panel}>
       {/* Header */}
@@ -148,8 +215,41 @@ function RepDetailPanel({ status, error, running, toolId }: DetailPanelProps<For
             </span>
           </span>
         </div>
-        <ToolControl tool={toolId} running={running} />
+        <ToolControl tool={toolId} running={running} pid={pid} />
       </div>
+
+      {/* Action Buttons */}
+      {(status.hasUnlockedAugs || status.pendingBackdoors.length > 0) && (
+        <div style={{ display: "flex", gap: "8px", marginBottom: "8px" }}>
+          {status.hasUnlockedAugs && (
+            <button
+              style={{
+                ...styles.buttonPlay,
+                marginLeft: 0,
+                padding: "4px 12px",
+              }}
+              onClick={handleBuyAugs}
+            >
+              Buy Augs ({status.purchasePlan.length})
+            </button>
+          )}
+          {status.pendingBackdoors.length > 0 && (
+            <button
+              style={{
+                ...styles.buttonPlay,
+                marginLeft: 0,
+                padding: "4px 12px",
+                backgroundColor: "#004455",
+                color: "#00ffff",
+              }}
+              onClick={handleBackdoors}
+              title={status.pendingBackdoors.join(", ")}
+            >
+              Backdoors ({status.pendingBackdoors.length})
+            </button>
+          )}
+        </div>
+      )}
 
       {/* Next Unlock Section */}
       {status.nextAugName && (

@@ -12,7 +12,7 @@
 import React from "lib/react";
 import { NS } from "@ns";
 
-const { useState, useEffect } = React;
+const { useState, useEffect, useRef } = React;
 
 // Types and state
 import { DashboardState } from "dashboard/types";
@@ -27,6 +27,7 @@ import {
   markPluginUpdated,
   setCachedStatus,
   setRepError,
+  setDarkwebError,
 } from "dashboard/state-store";
 
 // Styles and components
@@ -39,8 +40,9 @@ import { pservPlugin } from "dashboard/tools/pserv";
 import { sharePlugin } from "dashboard/tools/share";
 import { repPlugin } from "dashboard/tools/rep";
 import { hackPlugin } from "dashboard/tools/hack";
+import { darkwebPlugin } from "dashboard/tools/darkweb";
 
-const TAB_NAMES = ["Overview", "Hack", "Nuke", "Pserv", "Share", "Rep"];
+const TAB_NAMES = ["Overview", "Hack", "Nuke", "Pserv", "Share", "Rep", "Darkweb"];
 
 // === OVERVIEW PANEL ===
 
@@ -49,7 +51,7 @@ interface OverviewPanelProps {
 }
 
 function OverviewPanel({ state }: OverviewPanelProps): React.ReactElement {
-  const { pids, repError } = state;
+  const { pids, repError, darkwebError } = state;
 
   return (
     <div style={styles.panel}>
@@ -58,27 +60,39 @@ function OverviewPanel({ state }: OverviewPanelProps): React.ReactElement {
             status={state.hackStatus}
             running={pids.hack > 0}
             toolId="hack"
+            pid={pids.hack}
         />
         <nukePlugin.OverviewCard
           status={state.nukeStatus}
           running={pids.nuke > 0}
           toolId="nuke"
+          pid={pids.nuke}
         />
         <pservPlugin.OverviewCard
           status={state.pservStatus}
           running={pids.pserv > 0}
           toolId="pserv"
+          pid={pids.pserv}
         />
         <sharePlugin.OverviewCard
           status={state.shareStatus}
           running={pids.share > 0}
           toolId="share"
+          pid={pids.share}
         />
         <repPlugin.OverviewCard
           status={state.repStatus}
           running={pids.rep > 0}
           toolId="rep"
           error={repError}
+          pid={pids.rep}
+        />
+        <darkwebPlugin.OverviewCard
+          status={state.darkwebStatus}
+          running={pids.darkweb > 0}
+          toolId="darkweb"
+          error={darkwebError}
+          pid={pids.darkweb}
         />
       </div>
     </div>
@@ -91,12 +105,23 @@ function Dashboard(): React.ReactElement {
   // React state - polls module-level state and triggers re-renders
   const [state, setState] = useState<DashboardState>(getStateSnapshot());
   const [activeTab, setActiveTabLocal] = useState<number>(getActiveTab());
+  const rootRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!rootRef.current) return;
+    let parent = rootRef.current.parentElement;
+    while (parent) {
+      console.log(parent);
+      parent.style.justifyContent = 'start';
+      parent = parent.parentElement;
+    }
+  }, []);
 
   // Poll module-level state every 200ms
   useEffect(() => {
     const intervalId = setInterval(() => {
       setState(getStateSnapshot());
-      setActiveTabLocal(getActiveTab());
+      //setActiveTabLocal(getActiveTab());
     }, 200);
 
     // Cleanup on unmount (script termination)
@@ -119,6 +144,7 @@ function Dashboard(): React.ReactElement {
                 status={state.hackStatus}
                 running={state.pids.hack > 0}
                 toolId="hack"
+                pid={state.pids.hack}
             />
         );
       case 2:
@@ -127,6 +153,7 @@ function Dashboard(): React.ReactElement {
             status={state.nukeStatus}
             running={state.pids.nuke > 0}
             toolId="nuke"
+            pid={state.pids.nuke}
           />
         );
       case 3:
@@ -135,6 +162,7 @@ function Dashboard(): React.ReactElement {
             status={state.pservStatus}
             running={state.pids.pserv > 0}
             toolId="pserv"
+            pid={state.pids.pserv}
           />
         );
       case 4:
@@ -143,6 +171,7 @@ function Dashboard(): React.ReactElement {
             status={state.shareStatus}
             running={state.pids.share > 0}
             toolId="share"
+            pid={state.pids.share}
           />
         );
       case 5:
@@ -152,6 +181,17 @@ function Dashboard(): React.ReactElement {
             running={state.pids.rep > 0}
             toolId="rep"
             error={state.repError}
+            pid={state.pids.rep}
+          />
+        );
+      case 6:
+        return (
+          <darkwebPlugin.DetailPanel
+            status={state.darkwebStatus}
+            running={state.pids.darkweb > 0}
+            toolId="darkweb"
+            error={state.darkwebError}
+            pid={state.pids.darkweb}
           />
         );
       default:
@@ -160,7 +200,7 @@ function Dashboard(): React.ReactElement {
   };
 
   return (
-    <div style={styles.container}>
+    <div ref={rootRef} style={styles.container}>
       <div style={styles.header}>
         <h1 style={styles.title}>AUTO TOOLS DASHBOARD</h1>
       </div>
@@ -171,12 +211,6 @@ function Dashboard(): React.ReactElement {
 }
 
 // === PLUGIN UPDATE LOGIC ===
-
-// Rep gain rate tracking (module-level, persists across calls)
-let lastRep = 0;
-let lastRepTime = Date.now();
-let repGainRate = 0;
-let lastTargetFaction = "";
 
 function updatePluginsIfNeeded(ns: NS): void {
   const now = Date.now();
@@ -205,47 +239,36 @@ function updatePluginsIfNeeded(ns: NS): void {
     markPluginUpdated("hack", now);
   }
 
-  // Update rep status - requires Singularity, with rep gain tracking
+  // Update rep status - requires Singularity (rep gain tracking is now in rep.tsx)
   if (shouldUpdatePlugin("rep", now)) {
     try {
       const player = ns.getPlayer();
       const favorToUnlock = ns.getFavorToDonate();
 
-      // Update rep gain rate if we have a previous measurement
       const repStatus = repPlugin.getFormattedStatus(ns, {
         playerMoney: player.money,
-        repGainRate: 0,
         favorToUnlock,
       });
-
-      if (repStatus && repStatus.targetFaction !== "None") {
-        const currentRep = repStatus.currentRep;
-
-        if (lastRep > 0 && lastTargetFaction === repStatus.targetFaction) {
-          const timeDelta = (now - lastRepTime) / 1000;
-          if (timeDelta > 0) {
-            const repDelta = currentRep - lastRep;
-            repGainRate = repGainRate * 0.7 + (repDelta / timeDelta) * 0.3;
-          }
-        }
-        lastRep = currentRep;
-        lastRepTime = now;
-        lastTargetFaction = repStatus.targetFaction;
-      }
-
-      // Re-fetch with updated rep gain rate
-      const finalRepStatus = repPlugin.getFormattedStatus(ns, {
-        playerMoney: player.money,
-        repGainRate,
-        favorToUnlock,
-      });
-      setCachedStatus("rep", finalRepStatus);
+      setCachedStatus("rep", repStatus);
       setRepError(null);
     } catch {
       setCachedStatus("rep", null);
       setRepError("Singularity API not available");
     }
     markPluginUpdated("rep", now);
+  }
+
+  // Update darkweb status - requires Singularity
+  if (shouldUpdatePlugin("darkweb", now)) {
+    try {
+      const darkwebStatus = darkwebPlugin.getFormattedStatus(ns);
+      setCachedStatus("darkweb", darkwebStatus);
+      setDarkwebError(null);
+    } catch {
+      setCachedStatus("darkweb", null);
+      setDarkwebError("Singularity API not available");
+    }
+    markPluginUpdated("darkweb", now);
   }
 }
 

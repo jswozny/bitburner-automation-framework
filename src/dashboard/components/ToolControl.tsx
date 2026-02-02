@@ -9,25 +9,37 @@ import React from "lib/react";
 import { styles } from "dashboard/styles";
 import { StatusBadge } from "dashboard/components/StatusBadge";
 import { ToolName } from "dashboard/types";
-import { writeCommand } from "dashboard/state-store";
+import { writeCommand, openToolTail } from "dashboard/state-store";
 
 export interface ToolControlProps {
   tool: ToolName;
   running: boolean;
   error?: boolean;
+  pid?: number;
 }
 
-export function ToolControl({ tool, running, error }: ToolControlProps): React.ReactElement {
+export function ToolControl({ tool, running, error, pid }: ToolControlProps): React.ReactElement {
   const handleClick = () => {
     // Write command to port - no NS context needed, port.write() is just JS
     writeCommand(tool, running ? "stop" : "start");
+  };
+
+  const handleBadgeClick = () => {
+    if (running && pid && pid > 0) {
+      openToolTail(tool);
+    }
   };
 
   const buttonStyle = running ? styles.buttonStop : styles.buttonPlay;
 
   return (
     <span style={{ display: "flex", alignItems: "center", gap: "4px" }}>
-      <StatusBadge running={running} error={error} />
+      <StatusBadge
+        running={running}
+        error={error}
+        onClick={handleBadgeClick}
+        clickable={running && !!pid && pid > 0}
+      />
       <button style={buttonStyle} onClick={handleClick}>
         {running ? "■" : "▶"}
       </button>

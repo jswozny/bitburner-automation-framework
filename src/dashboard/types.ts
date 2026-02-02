@@ -8,7 +8,7 @@ import { NS } from "@ns";
 
 // === TOOL NAMES ===
 
-export type ToolName = "nuke" | "pserv" | "share" | "rep" | "hack";
+export type ToolName = "nuke" | "pserv" | "share" | "rep" | "hack" | "darkweb";
 
 // === TOOL SCRIPTS ===
 
@@ -18,6 +18,7 @@ export const TOOL_SCRIPTS: Record<ToolName, string> = {
   share: "auto/auto-share.js",
   rep: "auto/auto-rep.js",
   hack: "hack/distributed.js",
+  darkweb: "auto/auto-buy-programs.js",
 };
 
 // === FORMATTED STATUS TYPES ===
@@ -42,6 +43,15 @@ export interface FormattedPservStatus {
   allMaxed: boolean;
   servers: { hostname: string; ram: number; ramFormatted: string }[];
   maxPossibleRamNum: number;
+  upgradeProgress: string;
+  nextUpgrade: {
+    hostname: string;
+    currentRam: string;
+    nextRam: string;
+    cost: number;
+    costFormatted: string;
+    canAfford: boolean;
+  } | null;
 }
 
 export interface FormattedShareStatus {
@@ -50,6 +60,8 @@ export interface FormattedShareStatus {
   shareRam: string;
   serversWithShare: number;
   serverStats: { hostname: string; threads: string }[];
+  cycleStatus: "active" | "cycle" | "idle";
+  lastKnownThreads: string;
 }
 
 export interface FormattedRepStatus {
@@ -80,6 +92,20 @@ export interface FormattedRepStatus {
   canAffordNextAug: boolean;
   favor: number;
   favorToUnlock: number;
+  pendingBackdoors: string[];
+  hasUnlockedAugs: boolean;
+}
+
+export interface FormattedDarkwebStatus {
+  hasTorRouter: boolean;
+  ownedCount: number;
+  totalPrograms: number;
+  nextProgram: { name: string; cost: number; costFormatted: string } | null;
+  moneyUntilNext: number;
+  moneyUntilNextFormatted: string;
+  canAffordNext: boolean;
+  programs: { name: string; cost: number; costFormatted: string; owned: boolean }[];
+  allOwned: boolean;
 }
 
 export interface FormattedHackStatus {
@@ -128,6 +154,8 @@ export interface DashboardState {
   repStatus: FormattedRepStatus | null;
   repError: string | null;
   hackStatus: FormattedHackStatus | null;
+  darkwebStatus: FormattedDarkwebStatus | null;
+  darkwebError: string | null;
 }
 
 // === PLUGIN INTERFACE ===
@@ -154,7 +182,6 @@ export interface ToolPlugin<TFormatted> {
 
 export interface PluginContext {
   playerMoney?: number;
-  repGainRate?: number;
   favorToUnlock?: number;
 }
 
@@ -163,6 +190,7 @@ export interface OverviewCardProps<TFormatted> {
   running: boolean;
   toolId: ToolName;
   error?: string | null;
+  pid?: number;
 }
 
 export interface DetailPanelProps<TFormatted> {
@@ -170,4 +198,5 @@ export interface DetailPanelProps<TFormatted> {
   running: boolean;
   toolId: ToolName;
   error?: string | null;
+  pid?: number;
 }

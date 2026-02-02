@@ -74,12 +74,12 @@ function formatNukeStatus(ns: NS): FormattedNukeStatus {
 
 // === COMPONENTS ===
 
-function NukeOverviewCard({ status, running, toolId }: OverviewCardProps<FormattedNukeStatus>): React.ReactElement {
+function NukeOverviewCard({ status, running, toolId, pid }: OverviewCardProps<FormattedNukeStatus>): React.ReactElement {
   return (
     <div style={styles.card}>
       <div style={styles.cardTitle}>
         <span>NUKE</span>
-        <ToolControl tool={toolId} running={running} />
+        <ToolControl tool={toolId} running={running} pid={pid} />
       </div>
       {status && (
         <>
@@ -105,7 +105,7 @@ function NukeOverviewCard({ status, running, toolId }: OverviewCardProps<Formatt
   );
 }
 
-function NukeDetailPanel({ status, running, toolId }: DetailPanelProps<FormattedNukeStatus>): React.ReactElement {
+function NukeDetailPanel({ status, running, toolId, pid }: DetailPanelProps<FormattedNukeStatus>): React.ReactElement {
   // Use module-level state instead of useState - persists across printRaw() calls
   const showRooted = getPluginUIState("nuke", "showRooted", false);
 
@@ -133,7 +133,7 @@ function NukeDetailPanel({ status, running, toolId }: DetailPanelProps<Formatted
             </span>
           </span>
         </div>
-        <ToolControl tool={toolId} running={running} />
+        <ToolControl tool={toolId} running={running} pid={pid} />
       </div>
 
       {/* Server Table */}
