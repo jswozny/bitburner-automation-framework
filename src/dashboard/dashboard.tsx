@@ -277,6 +277,7 @@ function updatePluginsIfNeeded(ns: NS): void {
 // === MAIN LOOP ===
 
 export async function main(ns: NS): Promise<void> {
+  let PAUSED = false;
   ns.disableLog("ALL");
   ns.ui.openTail();
   ns.ui.resizeTail(600, 700);
@@ -286,7 +287,7 @@ export async function main(ns: NS): Promise<void> {
   ns.clearLog()
   ns.printRaw(<Dashboard />);
 
-  while (true) {
+  while (!PAUSED) {
     // 1. Process any pending commands first (responsive to clicks)
     readAndExecuteCommands(ns);
 

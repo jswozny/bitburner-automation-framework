@@ -122,8 +122,8 @@ export function calculateShareThreads(
 export function getTotalShareCapacity(
   ns: NS,
   shareScript: string = DEFAULT_SHARE_SCRIPT,
-  minFree: number = 4,
-  homeReserve: number = 32
+  minFree = 4,
+  homeReserve = 64
 ): { totalThreads: number; totalRam: number } {
   const shareRam = ns.getScriptRam(shareScript);
   if (shareRam === 0) return { totalThreads: 0, totalRam: 0 };

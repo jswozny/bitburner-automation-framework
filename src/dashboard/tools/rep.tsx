@@ -10,7 +10,7 @@ import { styles } from "dashboard/styles";
 import { ToolControl } from "dashboard/components/ToolControl";
 import { ProgressBar } from "dashboard/components/ProgressBar";
 import { getRepStatus } from "auto/auto-rep";
-import { findNextWorkableAugmentation, getNonWorkableFactionProgress, getFactionWorkStatus, startOptimalFactionWork } from "lib/factions";
+import { findNextWorkableAugmentation, getNonWorkableFactionProgress, getFactionWorkStatus } from "lib/factions";
 import { formatTime } from "lib/utils";
 import { runScript, startFactionWork } from "dashboard/state-store";
 
