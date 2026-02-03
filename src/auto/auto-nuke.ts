@@ -66,12 +66,6 @@ export async function main(ns: NS): Promise<void> {
   const oneShot = flags["one-shot"];
   const interval = flags.interval;
 
-  ns.disableLog("ALL");
-
-  if (!oneShot) {
-    ns.ui.openTail();
-  }
-
   do {
     ns.clearLog();
 

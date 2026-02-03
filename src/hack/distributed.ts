@@ -406,12 +406,6 @@ export async function main(ns: NS): Promise<void> {
     hackPercent: 0.25,
   };
 
-  ns.disableLog("ALL");
-
-  if (!config.oneShot) {
-    ns.ui.openTail();
-  }
-
   do {
     ns.clearLog();
 

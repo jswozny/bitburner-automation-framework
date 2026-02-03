@@ -180,12 +180,6 @@ export async function main(ns: NS): Promise<void> {
     interval: Number(FLAGS.interval),
   };
 
-  ns.disableLog("ALL");
-
-  if (!config.oneShot) {
-    ns.ui.openTail();
-  }
-
   do {
     ns.clearLog();
 

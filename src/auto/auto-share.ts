@@ -154,8 +154,6 @@ export async function main(ns: NS): Promise<void> {
     shareScript: DEFAULT_SHARE_SCRIPT,
   };
 
-  ns.disableLog("ALL");
-
   // Deploy share script to all servers
   await deployShareScript(ns, DEFAULT_SHARE_SCRIPT);
 
@@ -164,10 +162,6 @@ export async function main(ns: NS): Promise<void> {
   if (shareRam === 0) {
     ns.tprint(`${C.red}ERROR: Could not find ${DEFAULT_SHARE_SCRIPT}${C.reset}`);
     return;
-  }
-
-  if (!config.oneShot) {
-    ns.ui.openTail();
   }
 
   ns.print(`${C.cyan}Share script RAM: ${ns.formatRam(shareRam)}${C.reset}`);

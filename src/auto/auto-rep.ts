@@ -307,13 +307,6 @@ export async function main(ns: NS): Promise<void> {
     oneShot: FLAGS["one-shot"],
   };
 
-  ns.disableLog("ALL");
-
-  if (!config.oneShot) {
-    ns.ui.openTail();
-    ns.ui.resizeTail(900, 700);
-  }
-
   // Track rep gain rate
   let lastRep = 0;
   let lastRepTime = Date.now();
