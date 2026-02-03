@@ -11,7 +11,6 @@
 import { NS } from "@ns";
 import { COLORS } from "/lib/utils";
 import {
-  readWorkConfig,
   setWorkFocus,
   getWorkStatus,
   runWorkCycle,

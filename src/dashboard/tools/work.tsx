@@ -18,7 +18,6 @@ import {
   getSkillDisplayName,
   WorkFocus,
   TRAVEL_COST,
-  BALANCE_ROTATION_INTERVAL,
 } from "lib/work";
 import { writeWorkFocusCommand, writeStartTrainingCommand } from "dashboard/state-store";
 
@@ -257,8 +256,6 @@ function WorkDetailPanel({
     writeStartTrainingCommand();
   };
 
-  const isCrimeMode =
-    status.currentFocus === "crime-money" || status.currentFocus === "crime-stats";
   const isBalanceMode =
     status.currentFocus === "balance-combat" || status.currentFocus === "balance-all";
 

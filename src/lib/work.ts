@@ -261,7 +261,6 @@ export function getTrainingOptions(
   ns: NS,
   targetSkill: string,
   playerCity: string,
-  playerMoney: number
 ): TrainingOption[] {
   const options: TrainingOption[] = [];
 
@@ -328,7 +327,7 @@ export function findBestTrainingOption(
   playerCity: string,
   playerMoney: number
 ): TrainingOption | null {
-  const options = getTrainingOptions(ns, skill, playerCity, playerMoney);
+  const options = getTrainingOptions(ns, skill, playerCity);
   if (options.length === 0) return null;
 
   // Best option (highest expMult)
