@@ -31,7 +31,7 @@ const COMMAND_PORT = 20; // Port for dashboard command communication
 
 interface Command {
   tool: ToolName;
-  action: "start" | "stop" | "open-tail" | "run-script" | "start-faction-work" | "set-focus" | "start-training";
+  action: "start" | "stop" | "open-tail" | "run-script" | "start-faction-work" | "set-focus" | "start-training" | "install-augments";
   scriptPath?: string;
   scriptArgs?: string[];
   factionName?: string;
@@ -102,6 +102,14 @@ export function writeStartTrainingCommand(): void {
 }
 
 /**
+ * Install all pending augmentations (triggers a soft reset).
+ */
+export function installAugments(): void {
+  if (!commandPort) return;
+  commandPort.write(JSON.stringify({ tool: "rep", action: "install-augments" }));
+}
+
+/**
  * Read and execute all pending commands from the port.
  * Called from main loop - receives fresh NS reference each call.
  */
@@ -165,6 +173,10 @@ function executeCommand(ns: NS, cmd: Command): void {
           ns.toast("Could not start training", "warning", 3000);
         }
       }
+      break;
+    case "install-augments":
+      ns.toast("Installing augmentations...", "info", 2000);
+      ns.singularity.installAugmentations("dashboard/main.js");
       break;
   }
 }

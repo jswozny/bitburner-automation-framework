@@ -118,6 +118,20 @@ export interface FormattedRepStatus {
   bestWorkType: "hacking" | "field" | "security";
   currentWorkType: string | null;
   isWorkable: boolean;
+  // NeuroFlux Governor info
+  neuroFlux: {
+    currentLevel: number;
+    bestFaction: string | null;
+    hasEnoughRep: boolean;
+    canPurchase: boolean;
+    purchasePlan: {
+      startLevel: number;
+      endLevel: number;
+      purchases: number;
+      totalCost: number;
+      totalCostFormatted: string;
+    } | null;
+  } | null;
 }
 
 export interface FormattedDarkwebStatus {

@@ -10,9 +10,9 @@ import { styles } from "dashboard/styles";
 import { ToolControl } from "dashboard/components/ToolControl";
 import { ProgressBar } from "dashboard/components/ProgressBar";
 import { getRepStatus } from "auto/auto-rep";
-import { findNextWorkableAugmentation, getNonWorkableFactionProgress, getFactionWorkStatus, getSequentialPurchaseAugs } from "lib/factions";
+import { findNextWorkableAugmentation, getNonWorkableFactionProgress, getFactionWorkStatus, getSequentialPurchaseAugs, getNeuroFluxInfo, calculateNeuroFluxPurchasePlan } from "lib/factions";
 import { formatTime } from "lib/utils";
-import { runScript, startFactionWork } from "dashboard/state-store";
+import { runScript, startFactionWork, installAugments, getPluginUIState, setPluginUIState } from "dashboard/state-store";
 
 // === REP TRACKING STATE (module-level) ===
 
@@ -161,6 +161,24 @@ function formatRepStatus(ns: NS, extra?: PluginContext): FormattedRepStatus | nu
       bestWorkType: workStatus.bestWorkType,
       currentWorkType: workStatus.currentWorkType,
       isWorkable: workStatus.isWorkable,
+      // NeuroFlux Governor info
+      neuroFlux: (() => {
+        const nfInfo = getNeuroFluxInfo(ns);
+        const nfPlan = calculateNeuroFluxPurchasePlan(ns, playerMoney);
+        return {
+          currentLevel: nfInfo.currentLevel,
+          bestFaction: nfInfo.bestFaction,
+          hasEnoughRep: nfInfo.hasEnoughRep,
+          canPurchase: nfPlan.purchases > 0,
+          purchasePlan: nfPlan.purchases > 0 ? {
+            startLevel: nfPlan.startLevel,
+            endLevel: nfPlan.endLevel,
+            purchases: nfPlan.purchases,
+            totalCost: nfPlan.totalCost,
+            totalCostFormatted: ns.formatNumber(nfPlan.totalCost),
+          } : null,
+        };
+      })(),
     };
   } catch {
     return null;
@@ -242,6 +260,25 @@ function RepDetailPanel({ status, error, running, toolId, pid }: DetailPanelProp
   // Show work button when: workable faction, not optimal work, and still need rep
   const showWorkButton = status.isWorkable && !status.isOptimalWork && status.repGapPositive;
 
+  // Install augments confirmation state
+  const confirmInstall = getPluginUIState<boolean>("rep", "confirmInstall", false);
+  const handleInstallAugs = () => {
+    if (confirmInstall) {
+      installAugments();
+      setPluginUIState("rep", "confirmInstall", false);
+    } else {
+      setPluginUIState("rep", "confirmInstall", true);
+    }
+  };
+  const handleInstallBlur = () => {
+    setPluginUIState("rep", "confirmInstall", false);
+  };
+
+  // NeuroFlux buy handler
+  const handleBuyNFG = () => {
+    runScript("rep", "factions/neuroflux-purchase.js", ["--confirm"]);
+  };
+
   return (
     <div style={styles.panel}>
       {/* Header */}
@@ -259,7 +296,9 @@ function RepDetailPanel({ status, error, running, toolId, pid }: DetailPanelProp
             </span>
           </span>
         </div>
-        <ToolControl tool={toolId} running={running} pid={pid} />
+        <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
+          <ToolControl tool={toolId} running={running} pid={pid} />
+        </div>
       </div>
 
       {/* Action Buttons */}
@@ -306,6 +345,20 @@ function RepDetailPanel({ status, error, running, toolId, pid }: DetailPanelProp
             >
               Backdoors ({status.pendingBackdoors.length})
             </button>
+          )}
+          {status.pendingAugs > 0 && (
+              <button
+                  style={{
+                    ...styles.buttonPlay,
+                    backgroundColor: confirmInstall ? "#aa0000" : "#550055",
+                    color: confirmInstall ? "#fff" : "#ff88ff",
+                    padding: "4px 12px",
+                  }}
+                  onClick={handleInstallAugs}
+                  onBlur={handleInstallBlur}
+              >
+                {confirmInstall ? "Confirm Install?" : `Install Augs (${status.pendingAugs})`}
+              </button>
           )}
         </div>
       )}
@@ -504,6 +557,63 @@ function RepDetailPanel({ status, error, running, toolId, pid }: DetailPanelProp
           <div style={{ color: "#888", fontSize: "10px", marginTop: "4px" }}>
             Rep requirement increases after each purchase
           </div>
+        </div>
+      )}
+
+      {/* NeuroFlux Governor Section */}
+      {status.neuroFlux && status.neuroFlux.bestFaction && (
+        <div style={{
+          ...styles.card,
+          backgroundColor: "rgba(0, 150, 255, 0.1)",
+          borderLeft: "3px solid #0088ff",
+          marginTop: "8px",
+        }}>
+          <div style={{ color: "#0088ff", fontSize: "11px", marginBottom: "6px" }}>
+            NEUROFLUX GOVERNOR
+          </div>
+          <div style={styles.stat}>
+            <span style={styles.statLabel}>Current Level</span>
+            <span style={styles.statHighlight}>{status.neuroFlux.currentLevel}</span>
+          </div>
+          <div style={styles.stat}>
+            <span style={styles.statLabel}>Best Faction</span>
+            <span style={styles.statValue}>{status.neuroFlux.bestFaction}</span>
+          </div>
+          {status.neuroFlux.purchasePlan && (
+            <>
+              <div style={styles.stat}>
+                <span style={styles.statLabel}>Can Buy</span>
+                <span style={styles.statHighlight}>
+                  Lvl {status.neuroFlux.purchasePlan.startLevel} → {status.neuroFlux.purchasePlan.endLevel}
+                  {" "}({status.neuroFlux.purchasePlan.purchases} upgrades)
+                </span>
+              </div>
+              <div style={styles.stat}>
+                <span style={styles.statLabel}>Total Cost</span>
+                <span style={{ color: "#00ff00" }}>
+                  ${status.neuroFlux.purchasePlan.totalCostFormatted}
+                </span>
+              </div>
+              <button
+                style={{
+                  ...styles.buttonPlay,
+                  marginTop: "8px",
+                  marginLeft: 0,
+                  padding: "4px 12px",
+                  backgroundColor: "#003366",
+                  color: "#00aaff",
+                }}
+                onClick={handleBuyNFG}
+              >
+                Buy NFG ({status.neuroFlux.purchasePlan.purchases})
+              </button>
+            </>
+          )}
+          {!status.neuroFlux.hasEnoughRep && (
+            <div style={{ color: "#ff4444", fontSize: "10px", marginTop: "4px" }}>
+              Need more rep in a faction with NeuroFlux Governor
+            </div>
+          )}
         </div>
       )}
     </div>

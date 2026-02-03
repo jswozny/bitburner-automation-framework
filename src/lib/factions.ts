@@ -417,3 +417,105 @@ export function startOptimalFactionWork(
   const bestWork = selectBestWorkType(ns, player);
   return ns.singularity.workForFaction(factionName, bestWork, true);
 }
+
+// === NEUROFLUX GOVERNOR ===
+
+export interface NeuroFluxInfo {
+  currentLevel: number;           // How many NFG we own
+  bestFaction: string | null;     // Faction with highest rep that has NFG
+  bestFactionRep: number;
+  repRequired: number;            // Rep requirement for NFG at current level
+  hasEnoughRep: boolean;
+  currentPrice: number;           // Current price (after global multiplier)
+}
+
+export interface NeuroFluxPurchasePlan {
+  startLevel: number;
+  endLevel: number;
+  purchases: number;
+  totalCost: number;
+  perPurchase: { level: number; cost: number }[];
+}
+
+/**
+ * Get information about NeuroFlux Governor augmentation
+ */
+export function getNeuroFluxInfo(ns: NS): NeuroFluxInfo {
+  const player = ns.getPlayer();
+  const ownedAugs = ns.singularity.getOwnedAugmentations(true);
+
+  // Count current NFG level (how many we own)
+  const currentLevel = ownedAugs.filter(a => a === "NeuroFlux Governor").length;
+
+  // Find best faction with NFG (highest rep)
+  let bestFaction: string | null = null;
+  let bestFactionRep = 0;
+
+  for (const faction of player.factions) {
+    const factionAugs = ns.singularity.getAugmentationsFromFaction(faction);
+    if (factionAugs.includes("NeuroFlux Governor")) {
+      const rep = ns.singularity.getFactionRep(faction);
+      if (rep > bestFactionRep) {
+        bestFactionRep = rep;
+        bestFaction = faction;
+      }
+    }
+  }
+
+  // Get current price and rep requirement
+  const currentPrice = ns.singularity.getAugmentationPrice("NeuroFlux Governor");
+  const repRequired = ns.singularity.getAugmentationRepReq("NeuroFlux Governor");
+  const hasEnoughRep = bestFactionRep >= repRequired;
+
+  return {
+    currentLevel,
+    bestFaction,
+    bestFactionRep,
+    repRequired,
+    hasEnoughRep,
+    currentPrice,
+  };
+}
+
+/**
+ * Calculate how many NeuroFlux Governor upgrades can be purchased with available money
+ * Each purchase multiplies the price by 1.9
+ */
+export function calculateNeuroFluxPurchasePlan(
+  ns: NS,
+  availableMoney: number
+): NeuroFluxPurchasePlan {
+  const info = getNeuroFluxInfo(ns);
+
+  const perPurchase: { level: number; cost: number }[] = [];
+  let totalCost = 0;
+  let currentPrice = info.currentPrice;
+  let level = info.currentLevel;
+
+  // Can only purchase if we have enough rep
+  if (!info.hasEnoughRep || !info.bestFaction) {
+    return {
+      startLevel: info.currentLevel,
+      endLevel: info.currentLevel,
+      purchases: 0,
+      totalCost: 0,
+      perPurchase: [],
+    };
+  }
+
+  // Calculate sequential purchases until we run out of money
+  while (totalCost + currentPrice <= availableMoney) {
+    level++;
+    perPurchase.push({ level, cost: currentPrice });
+    totalCost += currentPrice;
+    currentPrice = Math.round(currentPrice * AUG_COST_MULT);
+  }
+
+  return {
+    startLevel: info.currentLevel,
+    endLevel: level,
+    purchases: perPurchase.length,
+    totalCost,
+    perPurchase,
+  };
+}
