@@ -141,6 +141,17 @@ export interface FormattedRepStatus {
       totalCost: number;
       totalCostFormatted: string;
     } | null;
+    // Donation capability
+    canDonate: boolean;
+    donationPlan: {
+      purchases: number;
+      totalDonationCost: number;
+      totalDonationCostFormatted: string;
+      totalPurchaseCost: number;
+      totalPurchaseCostFormatted: string;
+      totalCost: number;
+      totalCostFormatted: string;
+    } | null;
   } | null;
 }
 

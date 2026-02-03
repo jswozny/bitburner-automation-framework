@@ -10,7 +10,7 @@ import { styles } from "dashboard/styles";
 import { ToolControl } from "dashboard/components/ToolControl";
 import { ProgressBar } from "dashboard/components/ProgressBar";
 import { getRepStatus } from "auto/auto-rep";
-import { findNextWorkableAugmentation, getNonWorkableFactionProgress, getFactionWorkStatus, getSequentialPurchaseAugs, getNeuroFluxInfo, calculateNeuroFluxPurchasePlan } from "lib/factions";
+import { findNextWorkableAugmentation, getNonWorkableFactionProgress, getFactionWorkStatus, getSequentialPurchaseAugs, getNeuroFluxInfo, calculateNeuroFluxPurchasePlan, canDonateToFaction, calculateNFGDonatePurchasePlan } from "lib/factions";
 import { formatTime } from "lib/utils";
 import { runScript, startFactionWork, installAugments, getPluginUIState, setPluginUIState } from "dashboard/state-store";
 
@@ -184,6 +184,11 @@ function formatRepStatus(ns: NS, extra?: PluginContext): FormattedRepStatus | nu
         const nfPlan = calculateNeuroFluxPurchasePlan(ns, playerMoney);
         const nfRepProgress = nfInfo.repRequired > 0 ? Math.min(1, nfInfo.bestFactionRep / nfInfo.repRequired) : 0;
         const nfRepGap = Math.max(0, nfInfo.repRequired - nfInfo.bestFactionRep);
+
+        // Check donation capability
+        const canDonate = nfInfo.bestFaction ? canDonateToFaction(ns, nfInfo.bestFaction) : false;
+        const donatePlan = canDonate ? calculateNFGDonatePurchasePlan(ns, playerMoney) : null;
+
         return {
           currentLevel: nfInfo.currentLevel,
           bestFaction: nfInfo.bestFaction,
@@ -205,6 +210,17 @@ function formatRepStatus(ns: NS, extra?: PluginContext): FormattedRepStatus | nu
             purchases: nfPlan.purchases,
             totalCost: nfPlan.totalCost,
             totalCostFormatted: ns.formatNumber(nfPlan.totalCost),
+          } : null,
+          // Donation capability
+          canDonate,
+          donationPlan: donatePlan && donatePlan.canExecute ? {
+            purchases: donatePlan.purchases,
+            totalDonationCost: donatePlan.totalDonationCost,
+            totalDonationCostFormatted: ns.formatNumber(donatePlan.totalDonationCost),
+            totalPurchaseCost: donatePlan.totalPurchaseCost,
+            totalPurchaseCostFormatted: ns.formatNumber(donatePlan.totalPurchaseCost),
+            totalCost: donatePlan.totalCost,
+            totalCostFormatted: ns.formatNumber(donatePlan.totalCost),
           } : null,
         };
       })(),
@@ -306,6 +322,11 @@ function RepDetailPanel({ status, error, running, toolId, pid }: DetailPanelProp
   // NeuroFlux buy handler
   const handleBuyNFG = () => {
     runScript("rep", "factions/neuroflux-purchase.js", ["--confirm"]);
+  };
+
+  // NeuroFlux donate & buy handler
+  const handleDonateAndBuyNFG = () => {
+    runScript("rep", "factions/neuroflux-donate.js", ["--confirm"]);
   };
 
   return (
@@ -666,6 +687,56 @@ function RepDetailPanel({ status, error, running, toolId, pid }: DetailPanelProp
                 Buy NFG ({status.neuroFlux.purchasePlan.purchases})
               </button>
             </>
+          )}
+
+          {/* Donate & Buy section when eligible */}
+          {status.neuroFlux.canDonate && status.neuroFlux.donationPlan && (
+            <div style={{
+              marginTop: "12px",
+              paddingTop: "8px",
+              borderTop: "1px solid rgba(255, 200, 0, 0.3)",
+            }}>
+              <div style={{ color: "#ffcc00", fontSize: "11px", marginBottom: "6px" }}>
+                DONATE & BUY (150+ favor)
+              </div>
+              <div style={styles.stat}>
+                <span style={styles.statLabel}>Can Buy</span>
+                <span style={styles.statHighlight}>
+                  {status.neuroFlux.donationPlan.purchases} upgrade{status.neuroFlux.donationPlan.purchases !== 1 ? "s" : ""}
+                </span>
+              </div>
+              <div style={styles.stat}>
+                <span style={styles.statLabel}>Donations</span>
+                <span style={{ color: "#ffcc00" }}>
+                  ${status.neuroFlux.donationPlan.totalDonationCostFormatted}
+                </span>
+              </div>
+              <div style={styles.stat}>
+                <span style={styles.statLabel}>Purchases</span>
+                <span style={{ color: "#00ff00" }}>
+                  ${status.neuroFlux.donationPlan.totalPurchaseCostFormatted}
+                </span>
+              </div>
+              <div style={styles.stat}>
+                <span style={styles.statLabel}>Total</span>
+                <span style={{ color: "#00ffff" }}>
+                  ${status.neuroFlux.donationPlan.totalCostFormatted}
+                </span>
+              </div>
+              <button
+                style={{
+                  ...styles.buttonPlay,
+                  marginTop: "8px",
+                  marginLeft: 0,
+                  padding: "4px 12px",
+                  backgroundColor: "#554400",
+                  color: "#ffcc00",
+                }}
+                onClick={handleDonateAndBuyNFG}
+              >
+                Donate & Buy ({status.neuroFlux.donationPlan.purchases})
+              </button>
+            </div>
           )}
 
           {/* Show next NFG cost when has rep but can't afford */}

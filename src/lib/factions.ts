@@ -418,6 +418,195 @@ export function startOptimalFactionWork(
   return ns.singularity.workForFaction(factionName, bestWork, true);
 }
 
+// === DONATION CONSTANTS ===
+
+/** Minimum favor required to donate to a faction */
+export const DONATION_FAVOR_THRESHOLD = 150;
+
+/** Rep requirement multiplier per NFG purchase (approx) */
+export const NFG_REP_MULT = 1.14;
+
+/** Factions that cannot receive donations (gang factions) */
+export const NON_DONATABLE_FACTIONS = new Set([
+  "Slum Snakes",
+  "Tetrads",
+  "The Syndicate",
+  "The Dark Army",
+  "Speakers for the Dead",
+  "NiteSec",
+  "The Black Hand",
+]);
+
+// === DONATION TYPES ===
+
+export interface NFGDonateStep {
+  repRequired: number;
+  repGap: number;
+  donationNeeded: number;
+  purchaseCost: number;
+  totalStepCost: number;
+  runningTotal: number;
+}
+
+export interface NFGDonatePurchasePlan {
+  faction: string;
+  purchases: number;
+  totalDonationCost: number;
+  totalPurchaseCost: number;
+  totalCost: number;
+  steps: NFGDonateStep[];
+  canExecute: boolean;
+}
+
+// === DONATION FUNCTIONS ===
+
+/**
+ * Check if player can donate to a faction (has 150+ favor and faction is donatable)
+ */
+export function canDonateToFaction(ns: NS, faction: string): boolean {
+  if (NON_DONATABLE_FACTIONS.has(faction)) {
+    return false;
+  }
+  const favor = ns.singularity.getFactionFavor(faction);
+  return favor >= DONATION_FAVOR_THRESHOLD;
+}
+
+/**
+ * Calculate how much money is needed to donate for a given amount of reputation
+ * @param ns - NetScript context
+ * @param targetRep - The amount of reputation to gain from donation
+ * @returns The donation amount needed
+ */
+export function calculateDonationForRep(ns: NS, targetRep: number): number {
+  if (targetRep <= 0) return 0;
+
+  const player = ns.getPlayer();
+
+  // Try to use formulas if available
+  try {
+    if (ns.fileExists("Formulas.exe", "home")) {
+      // Use the formulas API - this accounts for all multipliers
+      return ns.formulas.reputation.repFromDonation(1, player) > 0
+        ? Math.ceil(targetRep / ns.formulas.reputation.repFromDonation(1, player))
+        : targetRep * 1e6;
+    }
+  } catch {
+    // Formulas not available, use fallback
+  }
+
+  // Fallback formula: donation * faction_rep_mult / 1e6 = rep
+  // So: donation = rep * 1e6 / faction_rep_mult
+  const repMult = player.mults.faction_rep ?? 1;
+  return Math.ceil(targetRep * 1e6 / repMult);
+}
+
+/**
+ * Calculate a complete donate-and-purchase plan for NeuroFlux Governor
+ * This allows purchasing more NFG by donating money for rep when short
+ *
+ * @param ns - NetScript context
+ * @param availableMoney - Money available for both donations and purchases
+ * @param faction - Optional faction to use (defaults to best NFG faction with donation capability)
+ * @returns Plan detailing how many NFG can be purchased with donations
+ */
+export function calculateNFGDonatePurchasePlan(
+  ns: NS,
+  availableMoney: number,
+  faction?: string
+): NFGDonatePurchasePlan {
+  const player = ns.getPlayer();
+
+  // Find best faction for donate+buy (must have 150+ favor and support donations)
+  let bestFaction: string | null = faction ?? null;
+  let bestFactionRep = 0;
+  let bestFactionFavor = 0;
+
+  if (!bestFaction) {
+    for (const f of player.factions) {
+      const factionAugs = ns.singularity.getAugmentationsFromFaction(f);
+      if (!factionAugs.includes("NeuroFlux Governor")) continue;
+      if (!canDonateToFaction(ns, f)) continue;
+
+      const rep = ns.singularity.getFactionRep(f);
+      const favor = ns.singularity.getFactionFavor(f);
+
+      // Prefer faction with highest favor (more efficient donations long-term)
+      if (favor > bestFactionFavor || (favor === bestFactionFavor && rep > bestFactionRep)) {
+        bestFaction = f;
+        bestFactionRep = rep;
+        bestFactionFavor = favor;
+      }
+    }
+  } else {
+    bestFactionRep = ns.singularity.getFactionRep(bestFaction);
+    bestFactionFavor = ns.singularity.getFactionFavor(bestFaction);
+  }
+
+  // No eligible faction found
+  if (!bestFaction || !canDonateToFaction(ns, bestFaction)) {
+    return {
+      faction: bestFaction ?? "None",
+      purchases: 0,
+      totalDonationCost: 0,
+      totalPurchaseCost: 0,
+      totalCost: 0,
+      steps: [],
+      canExecute: false,
+    };
+  }
+
+  // Get current NFG info
+  const currentPrice = ns.singularity.getAugmentationPrice("NeuroFlux Governor");
+  let currentRepReq = ns.singularity.getAugmentationRepReq("NeuroFlux Governor");
+  let currentRep = bestFactionRep;
+
+  const steps: NFGDonateStep[] = [];
+  let totalDonationCost = 0;
+  let totalPurchaseCost = 0;
+  let purchasePrice = currentPrice;
+  let runningTotal = 0;
+
+  // Calculate sequential purchases with donations as needed
+  while (true) {
+    const repGap = Math.max(0, currentRepReq - currentRep);
+    const donationNeeded = repGap > 0 ? calculateDonationForRep(ns, repGap) : 0;
+    const totalStepCost = donationNeeded + purchasePrice;
+
+    // Check if we can afford this step
+    if (runningTotal + totalStepCost > availableMoney) {
+      break; // Can't afford this purchase
+    }
+
+    runningTotal += totalStepCost;
+    totalDonationCost += donationNeeded;
+    totalPurchaseCost += purchasePrice;
+
+    steps.push({
+      repRequired: currentRepReq,
+      repGap,
+      donationNeeded,
+      purchaseCost: purchasePrice,
+      totalStepCost,
+      runningTotal,
+    });
+
+    // Update for next iteration
+    currentRep = currentRepReq; // After donation, we'll have exactly enough rep
+    currentRepReq = Math.ceil(currentRepReq * NFG_REP_MULT);
+    purchasePrice = Math.ceil(purchasePrice * AUG_COST_MULT);
+  }
+
+  return {
+    faction: bestFaction,
+    purchases: steps.length,
+    totalDonationCost,
+    totalPurchaseCost,
+    totalCost: totalDonationCost + totalPurchaseCost,
+    steps,
+    canExecute: steps.length > 0,
+  };
+}
+
 // === NEUROFLUX GOVERNOR ===
 
 export interface NeuroFluxInfo {
