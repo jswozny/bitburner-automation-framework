@@ -61,8 +61,27 @@ function formatRepStatus(ns: NS, extra?: PluginContext): FormattedRepStatus | nu
     // Get non-workable faction progress
     const nonWorkableProgress = getNonWorkableFactionProgress(raw.factionData);
 
+    // Get NeuroFlux info early - we may need it as fallback
+    const nfInfo = getNeuroFluxInfo(ns);
+
+    // If no regular aug target, fall back to best NFG faction for favor grinding
+    let targetFaction: string;
+    let targetFactionData: { currentRep: number; favor: number } | null = null;
+
+    if (target) {
+      targetFaction = target.faction.name;
+      targetFactionData = { currentRep: target.faction.currentRep, favor: target.faction.favor };
+    } else if (nfInfo.bestFaction) {
+      // Fall back to best NFG faction for favor/rep grinding
+      targetFaction = nfInfo.bestFaction;
+      const factionData = raw.factionData.find(f => f.name === nfInfo.bestFaction);
+      targetFactionData = factionData ? { currentRep: factionData.currentRep, favor: factionData.favor } : null;
+    } else {
+      targetFaction = "None";
+    }
+
     const repRequired = target?.aug?.repReq ?? 0;
-    const currentRep = target?.faction?.currentRep ?? 0;
+    const currentRep = target?.faction?.currentRep ?? targetFactionData?.currentRep ?? 0;
     const repGap = Math.max(0, repRequired - currentRep);
     const repProgress = repRequired > 0 ? Math.min(1, currentRep / repRequired) : 0;
 
@@ -71,7 +90,6 @@ function formatRepStatus(ns: NS, extra?: PluginContext): FormattedRepStatus | nu
 
     // Update rep gain rate tracking internally
     const now = Date.now();
-    const targetFaction = target?.faction?.name ?? "None";
 
     if (targetFaction !== "None") {
       if (lastRep > 0 && lastTargetFaction === targetFaction) {
@@ -136,7 +154,7 @@ function formatRepStatus(ns: NS, extra?: PluginContext): FormattedRepStatus | nu
       nextAugCost,
       nextAugCostFormatted: ns.formatNumber(nextAugCost),
       canAffordNextAug: playerMoney >= nextAugCost,
-      favor: target?.faction?.favor ?? 0,
+      favor: targetFactionData?.favor ?? 0,
       favorToUnlock,
       pendingBackdoors,
       hasUnlockedAugs,
@@ -163,13 +181,24 @@ function formatRepStatus(ns: NS, extra?: PluginContext): FormattedRepStatus | nu
       isWorkable: workStatus.isWorkable,
       // NeuroFlux Governor info
       neuroFlux: (() => {
-        const nfInfo = getNeuroFluxInfo(ns);
         const nfPlan = calculateNeuroFluxPurchasePlan(ns, playerMoney);
+        const nfRepProgress = nfInfo.repRequired > 0 ? Math.min(1, nfInfo.bestFactionRep / nfInfo.repRequired) : 0;
+        const nfRepGap = Math.max(0, nfInfo.repRequired - nfInfo.bestFactionRep);
         return {
           currentLevel: nfInfo.currentLevel,
           bestFaction: nfInfo.bestFaction,
           hasEnoughRep: nfInfo.hasEnoughRep,
           canPurchase: nfPlan.purchases > 0,
+          // Rep progress toward next NFG
+          currentRep: nfInfo.bestFactionRep,
+          currentRepFormatted: ns.formatNumber(nfInfo.bestFactionRep),
+          repRequired: nfInfo.repRequired,
+          repRequiredFormatted: ns.formatNumber(nfInfo.repRequired),
+          repProgress: nfRepProgress,
+          repGap: nfRepGap,
+          repGapFormatted: ns.formatNumber(nfRepGap),
+          currentPrice: nfInfo.currentPrice,
+          currentPriceFormatted: ns.formatNumber(nfInfo.currentPrice),
           purchasePlan: nfPlan.purchases > 0 ? {
             startLevel: nfPlan.startLevel,
             endLevel: nfPlan.endLevel,
@@ -572,20 +601,49 @@ function RepDetailPanel({ status, error, running, toolId, pid }: DetailPanelProp
             NEUROFLUX GOVERNOR
           </div>
           <div style={styles.stat}>
-            <span style={styles.statLabel}>Current Level</span>
-            <span style={styles.statHighlight}>{status.neuroFlux.currentLevel}</span>
-          </div>
-          <div style={styles.stat}>
             <span style={styles.statLabel}>Best Faction</span>
             <span style={styles.statValue}>{status.neuroFlux.bestFaction}</span>
           </div>
+
+          {/* Rep progress when not enough rep */}
+          {!status.neuroFlux.hasEnoughRep && (
+            <>
+              <div style={{ marginTop: "8px", marginBottom: "4px" }}>
+                <ProgressBar
+                  progress={status.neuroFlux.repProgress}
+                  label={`${(status.neuroFlux.repProgress * 100).toFixed(1)}%`}
+                  fillColor="#0088ff"
+                />
+              </div>
+              <div style={styles.stat}>
+                <span style={styles.statLabel}>Rep Progress</span>
+                <span style={styles.statValue}>
+                  {status.neuroFlux.currentRepFormatted} / {status.neuroFlux.repRequiredFormatted}
+                </span>
+              </div>
+              <div style={styles.stat}>
+                <span style={styles.statLabel}>Need</span>
+                <span style={{ color: "#ffaa00" }}>{status.neuroFlux.repGapFormatted} more</span>
+              </div>
+              {status.repGainRate > 0 && (
+                <div style={styles.stat}>
+                  <span style={styles.statLabel}>ETA</span>
+                  <span style={styles.etaDisplay}>
+                    {formatTime(status.neuroFlux.repGap / status.repGainRate)}
+                    <span style={styles.dim}> @ {status.repGainRate.toFixed(1)}/s</span>
+                  </span>
+                </div>
+              )}
+            </>
+          )}
+
+          {/* Purchase info when can buy */}
           {status.neuroFlux.purchasePlan && (
             <>
               <div style={styles.stat}>
                 <span style={styles.statLabel}>Can Buy</span>
                 <span style={styles.statHighlight}>
-                  Lvl {status.neuroFlux.purchasePlan.startLevel} → {status.neuroFlux.purchasePlan.endLevel}
-                  {" "}({status.neuroFlux.purchasePlan.purchases} upgrades)
+                  {status.neuroFlux.purchasePlan.purchases} upgrade{status.neuroFlux.purchasePlan.purchases !== 1 ? "s" : ""}
                 </span>
               </div>
               <div style={styles.stat}>
@@ -609,9 +667,12 @@ function RepDetailPanel({ status, error, running, toolId, pid }: DetailPanelProp
               </button>
             </>
           )}
-          {!status.neuroFlux.hasEnoughRep && (
-            <div style={{ color: "#ff4444", fontSize: "10px", marginTop: "4px" }}>
-              Need more rep in a faction with NeuroFlux Governor
+
+          {/* Show next NFG cost when has rep but can't afford */}
+          {status.neuroFlux.hasEnoughRep && !status.neuroFlux.purchasePlan && (
+            <div style={styles.stat}>
+              <span style={styles.statLabel}>Next Cost</span>
+              <span style={{ color: "#ff4444" }}>${status.neuroFlux.currentPriceFormatted}</span>
             </div>
           )}
         </div>

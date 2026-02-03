@@ -124,6 +124,16 @@ export interface FormattedRepStatus {
     bestFaction: string | null;
     hasEnoughRep: boolean;
     canPurchase: boolean;
+    // Rep progress toward next NFG
+    currentRep: number;
+    currentRepFormatted: string;
+    repRequired: number;
+    repRequiredFormatted: string;
+    repProgress: number;
+    repGap: number;
+    repGapFormatted: string;
+    currentPrice: number;
+    currentPriceFormatted: string;
     purchasePlan: {
       startLevel: number;
       endLevel: number;

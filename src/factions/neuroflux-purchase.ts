@@ -46,17 +46,18 @@ export async function executePurchases(
   let spent = 0;
   let failed = 0;
 
-  for (const item of plan.perPurchase) {
+  for (let i = 0; i < plan.perPurchase.length; i++) {
+    const item = plan.perPurchase[i];
     const success = ns.singularity.purchaseAugmentation(faction, "NeuroFlux Governor");
     if (success) {
       ns.tprint(
-        `${COLORS.green}✓${COLORS.reset} Purchased ${COLORS.white}NeuroFlux Governor${COLORS.reset} level ${COLORS.cyan}${item.level}${COLORS.reset} for ${COLORS.green}$${ns.formatNumber(item.cost)}${COLORS.reset}`
+        `${COLORS.green}✓${COLORS.reset} Purchased ${COLORS.white}NeuroFlux Governor${COLORS.reset} #${COLORS.cyan}${i + 1}${COLORS.reset} for ${COLORS.green}$${ns.formatNumber(item.cost)}${COLORS.reset}`
       );
       purchased++;
       spent += item.cost;
     } else {
       ns.tprint(
-        `${COLORS.red}✗${COLORS.reset} Failed to purchase level ${item.level} - price may have changed`
+        `${COLORS.red}✗${COLORS.reset} Failed to purchase #${i + 1} - price may have changed`
       );
       failed++;
       break; // Stop on first failure since prices cascade
@@ -75,7 +76,7 @@ export async function executePurchases(
 export function displayHeader(
   ns: NS,
   availableMoney: number,
-  info: { currentLevel: number; bestFaction: string | null; bestFactionRep: number },
+  info: { bestFaction: string | null; bestFactionRep: number },
   confirm: boolean
 ): void {
   const C = COLORS;
@@ -86,7 +87,7 @@ export function displayHeader(
   );
   ns.tprint(`${C.cyan}${"═".repeat(70)}${C.reset}`);
   ns.tprint(
-    `${C.dim}Available: $${ns.formatNumber(availableMoney)} | Current Level: ${info.currentLevel} | Best Faction: ${info.bestFaction ?? "None"} (rep: ${ns.formatNumber(info.bestFactionRep)})${C.reset}`
+    `${C.dim}Available: $${ns.formatNumber(availableMoney)} | Best Faction: ${info.bestFaction ?? "None"} (rep: ${ns.formatNumber(info.bestFactionRep)})${C.reset}`
   );
   ns.tprint("");
 }
@@ -101,28 +102,27 @@ export function displayPurchasePlan(
   const C = COLORS;
 
   ns.tprint(
-    `${C.white}Can purchase levels ${plan.startLevel} → ${plan.endLevel} (${plan.purchases} upgrades) for ${C.green}$${ns.formatNumber(plan.totalCost)}${C.reset}`
+    `${C.white}Can purchase ${plan.purchases} upgrade${plan.purchases !== 1 ? "s" : ""} for ${C.green}$${ns.formatNumber(plan.totalCost)}${C.reset}`
   );
   ns.tprint("");
 
   ns.tprint(
-    `${C.dim}${"#".padStart(2)} ${"Level".padStart(5)}       ${"Cost".padStart(12)}      ${"Running Total".padStart(14)}${C.reset}`
+    `${C.dim}${"#".padStart(2)}       ${"Cost".padStart(12)}      ${"Running Total".padStart(14)}${C.reset}`
   );
-  ns.tprint(`${C.dim}${"─".repeat(50)}${C.reset}`);
+  ns.tprint(`${C.dim}${"─".repeat(40)}${C.reset}`);
 
   let runningTotal = 0;
   for (let i = 0; i < plan.perPurchase.length; i++) {
     const item = plan.perPurchase[i];
     runningTotal += item.cost;
     ns.tprint(
-      `${C.green}${(i + 1).toString().padStart(2)}${C.reset}   ` +
-        `${C.white}${item.level.toString().padStart(5)}${C.reset}    ` +
+      `${C.green}${(i + 1).toString().padStart(2)}${C.reset}    ` +
         `${C.green}$${ns.formatNumber(item.cost).padStart(11)}${C.reset}         ` +
         `${C.cyan}$${ns.formatNumber(runningTotal).padStart(11)}${C.reset}`
     );
   }
 
-  ns.tprint(`${C.dim}${"─".repeat(50)}${C.reset}`);
+  ns.tprint(`${C.dim}${"─".repeat(40)}${C.reset}`);
 }
 
 // === RUNNER ===

@@ -12,6 +12,7 @@ import {
   getOwnedAugs,
   getInstalledAugs,
   getPendingAugs,
+  getNeuroFluxInfo,
 } from "/lib/factions";
 
 /**
@@ -96,7 +97,30 @@ export function formatRepStatus(
     `${C.white}AUTO REPUTATION MANAGER${C.reset}  ${C.dim}|${C.reset}  ${C.green}$${ns.formatNumber(player.money)}${C.reset}  ${C.dim}|${C.reset}  ${C.yellow}${status.pendingAugs.length}${C.reset} ${C.dim}pending augs${C.reset}`
   );
 
+  // Check for NFG fallback when no regular augs
+  const nfInfo = getNeuroFluxInfo(ns);
+
   if (!status.nextTarget) {
+    // No regular augs to unlock - show NFG grinding mode
+    if (nfInfo.bestFaction) {
+      const nfFaction = status.factionData.find(f => f.name === nfInfo.bestFaction);
+      lines.push("");
+      lines.push(`${C.cyan}NEUROFLUX GRINDING MODE${C.reset}`);
+      lines.push(`${C.cyan}  TARGET${C.reset}: ${C.white}${nfInfo.bestFaction}${C.reset}  ${C.dim}(favor: ${nfFaction?.favor.toFixed(0) ?? 0}/${ns.getFavorToDonate().toFixed(0)})${C.reset}`);
+      lines.push("");
+      lines.push(`${C.dim}Rep Required: ${ns.formatNumber(nfInfo.repRequired)}  |  Have: ${ns.formatNumber(nfInfo.bestFactionRep)}${C.reset}`);
+      if (nfInfo.hasEnoughRep) {
+        lines.push(`${C.green}✓ Can purchase NeuroFlux Governor${C.reset} ${C.dim}($${ns.formatNumber(nfInfo.currentPrice)})${C.reset}`);
+      } else {
+        const repNeeded = nfInfo.repRequired - nfInfo.bestFactionRep;
+        lines.push(`${C.yellow}Need ${ns.formatNumber(repNeeded)} more rep for NFG${C.reset}`);
+        if (repGainRate > 0) {
+          lines.push(`${C.dim}ETA: ${formatTime(repNeeded / repGainRate)} @ ${ns.formatNumber(repGainRate)}/s${C.reset}`);
+        }
+      }
+      return lines;
+    }
+
     lines.push("");
     lines.push(`${C.yellow}No faction with available augmentations found.${C.reset}`);
     lines.push(`${C.dim}Join a faction or complete more requirements.${C.reset}`);
@@ -316,33 +340,52 @@ export async function main(ns: NS): Promise<void> {
       }
     }
 
-    // Calculate rep gain rate
+    // Determine work target: regular aug target or NFG faction fallback
+    let workTargetFaction: string | null = null;
+    let workTargetRep = 0;
+
     if (status.nextTarget) {
-      const target = status.nextTarget.faction;
-      const currentRep = target.currentRep;
+      workTargetFaction = status.nextTarget.faction.name;
+      workTargetRep = status.nextTarget.faction.currentRep;
+    } else {
+      // No regular augs to unlock - fall back to best NFG faction for favor grinding
+      const nfInfo = getNeuroFluxInfo(ns);
+      if (nfInfo.bestFaction) {
+        workTargetFaction = nfInfo.bestFaction;
+        const factionData = status.factionData.find(f => f.name === nfInfo.bestFaction);
+        workTargetRep = factionData?.currentRep ?? 0;
+      }
+    }
+
+    // Calculate rep gain rate
+    if (workTargetFaction) {
       const now = Date.now();
 
-      if (lastRep > 0 && lastTargetFaction === target.name) {
+      if (lastRep > 0 && lastTargetFaction === workTargetFaction) {
         const timeDelta = (now - lastRepTime) / 1000;
         if (timeDelta > 0) {
-          const repDelta = currentRep - lastRep;
+          const repDelta = workTargetRep - lastRep;
           repGainRate = repGainRate * 0.7 + (repDelta / timeDelta) * 0.3;
         }
       }
-      lastRep = currentRep;
+      lastRep = workTargetRep;
       lastRepTime = now;
-      lastTargetFaction = target.name;
+      lastTargetFaction = workTargetFaction;
 
-      // Auto-work logic
-      const nextAug = status.nextTarget.aug;
-      if (!config.noWork && nextAug && nextAug.repReq > currentRep) {
-        const bestWork = selectBestWorkType(ns, player);
-        const currentWork = ns.singularity.getCurrentWork();
-        const currentlyWorking =
-          currentWork?.type === "FACTION" &&
-          currentWork?.factionName === target.name;
-        if (!currentlyWorking || currentWork.factionWorkType !== bestWork) {
-          ns.singularity.workForFaction(target.name, bestWork, ns.singularity.isFocused());
+      // Auto-work logic - work for target faction (regular aug or NFG fallback)
+      if (!config.noWork) {
+        const nextAug = status.nextTarget?.aug;
+        const needsWork = !nextAug || nextAug.repReq > workTargetRep || !status.nextTarget;
+
+        if (needsWork) {
+          const bestWork = selectBestWorkType(ns, player);
+          const currentWork = ns.singularity.getCurrentWork();
+          const currentlyWorking =
+            currentWork?.type === "FACTION" &&
+            currentWork?.factionName === workTargetFaction;
+          if (!currentlyWorking || currentWork.factionWorkType !== bestWork) {
+            ns.singularity.workForFaction(workTargetFaction, bestWork, ns.singularity.isFocused());
+          }
         }
       }
     }
