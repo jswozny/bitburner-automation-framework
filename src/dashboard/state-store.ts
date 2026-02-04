@@ -24,6 +24,7 @@ import {
 } from "dashboard/types";
 import { startOptimalFactionWork } from "lib/factions";
 import { setWorkFocus, runWorkCycle, WorkFocus } from "lib/work";
+import { ensureRamAndExec } from "/lib/launcher";
 
 // === COMMAND PORT ===
 
@@ -64,7 +65,7 @@ export function writeCommand(
 }
 
 /**
- * Open tail window for a running tool.
+ * Open tail for a running tool.
  */
 export function openToolTail(tool: ToolName): void {
   writeCommand(tool, "open-tail");
@@ -176,13 +177,13 @@ function executeCommand(ns: NS, cmd: Command): void {
       break;
     case "install-augments":
       ns.toast("Installing augmentations...", "info", 2000);
-      ns.singularity.installAugmentations("dashboard/main.js");
+      ns.singularity.installAugmentations("start.js");
       break;
   }
 }
 
 /**
- * Open tail window for a tool's process.
+ * Open tail for a tool's process.
  */
 function openTail(ns: NS, tool: ToolName): void {
   const pid = cachedData.pids[tool];
@@ -389,13 +390,13 @@ function startTool(ns: NS, tool: ToolName): void {
   }
 
   const script = TOOL_SCRIPTS[tool];
-  const pid = ns.exec(script, "home");
+  const pid = ensureRamAndExec(ns, script, "home");
 
   if (pid > 0) {
     cachedData.pids[tool] = pid;
     ns.toast(`Started ${tool}`, "success", 2000);
   } else {
-    ns.toast(`Failed to start ${tool} - check RAM/script exists`, "error", 4000);
+    ns.toast(`Failed to start ${tool} - could not free enough RAM`, "error", 4000);
   }
 }
 
