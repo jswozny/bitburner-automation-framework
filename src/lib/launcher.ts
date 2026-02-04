@@ -104,7 +104,7 @@ export function dryRunEnsureRamAndExec(
     return { wouldKill: [], sufficient: false };
   }
 
-  let available = ns.getServerMaxRam(host) - ns.getServerUsedRam(host);
+  const available = ns.getServerMaxRam(host) - ns.getServerUsedRam(host);
   if (available >= requiredRam) {
     return { wouldKill: [], sufficient: true };
   }

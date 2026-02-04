@@ -539,7 +539,6 @@ export function calculateNFGDonatePurchasePlan(
     }
   } else {
     bestFactionRep = ns.singularity.getFactionRep(bestFaction);
-    bestFactionFavor = ns.singularity.getFactionFavor(bestFaction);
   }
 
   // No eligible faction found
@@ -565,9 +564,10 @@ export function calculateNFGDonatePurchasePlan(
   let totalPurchaseCost = 0;
   let purchasePrice = currentPrice;
   let runningTotal = 0;
+  const running = true;
 
   // Calculate sequential purchases with donations as needed
-  while (true) {
+  while (running) {
     const repGap = Math.max(0, currentRepReq - currentRep);
     const donationNeeded = repGap > 0 ? calculateDonationForRep(ns, repGap) : 0;
     const totalStepCost = donationNeeded + purchasePrice;
