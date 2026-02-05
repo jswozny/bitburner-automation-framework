@@ -1,7 +1,7 @@
 /**
  * Bootstrap Script
  *
- * Minimal entry point that launches the dashboard and core auto-* scripts.
+ * Minimal entry point that launches the dashboard, core daemons, and queue runner.
  * Uses ensureRamAndExec so it works even when home RAM is full of workers.
  *
  * Usage: run start.js
@@ -12,35 +12,67 @@
 import { NS } from "@ns";
 import { ensureRamAndExec } from "/lib/launcher";
 
-/** Scripts to launch after the dashboard, in order. */
-const AUTO_SCRIPTS: { path: string; args: (string | number | boolean)[] }[] = [
-  { path: "auto/auto-nuke.js", args: [] },
-  { path: "hack/distributed.js", args: [] },
-  { path: "auto/auto-buy-programs.js", args: [] },
-  { path: "auto/auto-work.js", args: ["--focus", "hacking"] },
+/** Core daemons to launch after the dashboard, in priority order. */
+const CORE_SCRIPTS: { path: string; args: (string | number | boolean)[] }[] = [
+  { path: "daemons/nuke.js", args: [] },
+  { path: "daemons/hack.js", args: [] },
+  { path: "daemons/queue.js", args: [] },
+];
+
+/** Optional daemons launched if RAM permits. */
+const OPTIONAL_SCRIPTS: { path: string; args: (string | number | boolean)[] }[] = [
+  { path: "daemons/pserv.js", args: [] },
+  { path: "daemons/share.js", args: [] },
 ];
 
 export async function main(ns: NS): Promise<void> {
   ns.disableLog("ALL");
 
   // 1. Launch dashboard
-  const dashPid = ensureRamAndExec(ns, "dashboard/dashboard.js", "home");
-  if (dashPid > 0) {
-    ns.tprint("SUCCESS: Dashboard launched (pid " + dashPid + ")");
+  const dashPath = "views/dashboard/dashboard.js";
+  if (ns.isRunning(dashPath, "home")) {
+    ns.tprint(`INFO: ${dashPath} already running`);
   } else {
-    ns.tprint("WARN: Could not launch dashboard");
+    const dashPid = ensureRamAndExec(ns, dashPath, "home");
+    if (dashPid > 0) {
+      ns.tprint("SUCCESS: Dashboard launched (pid " + dashPid + ")");
+    } else {
+      ns.tprint("WARN: Could not launch dashboard");
+    }
   }
 
   // Brief pause to let dashboard initialize
   await ns.sleep(500);
 
-  // 2. Launch auto-scripts in order
-  for (const { path, args } of AUTO_SCRIPTS) {
+  // 2. Launch core daemons
+  for (const { path, args } of CORE_SCRIPTS) {
+    if (ns.isRunning(path, "home", ...args)) {
+      ns.tprint(`INFO: ${path} already running`);
+      continue;
+    }
     const pid = ensureRamAndExec(ns, path, "home", 1, ...args);
     if (pid > 0) {
       ns.tprint(`SUCCESS: ${path} launched (pid ${pid})`);
     } else {
       ns.tprint(`WARN: Skipping ${path} — could not free enough RAM`);
+    }
+  }
+
+  // 3. Launch optional daemons if RAM available
+  for (const { path, args } of OPTIONAL_SCRIPTS) {
+    if (ns.isRunning(path, "home", ...args)) {
+      ns.tprint(`INFO: ${path} already running`);
+      continue;
+    }
+    const available = ns.getServerMaxRam("home") - ns.getServerUsedRam("home");
+    const needed = ns.getScriptRam(path);
+    if (available >= needed) {
+      const pid = ns.exec(path, "home", 1, ...args);
+      if (pid > 0) {
+        ns.tprint(`SUCCESS: ${path} launched (pid ${pid})`);
+      }
+    } else {
+      ns.tprint(`INFO: Skipping optional ${path} — not enough free RAM`);
     }
   }
 

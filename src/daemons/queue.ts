@@ -1,0 +1,292 @@
+/**
+ * Queue Runner Daemon
+ *
+ * Lightweight daemon (~4.5 GB target) that processes a priority queue
+ * of one-shot action scripts. Supports round-robin status checks and
+ * user-triggered actions with RAM management via kill tiers.
+ *
+ * Usage:
+ *   run daemons/queue.js
+ *   run daemons/queue.js --interval 2000
+ */
+import { NS } from "@ns";
+import { COLORS } from "/lib/utils";
+import { dequeueAction, queueAction } from "/lib/ports";
+import { QueueEntry, PRIORITY, KILL_TIERS } from "/types/ports";
+
+// === ROUND-ROBIN STATUS CHECKS ===
+
+const STATUS_CHECKS: QueueEntry[] = [
+  {
+    script: "actions/check-work.js",
+    args: [],
+    priority: PRIORITY.STATUS_CHECK,
+    mode: "queue",
+    timestamp: 0,
+    requester: "queue-runner",
+  },
+  {
+    script: "actions/check-darkweb.js",
+    args: [],
+    priority: PRIORITY.STATUS_CHECK,
+    mode: "queue",
+    timestamp: 0,
+    requester: "queue-runner",
+  },
+];
+
+/**
+ * Collect all pending queue entries, sorted by priority (highest first)
+ */
+function drainQueue(ns: NS): QueueEntry[] {
+  const entries: QueueEntry[] = [];
+  let entry = dequeueAction(ns);
+  while (entry !== null) {
+    entries.push(entry);
+    entry = dequeueAction(ns);
+  }
+  // Sort by priority descending (highest priority first)
+  entries.sort((a, b) => b.priority - a.priority);
+  return entries;
+}
+
+/**
+ * Get available RAM on home server
+ */
+function getAvailableRam(ns: NS): number {
+  const maxRam = ns.getServerMaxRam("home");
+  const usedRam = ns.getServerUsedRam("home");
+  return maxRam - usedRam;
+}
+
+/**
+ * Walk kill tiers to free enough RAM for a script.
+ * Returns the list of scripts that were killed (for potential relaunch).
+ */
+function freeRamByKillTiers(
+  ns: NS,
+  neededRam: number,
+): { hostname: string; script: string; args: (string | number | boolean)[] }[] {
+  const killed: { hostname: string; script: string; args: (string | number | boolean)[] }[] = [];
+
+  for (const tier of KILL_TIERS) {
+    // Check if we have enough RAM now
+    if (getAvailableRam(ns) >= neededRam) {
+      break;
+    }
+
+    for (const scriptPath of tier) {
+      // Find and kill all instances of this script across all servers
+      const processes = ns.ps("home").filter(p => p.filename === scriptPath);
+      for (const proc of processes) {
+        ns.print(`${COLORS.yellow}Killing ${scriptPath} (pid ${proc.pid}) to free RAM${COLORS.reset}`);
+        killed.push({
+          hostname: "home",
+          script: proc.filename,
+          args: proc.args,
+        });
+        ns.kill(proc.pid);
+      }
+    }
+  }
+
+  return killed;
+}
+
+/**
+ * Wait for a script to finish running
+ */
+async function waitForScript(ns: NS, pid: number, timeoutMs: number = 30_000): Promise<boolean> {
+  const startTime = Date.now();
+  while (ns.isRunning(pid)) {
+    if (Date.now() - startTime > timeoutMs) {
+      ns.print(`${COLORS.yellow}Script pid ${pid} timed out after ${timeoutMs / 1000}s${COLORS.reset}`);
+      return false;
+    }
+    await ns.sleep(500);
+  }
+  return true;
+}
+
+/**
+ * Attempt to run a queue entry. Returns true if successfully executed.
+ */
+async function executeEntry(ns: NS, entry: QueueEntry): Promise<boolean> {
+  const scriptRam = ns.getScriptRam(entry.script);
+
+  // Script doesn't exist
+  if (scriptRam === 0) {
+    ns.print(`${COLORS.red}Script not found: ${entry.script}${COLORS.reset}`);
+    return false;
+  }
+
+  // Check if script is already running
+  if (ns.isRunning(entry.script, "home", ...entry.args)) {
+    ns.print(`${COLORS.dim}Already running: ${entry.script}${COLORS.reset}`);
+    return true; // Consider it handled
+  }
+
+  let availableRam = getAvailableRam(ns);
+  let killed: { hostname: string; script: string; args: (string | number | boolean)[] }[] = [];
+
+  // Not enough RAM - handle based on mode
+  if (availableRam < scriptRam) {
+    if (entry.mode === "force") {
+      // Walk kill tiers to free RAM
+      ns.print(`${COLORS.yellow}Force mode: freeing RAM for ${entry.script} (need ${ns.formatRam(scriptRam)})${COLORS.reset}`);
+      killed = freeRamByKillTiers(ns, scriptRam);
+
+      // Brief pause to let processes fully terminate
+      await ns.sleep(200);
+      availableRam = getAvailableRam(ns);
+
+      if (availableRam < scriptRam) {
+        // Still not enough even after killing everything
+        ns.print(`${COLORS.red}Cannot free enough RAM for ${entry.script} (need ${ns.formatRam(scriptRam)}, have ${ns.formatRam(availableRam)})${COLORS.reset}`);
+
+        if (entry.manualFallback) {
+          ns.tprint(`${COLORS.yellow}Manual fallback: ${entry.manualFallback}${COLORS.reset}`);
+        }
+        return false;
+      }
+    } else {
+      // Queue mode - skip if not enough RAM
+      ns.print(`${COLORS.dim}Skipping ${entry.script}: need ${ns.formatRam(scriptRam)}, have ${ns.formatRam(availableRam)}${COLORS.reset}`);
+      return false;
+    }
+  }
+
+  // Execute the script
+  const pid = ns.exec(entry.script, "home", 1, ...entry.args);
+  if (pid === 0) {
+    ns.print(`${COLORS.red}Failed to exec ${entry.script}${COLORS.reset}`);
+    return false;
+  }
+
+  ns.print(`${COLORS.green}Running ${entry.script} (pid ${pid})${COLORS.reset}`);
+
+  // Wait for the script to complete
+  const completed = await waitForScript(ns, pid);
+
+  if (!completed) {
+    ns.print(`${COLORS.yellow}Script ${entry.script} did not complete in time${COLORS.reset}`);
+  }
+
+  // Relaunch any killed scripts
+  if (killed.length > 0) {
+    ns.print(`${COLORS.dim}Relaunching ${killed.length} killed script(s)...${COLORS.reset}`);
+    await ns.sleep(200);
+
+    for (const k of killed) {
+      // Only relaunch if there's enough RAM and it's not already running
+      const relaunchRam = ns.getScriptRam(k.script);
+      if (relaunchRam === 0) continue; // Script doesn't exist anymore
+
+      if (ns.isRunning(k.script, k.hostname, ...k.args)) {
+        ns.print(`${COLORS.dim}Already running: ${k.script}${COLORS.reset}`);
+        continue;
+      }
+
+      if (getAvailableRam(ns) >= relaunchRam) {
+        const relaunchPid = ns.exec(k.script, k.hostname, 1, ...k.args);
+        if (relaunchPid > 0) {
+          ns.print(`${COLORS.green}Relaunched ${k.script} (pid ${relaunchPid})${COLORS.reset}`);
+        } else {
+          ns.print(`${COLORS.yellow}Failed to relaunch ${k.script}${COLORS.reset}`);
+        }
+      } else {
+        ns.print(`${COLORS.yellow}Not enough RAM to relaunch ${k.script} (need ${ns.formatRam(relaunchRam)})${COLORS.reset}`);
+      }
+    }
+  }
+
+  return completed;
+}
+
+/**
+ * Print queue runner status
+ */
+function printStatus(
+  ns: NS,
+  lastAction: string,
+  roundRobinIndex: number,
+  queueDepth: number,
+): void {
+  const C = COLORS;
+  ns.print(`${C.cyan}=== Queue Runner ===${C.reset}`);
+  ns.print(`${C.dim}Last:${C.reset} ${lastAction}`);
+  ns.print(
+    `${C.dim}Queue depth:${C.reset} ${queueDepth}` +
+    `  ${C.dim}|${C.reset}  ` +
+    `${C.dim}Round-robin:${C.reset} ${roundRobinIndex + 1}/${STATUS_CHECKS.length}`
+  );
+  ns.print(
+    `${C.dim}Available RAM:${C.reset} ${ns.formatRam(getAvailableRam(ns))}` +
+    ` / ${ns.formatRam(ns.getServerMaxRam("home"))}`
+  );
+}
+
+export async function main(ns: NS): Promise<void> {
+  ns.disableLog("ALL");
+
+  const flags = ns.flags([
+    ["interval", 2000],
+  ]) as {
+    interval: number;
+    _: string[];
+  };
+
+  const interval = flags.interval;
+  let roundRobinIndex = 0;
+  let lastAction = "Starting up...";
+
+  // eslint-disable-next-line no-constant-condition
+  while (true) {
+    ns.clearLog();
+
+    // Drain all user-triggered queue entries (higher priority first)
+    const userEntries = drainQueue(ns);
+
+    if (userEntries.length > 0) {
+      // Process user-triggered entries
+      for (const entry of userEntries) {
+        lastAction = `[${entry.requester}] ${entry.script}`;
+        ns.print(
+          `${COLORS.white}Processing: ${entry.script}${COLORS.reset}` +
+          ` ${COLORS.dim}(priority: ${entry.priority}, mode: ${entry.mode})${COLORS.reset}`
+        );
+
+        const success = await executeEntry(ns, entry);
+        if (success) {
+          lastAction += ` ${COLORS.green}OK${COLORS.reset}`;
+        } else {
+          lastAction += ` ${COLORS.red}FAIL${COLORS.reset}`;
+        }
+      }
+    } else {
+      // No user entries - run next round-robin status check
+      const statusCheck = STATUS_CHECKS[roundRobinIndex];
+
+      // Update timestamp for this check
+      statusCheck.timestamp = Date.now();
+
+      lastAction = `[round-robin] ${statusCheck.script}`;
+
+      const success = await executeEntry(ns, statusCheck);
+      if (success) {
+        lastAction += ` ${COLORS.green}OK${COLORS.reset}`;
+      } else {
+        lastAction += ` ${COLORS.dim}skip${COLORS.reset}`;
+      }
+
+      // Advance round-robin index
+      roundRobinIndex = (roundRobinIndex + 1) % STATUS_CHECKS.length;
+    }
+
+    // Print status
+    printStatus(ns, lastAction, roundRobinIndex, userEntries.length);
+
+    ns.print(`\n${COLORS.dim}Next check in ${interval / 1000}s...${COLORS.reset}`);
+    await ns.sleep(interval);
+  }
+}

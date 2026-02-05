@@ -4,7 +4,7 @@ import {
   fmtMoney,
   fmtExp,
   fmtPercent,
-} from "/lib/crime.js";
+} from "/controllers/crime.js";
 
 const { green, yellow, cyan, dim, reset, bold } = COLORS;
 
