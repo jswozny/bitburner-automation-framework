@@ -1,0 +1,53 @@
+/**
+ * Dashboard Types - Re-export shim
+ *
+ * Re-exports types from the central types/ports.ts with legacy aliases.
+ * Panel components import from here; actual definitions live in types/ports.ts.
+ */
+
+// Re-export everything from the central types file
+export {
+  ToolName,
+  TOOL_SCRIPTS,
+  COMMAND_PORT,
+  STATUS_PORTS,
+  QUEUE_PORT,
+  PRIORITY,
+  KILL_TIERS,
+  Command,
+  QueueEntry,
+  BitnodeStatus,
+  DashboardState,
+  OverviewCardProps,
+  DetailPanelProps,
+  NonWorkableFactionProgress,
+} from "/types/ports";
+
+// Re-export with Formatted* aliases for backward compatibility
+export type { NukeStatus as FormattedNukeStatus } from "/types/ports";
+export type { PservStatus as FormattedPservStatus } from "/types/ports";
+export type { ShareStatus as FormattedShareStatus } from "/types/ports";
+export type { RepStatus as FormattedRepStatus } from "/types/ports";
+export type { DarkwebStatus as FormattedDarkwebStatus } from "/types/ports";
+export type { WorkStatus as FormattedWorkStatus } from "/types/ports";
+export type { HackStatus as FormattedHackStatus } from "/types/ports";
+export type { TargetAssignment as FormattedTargetAssignment } from "/types/ports";
+
+// Legacy plugin interface (kept for any remaining references)
+import React from "lib/react";
+import { NS } from "@ns";
+import { ToolName, OverviewCardProps, DetailPanelProps } from "/types/ports";
+
+export interface PluginContext {
+  playerMoney?: number;
+  favorToUnlock?: number;
+}
+
+export interface ToolPlugin<TFormatted> {
+  name: string;
+  id: ToolName;
+  script: string;
+  getFormattedStatus: (ns: NS, extra?: PluginContext) => TFormatted | null;
+  OverviewCard: React.ComponentType<OverviewCardProps<TFormatted>>;
+  DetailPanel: React.ComponentType<DetailPanelProps<TFormatted>>;
+}

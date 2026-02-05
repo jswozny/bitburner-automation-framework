@@ -2,27 +2,18 @@
  * RAM-Aware Launcher
  *
  * Frees RAM by killing low-priority processes before launching a script.
- * Kill priority (lowest tier killed first):
- *   Tier 1: Ephemeral workers (share, hack, grow, weaken) — orchestrators redeploy in seconds
- *   Tier 2: auto-share — nice-to-have rep multiplier, easily restarted
- *   Tier 3: hack/distributed — main income, last resort
+ * Kill tiers defined in types/ports.ts (single source of truth):
+ *   Tier 1: Ephemeral workers (share, hack, grow, weaken)
+ *   Tier 2: daemons/share
+ *   Tier 3: daemons/hack
+ *   Tier 4: dashboard (last resort, relaunches after)
  *
  * NS functions used: getScriptRam, getServerMaxRam, getServerUsedRam, ps, kill, exec
  * Estimated RAM cost: ~3.8 GB (2.2 GB API + 1.6 GB base)
  */
 import { NS } from "@ns";
-
-/** Scripts grouped by kill priority — tier 1 is killed first. */
-const KILL_TIERS: string[][] = [
-  [
-    "workers/share.js",
-    "workers/hack.js",
-    "workers/grow.js",
-    "workers/weaken.js",
-  ],
-  ["auto/auto-share.js"],
-  ["hack/distributed.js"],
-];
+import { KILL_TIERS, QUEUE_PORT, PRIORITY } from "/types/ports";
+import type { QueueEntry } from "/types/ports";
 
 /**
  * Launch a script, freeing RAM by killing lower-priority processes if needed.
@@ -133,4 +124,32 @@ export function dryRunEnsureRamAndExec(
   }
 
   return { wouldKill, sufficient: deficit <= 0 };
+}
+
+/**
+ * Enqueue a script for the queue runner to execute.
+ * The queue runner (daemons/queue.ts) processes entries by priority.
+ *
+ * @param mode "force" kills lower-priority scripts, "queue" waits for free RAM
+ */
+export function queueExec(
+  ns: NS,
+  scriptPath: string,
+  args: (string | number | boolean)[] = [],
+  priority: number = PRIORITY.USER_ACTION,
+  mode: "force" | "queue" = "queue",
+  requester = "launcher",
+  manualFallback?: string,
+): void {
+  const entry: QueueEntry = {
+    script: scriptPath,
+    args,
+    priority,
+    mode,
+    timestamp: Date.now(),
+    requester,
+    manualFallback,
+  };
+  const handle = ns.getPortHandle(QUEUE_PORT);
+  handle.write(JSON.stringify(entry));
 }

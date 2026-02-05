@@ -1,0 +1,425 @@
+/**
+ * Terminal Status Viewer
+ *
+ * One-shot script that reads status ports and prints a formatted overview.
+ * Reads only from ports — no controller or Singularity imports.
+ * Target RAM: ~0.5 GB
+ *
+ * Usage:
+ *   run views/status.js           # Overview of all tools
+ *   run views/status.js hack      # Detailed hack info
+ *   run views/status.js nuke      # Detailed nuke info
+ *   run views/status.js pserv     # Detailed pserv info
+ *   run views/status.js share     # Detailed share info
+ *   run views/status.js rep       # Detailed rep info
+ *   run views/status.js work      # Detailed work info
+ *   run views/status.js darkweb   # Detailed darkweb info
+ *   run views/status.js --live    # Auto-refreshing tail window
+ */
+import { NS, ProcessInfo } from "@ns";
+import { COLORS } from "/lib/utils";
+import { peekStatus } from "/lib/ports";
+import {
+  ToolName,
+  TOOL_SCRIPTS,
+  STATUS_PORTS,
+  NukeStatus,
+  HackStatus,
+  PservStatus,
+  ShareStatus,
+  RepStatus,
+  WorkStatus,
+  DarkwebStatus,
+  BitnodeStatus,
+} from "/types/ports";
+
+const C = COLORS;
+
+type Log = (msg: string) => void;
+
+// === DAEMON DOCS ===
+
+const DAEMON_DOCS: Record<ToolName, { start: string; stop: string; flags: string | null }> = {
+  nuke:    { start: "run daemons/nuke.js",    stop: "kill daemons/nuke.js",    flags: null },
+  hack:    { start: "run daemons/hack.js",    stop: "kill daemons/hack.js",    flags: null },
+  pserv:   { start: "run daemons/pserv.js",   stop: "kill daemons/pserv.js",   flags: null },
+  share:   { start: "run daemons/share.js",   stop: "kill daemons/share.js",   flags: null },
+  rep:     { start: "run daemons/rep.js",      stop: "kill daemons/rep.js",     flags: null },
+  darkweb: { start: "run daemons/darkweb.js",  stop: "kill daemons/darkweb.js", flags: null },
+  work:    { start: "run daemons/work.js",     stop: "kill daemons/work.js",
+             flags: "--focus <focus> (strength, defense, dexterity, agility, hacking, charisma, balance-combat, balance-all, crime-money, crime-stats)" },
+};
+
+// === RUNNING STATE ===
+
+function getDaemonRunState(processes: ProcessInfo[]): Record<ToolName, { running: boolean; pid: number }> {
+  const state = {} as Record<ToolName, { running: boolean; pid: number }>;
+  for (const tool of Object.keys(TOOL_SCRIPTS) as ToolName[]) {
+    const script = TOOL_SCRIPTS[tool];
+    const proc = processes.find(p => p.filename === script);
+    state[tool] = proc ? { running: true, pid: proc.pid } : { running: false, pid: 0 };
+  }
+  return state;
+}
+
+function formatRunState(state: { running: boolean; pid: number }): string {
+  return state.running
+    ? `${C.green}RUNNING (pid ${state.pid})${C.reset}`
+    : `${C.red}STOPPED${C.reset}`;
+}
+
+// === PRINT HELPERS ===
+
+function printHeader(log: Log, title: string): void {
+  log(`\n${C.cyan}=== ${title} ===${C.reset}`);
+}
+
+function printField(log: Log, label: string, value: string | number, color: string = C.white): void {
+  log(`  ${C.dim}${label}:${C.reset} ${color}${value}${C.reset}`);
+}
+
+function printOffline(log: Log, tool: string): void {
+  log(`  ${C.dim}(no data — ${tool} daemon not running?)${C.reset}`);
+}
+
+function printCliDocs(log: Log, tool: ToolName): void {
+  const docs = DAEMON_DOCS[tool];
+  log(`\n  ${C.dim}CLI:${C.reset}`);
+  log(`    Start: ${C.cyan}${docs.start}${C.reset}`);
+  log(`    Stop:  ${C.cyan}${docs.stop}${C.reset}`);
+  if (docs.flags) {
+    log(`    Flags: ${C.yellow}${docs.flags}${C.reset}`);
+  }
+}
+
+// === OVERVIEW ===
+
+function printOverview(ns: NS, log: Log): void {
+  const processes = ns.ps("home");
+  const runState = getDaemonRunState(processes);
+
+  printHeader(log, "STATUS OVERVIEW");
+
+  // Bitnode
+  const bitnode = peekStatus<BitnodeStatus>(ns, STATUS_PORTS.bitnode);
+  if (bitnode) {
+    const check = (v: boolean) => v ? `${C.green}[x]${C.reset}` : `${C.red}[ ]${C.reset}`;
+    log(`  ${C.cyan}FL1GHT.EXE${C.reset}  ${check(bitnode.augsComplete)} Augs: ${bitnode.augmentations}/${bitnode.augmentationsRequired}  ${check(bitnode.moneyComplete)} Money: ${bitnode.moneyFormatted}/${bitnode.moneyRequiredFormatted}  ${check(bitnode.hackingComplete)} Hack: ${bitnode.hacking}/${bitnode.hackingRequired}`);
+  }
+
+  // Nuke
+  const nuke = peekStatus<NukeStatus>(ns, STATUS_PORTS.nuke);
+  log("");
+  log(`  ${C.green}NUKE${C.reset}  ${formatRunState(runState.nuke)}`);
+  if (nuke) {
+    log(`    Rooted: ${nuke.rootedCount}/${nuke.totalServers}  Tools: ${nuke.toolCount}  Ready: ${nuke.ready.length}`);
+  } else {
+    printOffline(log, "nuke");
+  }
+
+  // Hack
+  const hack = peekStatus<HackStatus>(ns, STATUS_PORTS.hack);
+  log(`  ${C.green}HACK${C.reset}  ${formatRunState(runState.hack)}`);
+  if (hack) {
+    log(`    Targets: ${hack.activeTargets}/${hack.totalTargets}  Threads: ${hack.totalThreads}  Income: ${hack.totalExpectedMoneyFormatted}/s`);
+  } else {
+    printOffline(log, "hack");
+  }
+
+  // Pserv
+  const pserv = peekStatus<PservStatus>(ns, STATUS_PORTS.pserv);
+  log(`  ${C.green}PSERV${C.reset}  ${formatRunState(runState.pserv)}`);
+  if (pserv) {
+    log(`    Servers: ${pserv.serverCount}/${pserv.serverCap}  RAM: ${pserv.totalRam}  ${pserv.allMaxed ? C.green + "MAXED" + C.reset : `${pserv.minRam} - ${pserv.maxRam}`}`);
+  } else {
+    printOffline(log, "pserv");
+  }
+
+  // Share
+  const share = peekStatus<ShareStatus>(ns, STATUS_PORTS.share);
+  log(`  ${C.green}SHARE${C.reset}  ${formatRunState(runState.share)}`);
+  if (share) {
+    log(`    Power: ${share.sharePower}  Threads: ${share.totalThreads}  Servers: ${share.serversWithShare}`);
+  } else {
+    printOffline(log, "share");
+  }
+
+  // Rep
+  const rep = peekStatus<RepStatus>(ns, STATUS_PORTS.rep);
+  log(`  ${C.green}REP${C.reset}  ${formatRunState(runState.rep)}`);
+  if (rep) {
+    log(`    Faction: ${rep.targetFaction}  Rep: ${rep.currentRepFormatted}/${rep.repRequiredFormatted}  Progress: ${(rep.repProgress * 100).toFixed(1)}%`);
+  } else {
+    printOffline(log, "rep");
+  }
+
+  // Work
+  const work = peekStatus<WorkStatus>(ns, STATUS_PORTS.work);
+  log(`  ${C.green}WORK${C.reset}  ${formatRunState(runState.work)}`);
+  if (work) {
+    log(`    Focus: ${work.focusLabel}  Activity: ${work.activityDisplay}  City: ${work.playerCity}`);
+  } else {
+    printOffline(log, "work");
+  }
+
+  // Darkweb
+  const darkweb = peekStatus<DarkwebStatus>(ns, STATUS_PORTS.darkweb);
+  log(`  ${C.green}DARKWEB${C.reset}  ${formatRunState(runState.darkweb)}`);
+  if (darkweb) {
+    const tor = darkweb.hasTorRouter ? `${C.green}TOR${C.reset}` : `${C.red}NO TOR${C.reset}`;
+    log(`    ${tor}  Programs: ${darkweb.ownedCount}/${darkweb.totalPrograms}  ${darkweb.allOwned ? C.green + "ALL OWNED" + C.reset : `Next: ${darkweb.nextProgram?.name || "-"}`}`);
+  } else {
+    printOffline(log, "darkweb");
+  }
+
+  log("");
+}
+
+// === DETAILED VIEWS ===
+
+function printNukeDetail(ns: NS, log: Log): void {
+  const processes = ns.ps("home");
+  const runState = getDaemonRunState(processes);
+  const nuke = peekStatus<NukeStatus>(ns, STATUS_PORTS.nuke);
+  printHeader(log, "NUKE DETAIL");
+  log(`  ${formatRunState(runState.nuke)}`);
+  if (!nuke) { printOffline(log, "nuke"); printCliDocs(log, "nuke"); return; }
+
+  printField(log, "Rooted", `${nuke.rootedCount}/${nuke.totalServers}`);
+  printField(log, "Tools", String(nuke.toolCount));
+
+  if (nuke.ready.length > 0) {
+    log(`\n  ${C.green}Ready to root:${C.reset}`);
+    for (const s of nuke.ready) {
+      log(`    ${s.hostname} (hack: ${s.requiredHacking}, ports: ${s.requiredPorts})`);
+    }
+  }
+  if (nuke.needHacking.length > 0) {
+    log(`\n  ${C.yellow}Need higher hacking:${C.reset}`);
+    for (const s of nuke.needHacking.slice(0, 10)) {
+      log(`    ${s.hostname} (need: ${s.required}, have: ${s.current})`);
+    }
+  }
+  if (nuke.needPorts.length > 0) {
+    log(`\n  ${C.yellow}Need more port tools:${C.reset}`);
+    for (const s of nuke.needPorts.slice(0, 10)) {
+      log(`    ${s.hostname} (need: ${s.required}, have: ${s.current})`);
+    }
+  }
+  printCliDocs(log, "nuke");
+  log("");
+}
+
+function printHackDetail(ns: NS, log: Log): void {
+  const processes = ns.ps("home");
+  const runState = getDaemonRunState(processes);
+  const hack = peekStatus<HackStatus>(ns, STATUS_PORTS.hack);
+  printHeader(log, "HACK DETAIL");
+  log(`  ${formatRunState(runState.hack)}`);
+  if (!hack) { printOffline(log, "hack"); printCliDocs(log, "hack"); return; }
+
+  printField(log, "Total RAM", hack.totalRam);
+  printField(log, "Servers", String(hack.serverCount));
+  printField(log, "Threads", hack.totalThreads);
+  printField(log, "Income", hack.totalExpectedMoneyFormatted + "/s");
+  printField(log, "Saturation", `${hack.saturationPercent.toFixed(1)}%`);
+  printField(log, "Targets", `${hack.activeTargets}/${hack.totalTargets}`);
+
+  if (hack.targets.length > 0) {
+    log(`\n  ${C.dim}${"Host".padEnd(20)} ${"Action".padEnd(8)} ${"Threads".padEnd(10)} ${"Money%".padEnd(8)} ${"Security".padEnd(10)} ${"Income".padEnd(12)}${C.reset}`);
+    for (const t of hack.targets.slice(0, 15)) {
+      const actionColor = t.action === "hack" ? C.green : t.action === "grow" ? C.cyan : C.yellow;
+      log(`  ${t.hostname.padEnd(20)} ${actionColor}${t.action.padEnd(8)}${C.reset} ${String(t.assignedThreads).padEnd(10)} ${t.moneyDisplay.padEnd(8)} ${t.securityDelta.padEnd(10)} ${t.expectedMoneyFormatted.padEnd(12)}`);
+    }
+  }
+  printCliDocs(log, "hack");
+  log("");
+}
+
+function printPservDetail(ns: NS, log: Log): void {
+  const processes = ns.ps("home");
+  const runState = getDaemonRunState(processes);
+  const pserv = peekStatus<PservStatus>(ns, STATUS_PORTS.pserv);
+  printHeader(log, "PSERV DETAIL");
+  log(`  ${formatRunState(runState.pserv)}`);
+  if (!pserv) { printOffline(log, "pserv"); printCliDocs(log, "pserv"); return; }
+
+  printField(log, "Servers", `${pserv.serverCount}/${pserv.serverCap}`);
+  printField(log, "Total RAM", pserv.totalRam);
+  printField(log, "Range", `${pserv.minRam} - ${pserv.maxRam}`);
+  printField(log, "Max Possible", pserv.maxPossibleRam);
+  printField(log, "All Maxed", pserv.allMaxed ? "Yes" : "No", pserv.allMaxed ? C.green : C.yellow);
+
+  if (pserv.nextUpgrade) {
+    log(`\n  ${C.cyan}Next upgrade:${C.reset}`);
+    log(`    ${pserv.nextUpgrade.hostname}: ${pserv.nextUpgrade.currentRam} → ${pserv.nextUpgrade.nextRam} (${pserv.nextUpgrade.costFormatted})  ${pserv.nextUpgrade.canAfford ? C.green + "CAN AFFORD" + C.reset : C.red + "NEED MORE" + C.reset}`);
+  }
+
+  if (pserv.servers.length > 0) {
+    log(`\n  ${C.dim}${"Server".padEnd(20)} RAM${C.reset}`);
+    for (const s of pserv.servers) {
+      log(`  ${s.hostname.padEnd(20)} ${s.ramFormatted}`);
+    }
+  }
+  printCliDocs(log, "pserv");
+  log("");
+}
+
+function printShareDetail(ns: NS, log: Log): void {
+  const processes = ns.ps("home");
+  const runState = getDaemonRunState(processes);
+  const share = peekStatus<ShareStatus>(ns, STATUS_PORTS.share);
+  printHeader(log, "SHARE DETAIL");
+  log(`  ${formatRunState(runState.share)}`);
+  if (!share) { printOffline(log, "share"); printCliDocs(log, "share"); return; }
+
+  printField(log, "Power", share.sharePower);
+  printField(log, "Threads", share.totalThreads);
+  printField(log, "RAM per Thread", share.shareRam);
+  printField(log, "Servers", String(share.serversWithShare));
+
+  if (share.serverStats.length > 0) {
+    log(`\n  ${C.dim}${"Server".padEnd(20)} Threads${C.reset}`);
+    for (const s of share.serverStats) {
+      log(`  ${s.hostname.padEnd(20)} ${s.threads}`);
+    }
+  }
+  printCliDocs(log, "share");
+  log("");
+}
+
+function printRepDetail(ns: NS, log: Log): void {
+  const processes = ns.ps("home");
+  const runState = getDaemonRunState(processes);
+  const rep = peekStatus<RepStatus>(ns, STATUS_PORTS.rep);
+  printHeader(log, "REP DETAIL");
+  log(`  ${formatRunState(runState.rep)}`);
+  if (!rep) { printOffline(log, "rep"); printCliDocs(log, "rep"); return; }
+
+  printField(log, "Target Faction", rep.targetFaction);
+  printField(log, "Next Aug", rep.nextAugName || "None");
+  printField(log, "Rep", `${rep.currentRepFormatted} / ${rep.repRequiredFormatted}`);
+  printField(log, "Progress", `${(rep.repProgress * 100).toFixed(1)}%`);
+  printField(log, "ETA", rep.eta);
+  printField(log, "Favor", `${rep.favor} / ${rep.favorToUnlock}`);
+  printField(log, "Pending Augs", String(rep.pendingAugs));
+  printField(log, "Installed Augs", String(rep.installedAugs));
+
+  if (rep.purchasePlan.length > 0) {
+    log(`\n  ${C.cyan}Purchase Plan:${C.reset}`);
+    for (const aug of rep.purchasePlan.slice(0, 10)) {
+      log(`    ${aug.name} (${aug.faction}) — ${aug.adjustedCostFormatted}`);
+    }
+  }
+
+  if (rep.neuroFlux) {
+    log(`\n  ${C.magenta}NeuroFlux Governor:${C.reset}`);
+    printField(log, "  Level", String(rep.neuroFlux.currentLevel));
+    printField(log, "  Best Faction", rep.neuroFlux.bestFaction || "None");
+    printField(log, "  Price", rep.neuroFlux.currentPriceFormatted);
+    printField(log, "  Can Purchase", rep.neuroFlux.canPurchase ? "Yes" : "No");
+  }
+  printCliDocs(log, "rep");
+  log("");
+}
+
+function printWorkDetail(ns: NS, log: Log): void {
+  const processes = ns.ps("home");
+  const runState = getDaemonRunState(processes);
+  const work = peekStatus<WorkStatus>(ns, STATUS_PORTS.work);
+  printHeader(log, "WORK DETAIL");
+  log(`  ${formatRunState(runState.work)}`);
+  if (!work) { printOffline(log, "work"); printCliDocs(log, "work"); return; }
+
+  printField(log, "Focus", `${work.focusLabel} (${work.currentFocus})`);
+  printField(log, "Activity", work.activityDisplay);
+  printField(log, "City", work.playerCity);
+  printField(log, "Money", work.playerMoneyFormatted);
+
+  log(`\n  ${C.cyan}Skills:${C.reset}`);
+  printField(log, "  Hacking", work.skills.hackingFormatted);
+  printField(log, "  Strength", work.skills.strengthFormatted);
+  printField(log, "  Defense", work.skills.defenseFormatted);
+  printField(log, "  Dexterity", work.skills.dexterityFormatted);
+  printField(log, "  Agility", work.skills.agilityFormatted);
+  printField(log, "  Charisma", work.skills.charismaFormatted);
+
+  printField(log, "Combat Balance", `${(work.combatBalance * 100).toFixed(1)}%`);
+
+  if (work.recommendation) {
+    log(`\n  ${C.cyan}Recommendation:${C.reset}`);
+    log(`    ${work.recommendation.type}: ${work.recommendation.location} in ${work.recommendation.city}`);
+    log(`    Skill: ${work.recommendation.skillDisplay} (${work.recommendation.expMultFormatted}x exp)`);
+    if (work.recommendation.needsTravel) {
+      log(`    ${C.yellow}Needs travel (${work.recommendation.travelCostFormatted})${C.reset}`);
+    }
+  }
+  printCliDocs(log, "work");
+  log("");
+}
+
+function printDarkwebDetail(ns: NS, log: Log): void {
+  const processes = ns.ps("home");
+  const runState = getDaemonRunState(processes);
+  const darkweb = peekStatus<DarkwebStatus>(ns, STATUS_PORTS.darkweb);
+  printHeader(log, "DARKWEB DETAIL");
+  log(`  ${formatRunState(runState.darkweb)}`);
+  if (!darkweb) { printOffline(log, "darkweb"); printCliDocs(log, "darkweb"); return; }
+
+  printField(log, "TOR Router", darkweb.hasTorRouter ? "Owned" : "Not owned", darkweb.hasTorRouter ? C.green : C.red);
+  printField(log, "Programs", `${darkweb.ownedCount}/${darkweb.totalPrograms}`);
+
+  if (darkweb.programs.length > 0) {
+    log("");
+    for (const p of darkweb.programs) {
+      const status = p.owned ? `${C.green}[x]${C.reset}` : `${C.red}[ ]${C.reset}`;
+      log(`    ${status} ${p.name.padEnd(20)} ${p.costFormatted}`);
+    }
+  }
+
+  if (darkweb.nextProgram && !darkweb.allOwned) {
+    log(`\n  ${C.cyan}Next:${C.reset} ${darkweb.nextProgram.name} (${darkweb.nextProgram.costFormatted})`);
+    if (darkweb.moneyUntilNext > 0) {
+      log(`  ${C.yellow}Need ${darkweb.moneyUntilNextFormatted} more${C.reset}`);
+    } else {
+      log(`  ${C.green}Can afford!${C.reset}`);
+    }
+  }
+  printCliDocs(log, "darkweb");
+  log("");
+}
+
+// === RENDER DISPATCHER ===
+
+function renderStatus(ns: NS, tool: string, log: Log): void {
+  switch (tool) {
+    case "nuke":    printNukeDetail(ns, log); break;
+    case "hack":    printHackDetail(ns, log); break;
+    case "pserv":   printPservDetail(ns, log); break;
+    case "share":   printShareDetail(ns, log); break;
+    case "rep":     printRepDetail(ns, log); break;
+    case "work":    printWorkDetail(ns, log); break;
+    case "darkweb": printDarkwebDetail(ns, log); break;
+    default:        printOverview(ns, log); break;
+  }
+}
+
+// === MAIN ===
+
+export async function main(ns: NS): Promise<void> {
+  ns.disableLog("ALL");
+  const flags = ns.flags([["live", false]]) as { live: boolean; _: string[] };
+  const tool = flags._.length > 0 ? String(flags._[0]).toLowerCase() : "";
+
+  if (flags.live) {
+    ns.tail();
+    // eslint-disable-next-line no-constant-condition
+    while (true) {
+      ns.clearLog();
+      renderStatus(ns, tool, ns.print.bind(ns));
+      await ns.sleep(2000);
+    }
+  } else {
+    renderStatus(ns, tool, ns.tprint.bind(ns));
+  }
+}

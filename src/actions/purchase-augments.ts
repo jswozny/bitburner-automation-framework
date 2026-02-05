@@ -1,0 +1,106 @@
+/**
+ * Purchase Augmentations Action
+ *
+ * Analyzes all factions and purchases affordable augmentations in priority order.
+ * Uses the full factions controller — very high RAM cost.
+ * Target RAM: ~430 GB at SF4.1 (full factions controller + purchaseAugmentation)
+ *
+ * Usage: run actions/purchase-augments.js
+ *        run actions/purchase-augments.js --dry-run
+ *        run actions/purchase-augments.js --max-spend 1e12
+ */
+import { NS } from "@ns";
+import { analyzeFactions, calculatePurchasePriority, getAffordableAugs, getSequentialPurchaseAugs } from "/controllers/factions";
+
+export const MANUAL_COMMAND = 'ns.singularity.purchaseAugmentation("FACTION", "AUG_NAME")';
+
+export async function main(ns: NS): Promise<void> {
+  ns.disableLog("ALL");
+
+  const flags = ns.flags([
+    ["dry-run", false],
+    ["max-spend", Infinity],
+  ]) as { "dry-run": boolean; "max-spend": number; _: string[] };
+
+  const dryRun = flags["dry-run"];
+  const maxSpend = flags["max-spend"];
+
+  // Analyze all factions and get purchase priority
+  const player = ns.getPlayer();
+  const ownedAugs = ns.singularity.getOwnedAugmentations(true);
+  const factions = analyzeFactions(ns, player, ownedAugs);
+  const plan = calculatePurchasePriority(ns, factions);
+
+  if (plan.length === 0) {
+    ns.tprint("No augmentations available for purchase.");
+    return;
+  }
+
+  let totalSpent = 0;
+  let purchased = 0;
+  let skipped = 0;
+  let playerMoney = ns.getServerMoneyAvailable("home");
+
+  ns.tprint(`\n=== Augmentation Purchase ${dryRun ? "(DRY RUN)" : ""} ===`);
+  ns.tprint(`Available money: ${ns.formatNumber(playerMoney, 1)}`);
+  ns.tprint(`Augmentations in plan: ${plan.length}\n`);
+
+  for (const aug of plan) {
+    if (totalSpent + aug.adjustedCost > maxSpend) {
+      ns.tprint(`  SKIP: ${aug.name} (${ns.formatNumber(aug.adjustedCost, 1)}) — exceeds max spend`);
+      skipped++;
+      continue;
+    }
+
+    if (playerMoney < aug.adjustedCost) {
+      ns.tprint(`  SKIP: ${aug.name} (${ns.formatNumber(aug.adjustedCost, 1)}) — can't afford (have ${ns.formatNumber(playerMoney, 1)})`);
+      skipped++;
+      continue;
+    }
+
+    if (dryRun) {
+      ns.tprint(`  WOULD BUY: ${aug.name} from ${aug.faction} for ${ns.formatNumber(aug.adjustedCost, 1)}`);
+      totalSpent += aug.adjustedCost;
+      playerMoney -= aug.adjustedCost;
+      purchased++;
+    } else {
+      const success = ns.singularity.purchaseAugmentation(aug.faction, aug.name);
+      if (success) {
+        ns.tprint(`  BOUGHT: ${aug.name} from ${aug.faction} for ${ns.formatNumber(aug.adjustedCost, 1)}`);
+        totalSpent += aug.adjustedCost;
+        playerMoney = ns.getServerMoneyAvailable("home");
+        purchased++;
+      } else {
+        ns.tprint(`  FAILED: ${aug.name} from ${aug.faction}`);
+        skipped++;
+      }
+    }
+  }
+
+  // Check for sequential purchase augs (Shadows of Anarchy, etc.)
+  const sequentialAugs = getSequentialPurchaseAugs(ns, factions, playerMoney);
+  if (sequentialAugs.length > 0) {
+    ns.tprint(`\n--- Sequential Purchase Augs (one at a time) ---`);
+    for (const item of sequentialAugs) {
+      const affordStr = item.canAfford ? "CAN AFFORD" : `need $${ns.formatNumber(item.aug.basePrice, 1)}`;
+      ns.tprint(`  ${item.aug.name} from ${item.faction} - ${affordStr}`);
+
+      if (!dryRun && item.canAfford) {
+        const success = ns.singularity.purchaseAugmentation(item.faction, item.aug.name);
+        if (success) {
+          ns.tprint(`  BOUGHT: ${item.aug.name} from ${item.faction}`);
+          purchased++;
+          playerMoney = ns.getServerMoneyAvailable("home");
+        } else {
+          ns.tprint(`  FAILED: ${item.aug.name} from ${item.faction}`);
+        }
+      }
+    }
+  }
+
+  ns.tprint(`\n--- Summary ---`);
+  ns.tprint(`  ${dryRun ? "Would purchase" : "Purchased"}: ${purchased}`);
+  ns.tprint(`  Skipped: ${skipped}`);
+  ns.tprint(`  Total cost: ${ns.formatNumber(totalSpent, 1)}`);
+  ns.tprint(`  Remaining money: ${ns.formatNumber(playerMoney, 1)}`);
+}
