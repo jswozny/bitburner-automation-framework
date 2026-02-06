@@ -99,6 +99,22 @@ export function installAugments(): void {
 }
 
 /**
+ * Run backdoors with auto-fallback to manual tool if RAM is insufficient.
+ */
+export function runBackdoors(): void {
+  if (!commandPort) return;
+  commandPort.write(JSON.stringify({ tool: "rep", action: "run-backdoors" }));
+}
+
+/**
+ * Restart the rep daemon, optionally with a faction focus override.
+ */
+export function restartRepDaemon(factionFocus?: string): void {
+  if (!commandPort) return;
+  commandPort.write(JSON.stringify({ tool: "rep", action: "restart-rep-daemon", factionFocus }));
+}
+
+/**
  * Read and execute all pending commands from the port.
  */
 export function readAndExecuteCommands(ns: NS): void {
@@ -176,6 +192,42 @@ function executeCommand(ns: NS, cmd: Command): void {
           ns.toast("Installing augmentations...", "info", 2000);
         } else {
           ns.toast("Failed to launch install-augments (not enough RAM)", "error", 3000);
+        }
+      }
+      break;
+    case "run-backdoors":
+      {
+        const pid = ns.exec("actions/faction-backdoors.js", "home", 1);
+        if (pid > 0) {
+          ns.toast("Running auto-backdoors...", "success", 2000);
+        } else {
+          // Fallback to manual tool
+          const fallbackPid = ns.exec("tools/backdoor.js", "home", 1);
+          if (fallbackPid > 0) {
+            ns.toast("Auto-backdoor needs more RAM. Opened manual backdoor tool.", "warning", 4000);
+          } else {
+            ns.toast("Failed to start backdoor tool (not enough RAM)", "error", 3000);
+          }
+        }
+      }
+      break;
+    case "restart-rep-daemon":
+      {
+        const currentRepPid = cachedData.pids.rep;
+        if (currentRepPid > 0) {
+          ns.kill(currentRepPid);
+          cachedData.pids.rep = 0;
+        }
+        const args: string[] = [];
+        if (cmd.factionFocus) {
+          args.push("--faction", cmd.factionFocus);
+        }
+        const newPid = ns.exec("daemons/rep.js", "home", 1, ...args);
+        if (newPid > 0) {
+          cachedData.pids.rep = newPid;
+          ns.toast(cmd.factionFocus ? `Rep daemon: focusing ${cmd.factionFocus}` : "Rep daemon: auto-select mode", "success", 2000);
+        } else {
+          ns.toast("Failed to restart rep daemon (not enough RAM)", "error", 3000);
         }
       }
       break;

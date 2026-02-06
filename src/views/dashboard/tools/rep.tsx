@@ -12,7 +12,7 @@ import { ToolControl } from "views/dashboard/components/ToolControl";
 import { ProgressBar } from "views/dashboard/components/ProgressBar";
 import { getRepStatus, findNextWorkableAugmentation, getNonWorkableFactionProgress, getFactionWorkStatus, getSequentialPurchaseAugs, getNeuroFluxInfo, calculateNeuroFluxPurchasePlan, canDonateToFaction, calculateNFGDonatePurchasePlan } from "/controllers/factions";
 import { formatTime } from "lib/utils";
-import { runScript, startFactionWork, installAugments, getPluginUIState, setPluginUIState } from "views/dashboard/state-store";
+import { runScript, startFactionWork, installAugments, runBackdoors, restartRepDaemon, getPluginUIState, setPluginUIState } from "views/dashboard/state-store";
 import { peekStatus } from "lib/ports";
 import { STATUS_PORTS, RepStatus } from "types/ports";
 
@@ -281,9 +281,6 @@ function RepOverviewCard({ status, running, toolId, error, pid }: OverviewCardPr
     <div style={styles.card}>
       <div style={styles.cardTitle}>
         <span>REP</span>
-        <span style={{ fontSize: "10px", color: tierColor, marginLeft: "6px" }}>
-          [{tierLabel}]
-        </span>
         <ToolControl tool={toolId} running={running} error={!!error} pid={pid} />
       </div>
       {error ? (
@@ -511,7 +508,7 @@ function HighTierDetailPanel({
   };
 
   const handleBackdoors = () => {
-    runScript("rep", "actions/faction-backdoors.js", []);
+    runBackdoors();
   };
 
   const handleStartWork = () => {
@@ -554,7 +551,28 @@ function HighTierDetailPanel({
         <div style={styles.rowLeft}>
           <span>
             <span style={styles.statLabel}>Target: </span>
-            <span style={styles.statHighlight}>{status.targetFaction ?? "None"}</span>
+            <select
+              style={{
+                backgroundColor: "#1a1a1a",
+                color: "#00ff00",
+                border: "1px solid #333",
+                borderRadius: "3px",
+                padding: "1px 4px",
+                fontSize: "12px",
+                fontFamily: "inherit",
+                cursor: "pointer",
+              }}
+              value={status.focusedFaction ?? ""}
+              onChange={(e) => {
+                const val = (e.target as HTMLSelectElement).value;
+                restartRepDaemon(val || undefined);
+              }}
+            >
+              <option value="">Auto ({status.targetFaction ?? "None"})</option>
+              {(status.allFactions ?? []).map((f) => (
+                <option key={f.name} value={f.name}>{f.name}</option>
+              ))}
+            </select>
           </span>
           <span style={styles.dim}>|</span>
           <span>
@@ -562,9 +580,6 @@ function HighTierDetailPanel({
             <span style={styles.statValue}>
               {(status.favor ?? 0).toFixed(0)}/{(status.favorToUnlock ?? 150).toFixed(0)}
             </span>
-          </span>
-          <span style={{ color: tierColor, fontSize: "10px", marginLeft: "8px" }}>
-            [{tierLabel}]
           </span>
         </div>
         <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>

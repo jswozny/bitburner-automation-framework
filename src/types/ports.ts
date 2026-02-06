@@ -64,12 +64,13 @@ export interface QueueEntry {
 
 export interface Command {
   tool: ToolName;
-  action: "start" | "stop" | "open-tail" | "run-script" | "start-faction-work" | "set-focus" | "start-training" | "install-augments";
+  action: "start" | "stop" | "open-tail" | "run-script" | "start-faction-work" | "set-focus" | "start-training" | "install-augments" | "run-backdoors" | "restart-rep-daemon";
   scriptPath?: string;
   scriptArgs?: string[];
   factionName?: string;
   workType?: "hacking" | "field" | "security";
   focus?: string;
+  factionFocus?: string;
 }
 
 // === STATUS INTERFACES ===
@@ -181,6 +182,7 @@ export interface RepStatus {
   allFactions?: BasicFactionRep[];
 
   // === TIER 2+: TARGET TRACKING (optional) ===
+  focusedFaction?: string;
   targetFaction?: string;
   nextAugName?: string | null;
   repRequired?: number;

@@ -393,6 +393,7 @@ function computeTier2Status(
       currentRepFormatted: ns.formatNumber(f.currentRep),
       favor: f.favor,
     })),
+    ...(targetFactionOverride ? { focusedFaction: targetFactionOverride } : {}),
     targetFaction,
     nextAugName: targetAug,
     repRequired,
@@ -423,7 +424,8 @@ function computeHighTierStatus(
   currentRamUsage: number,
   nextTierRam: number | null,
   repGainRate: number,
-  noWork: boolean
+  noWork: boolean,
+  targetFactionOverride = ""
 ): RepStatus {
   const player = ns.getPlayer();
   const ownedAugs = getOwnedAugs(ns);
@@ -523,6 +525,7 @@ function computeHighTierStatus(
       currentRepFormatted: ns.formatNumber(f.currentRep),
       favor: f.favor,
     })),
+    ...(targetFactionOverride ? { focusedFaction: targetFactionOverride } : {}),
     targetFaction,
     nextAugName: target?.aug?.name ?? null,
     repRequired,
@@ -1020,7 +1023,7 @@ async function runFullMode(
     // Compute and publish RepStatus
     // Calculate next tier RAM for display
     const nextTierRam = tier.tier < 6 ? tierRamCosts[tier.tier + 1] : null;
-    const repStatus = computeHighTierStatus(ns, tier, currentTierRam, nextTierRam, repGainRate, noWork);
+    const repStatus = computeHighTierStatus(ns, tier, currentTierRam, nextTierRam, repGainRate, noWork, targetFactionOverride);
     publishStatus(ns, STATUS_PORTS.rep, repStatus);
 
     // Compute and publish BitnodeStatus
