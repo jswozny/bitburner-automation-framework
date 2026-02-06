@@ -412,7 +412,7 @@ export async function main(ns: NS): Promise<void> {
   const tool = flags._.length > 0 ? String(flags._[0]).toLowerCase() : "";
 
   if (flags.live) {
-    ns.tail();
+    ns.ui.openTail();
     // eslint-disable-next-line no-constant-condition
     while (true) {
       ns.clearLog();
