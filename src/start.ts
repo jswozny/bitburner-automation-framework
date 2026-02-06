@@ -17,6 +17,7 @@ const CORE_SCRIPTS: { path: string; args: (string | number | boolean)[] }[] = [
   { path: "daemons/nuke.js", args: [] },
   { path: "daemons/hack.js", args: [] },
   { path: "daemons/queue.js", args: [] },
+  { path: "daemons/darkweb.js", args: [] },
 ];
 
 /** Optional daemons launched if RAM permits. */
