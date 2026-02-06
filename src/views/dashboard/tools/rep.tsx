@@ -2,6 +2,7 @@
  * Rep Tool Plugin
  *
  * Displays reputation progress with ETA, progress bar, and running totals.
+ * Supports tiered display based on daemon operating tier.
  */
 import React from "lib/react";
 import { NS } from "@ns";
@@ -12,6 +13,8 @@ import { ProgressBar } from "views/dashboard/components/ProgressBar";
 import { getRepStatus, findNextWorkableAugmentation, getNonWorkableFactionProgress, getFactionWorkStatus, getSequentialPurchaseAugs, getNeuroFluxInfo, calculateNeuroFluxPurchasePlan, canDonateToFaction, calculateNFGDonatePurchasePlan } from "/controllers/factions";
 import { formatTime } from "lib/utils";
 import { runScript, startFactionWork, installAugments, getPluginUIState, setPluginUIState } from "views/dashboard/state-store";
+import { peekStatus } from "lib/ports";
+import { STATUS_PORTS, RepStatus } from "types/ports";
 
 // === REP TRACKING STATE (module-level) ===
 
@@ -50,6 +53,15 @@ function getPendingBackdoors(ns: NS): string[] {
 // === STATUS FORMATTING ===
 
 function formatRepStatus(ns: NS, extra?: PluginContext): FormattedRepStatus | null {
+  // First, try to read from port (the daemon publishes tiered status)
+  const portStatus = peekStatus<RepStatus>(ns, STATUS_PORTS.rep);
+
+  if (portStatus && portStatus.tier !== undefined) {
+    // Return port status directly - it already has tier info
+    return portStatus;
+  }
+
+  // Fallback: compute status directly (full mode only)
   try {
     const player = ns.getPlayer();
     const raw = getRepStatus(ns, player);
@@ -127,7 +139,29 @@ function formatRepStatus(ns: NS, extra?: PluginContext): FormattedRepStatus | nu
     // Get sequential purchase augs (Shadows of Anarchy, etc.)
     const sequentialAugs = getSequentialPurchaseAugs(ns, raw.factionData, playerMoney);
 
+    // Build full status (tier 6 equivalent)
+    const nfPlan = calculateNeuroFluxPurchasePlan(ns, playerMoney);
+    const nfRepProgress = nfInfo.repRequired > 0 ? Math.min(1, nfInfo.bestFactionRep / nfInfo.repRequired) : 0;
+    const nfRepGap = Math.max(0, nfInfo.repRequired - nfInfo.bestFactionRep);
+    const canDonate = nfInfo.bestFaction ? canDonateToFaction(ns, nfInfo.bestFaction) : false;
+    const donatePlan = canDonate ? calculateNFGDonatePurchasePlan(ns, playerMoney) : null;
+
+    // Note: When running as fallback (daemon not active), RAM usage is estimated.
+    // The daemon calculates actual RAM dynamically based on SF4 level.
     return {
+      tier: 6,
+      tierName: "auto-work",
+      availableFeatures: ["cached-display", "live-rep", "all-factions", "target-tracking", "eta", "aug-cost", "faction-augs", "auto-recommend", "purchase-plan", "owned-filter", "prereq-order", "nfg-tracking", "auto-work", "work-status"],
+      unavailableFeatures: [],
+      currentRamUsage: 0, // Actual value comes from daemon when running
+      nextTierRam: null,
+      canUpgrade: false,
+      allFactions: raw.factionData.map(f => ({
+        name: f.name,
+        currentRep: f.currentRep,
+        currentRepFormatted: ns.formatNumber(f.currentRep),
+        favor: f.favor,
+      })),
       targetFaction,
       nextAugName: target?.aug?.name ?? null,
       repRequired,
@@ -164,7 +198,6 @@ function formatRepStatus(ns: NS, extra?: PluginContext): FormattedRepStatus | nu
         currentRep: ns.formatNumber(item.faction.currentRep),
         requiredRep: ns.formatNumber(item.nextAug.repReq),
       })),
-      // Sequential purchase augs
       sequentialAugs: sequentialAugs.map(item => ({
         faction: item.faction,
         augName: item.aug.name,
@@ -172,91 +205,104 @@ function formatRepStatus(ns: NS, extra?: PluginContext): FormattedRepStatus | nu
         costFormatted: ns.formatNumber(item.aug.basePrice),
         canAfford: item.canAfford,
       })),
-      // Work status
       isWorkingForFaction: workStatus.isWorkingForFaction,
       isOptimalWork: workStatus.isOptimalWork,
       bestWorkType: workStatus.bestWorkType,
       currentWorkType: workStatus.currentWorkType,
       isWorkable: workStatus.isWorkable,
-      // NeuroFlux Governor info
-      neuroFlux: (() => {
-        const nfPlan = calculateNeuroFluxPurchasePlan(ns, playerMoney);
-        const nfRepProgress = nfInfo.repRequired > 0 ? Math.min(1, nfInfo.bestFactionRep / nfInfo.repRequired) : 0;
-        const nfRepGap = Math.max(0, nfInfo.repRequired - nfInfo.bestFactionRep);
-
-        // Check donation capability
-        const canDonate = nfInfo.bestFaction ? canDonateToFaction(ns, nfInfo.bestFaction) : false;
-        const donatePlan = canDonate ? calculateNFGDonatePurchasePlan(ns, playerMoney) : null;
-
-        return {
-          currentLevel: nfInfo.currentLevel,
-          bestFaction: nfInfo.bestFaction,
-          hasEnoughRep: nfInfo.hasEnoughRep,
-          canPurchase: nfPlan.purchases > 0,
-          // Rep progress toward next NFG
-          currentRep: nfInfo.bestFactionRep,
-          currentRepFormatted: ns.formatNumber(nfInfo.bestFactionRep),
-          repRequired: nfInfo.repRequired,
-          repRequiredFormatted: ns.formatNumber(nfInfo.repRequired),
-          repProgress: nfRepProgress,
-          repGap: nfRepGap,
-          repGapFormatted: ns.formatNumber(nfRepGap),
-          currentPrice: nfInfo.currentPrice,
-          currentPriceFormatted: ns.formatNumber(nfInfo.currentPrice),
-          purchasePlan: nfPlan.purchases > 0 ? {
-            startLevel: nfPlan.startLevel,
-            endLevel: nfPlan.endLevel,
-            purchases: nfPlan.purchases,
-            totalCost: nfPlan.totalCost,
-            totalCostFormatted: ns.formatNumber(nfPlan.totalCost),
-          } : null,
-          // Donation capability
-          canDonate,
-          donationPlan: donatePlan && donatePlan.canExecute ? {
-            purchases: donatePlan.purchases,
-            totalDonationCost: donatePlan.totalDonationCost,
-            totalDonationCostFormatted: ns.formatNumber(donatePlan.totalDonationCost),
-            totalPurchaseCost: donatePlan.totalPurchaseCost,
-            totalPurchaseCostFormatted: ns.formatNumber(donatePlan.totalPurchaseCost),
-            totalCost: donatePlan.totalCost,
-            totalCostFormatted: ns.formatNumber(donatePlan.totalCost),
-          } : null,
-        };
-      })(),
+      neuroFlux: {
+        currentLevel: nfInfo.currentLevel,
+        bestFaction: nfInfo.bestFaction,
+        hasEnoughRep: nfInfo.hasEnoughRep,
+        canPurchase: nfPlan.purchases > 0,
+        currentRep: nfInfo.bestFactionRep,
+        currentRepFormatted: ns.formatNumber(nfInfo.bestFactionRep),
+        repRequired: nfInfo.repRequired,
+        repRequiredFormatted: ns.formatNumber(nfInfo.repRequired),
+        repProgress: nfRepProgress,
+        repGap: nfRepGap,
+        repGapFormatted: ns.formatNumber(nfRepGap),
+        currentPrice: nfInfo.currentPrice,
+        currentPriceFormatted: ns.formatNumber(nfInfo.currentPrice),
+        purchasePlan: nfPlan.purchases > 0 ? {
+          startLevel: nfPlan.startLevel,
+          endLevel: nfPlan.endLevel,
+          purchases: nfPlan.purchases,
+          totalCost: nfPlan.totalCost,
+          totalCostFormatted: ns.formatNumber(nfPlan.totalCost),
+        } : null,
+        canDonate,
+        donationPlan: donatePlan && donatePlan.canExecute ? {
+          purchases: donatePlan.purchases,
+          totalDonationCost: donatePlan.totalDonationCost,
+          totalDonationCostFormatted: ns.formatNumber(donatePlan.totalDonationCost),
+          totalPurchaseCost: donatePlan.totalPurchaseCost,
+          totalPurchaseCostFormatted: ns.formatNumber(donatePlan.totalPurchaseCost),
+          totalCost: donatePlan.totalCost,
+          totalCostFormatted: ns.formatNumber(donatePlan.totalCost),
+        } : null,
+      },
     };
   } catch {
     return null;
   }
 }
 
+// === TIER DISPLAY HELPERS ===
+
+const TIER_COLORS: Record<number, string> = {
+  0: "#888888", // lite - gray
+  1: "#00aa00", // basic - green
+  2: "#00aaaa", // target - cyan
+  3: "#0088ff", // analysis - blue
+  4: "#aa00aa", // planning - purple
+  5: "#ff8800", // prereqs - orange
+  6: "#00ff00", // auto-work - bright green
+};
+
+const TIER_LABELS: Record<number, string> = {
+  0: "Lite",
+  1: "Basic",
+  2: "Target",
+  3: "Analysis",
+  4: "Planning",
+  5: "Prereqs",
+  6: "Full",
+};
+
 // === COMPONENTS ===
 
 function RepOverviewCard({ status, running, toolId, error, pid }: OverviewCardProps<FormattedRepStatus>): React.ReactElement {
+  const tier = status?.tier ?? 0;
+  const tierColor = TIER_COLORS[tier] ?? "#888";
+  const tierLabel = TIER_LABELS[tier] ?? "Unknown";
+
   return (
     <div style={styles.card}>
       <div style={styles.cardTitle}>
         <span>REP</span>
+        <span style={{ fontSize: "10px", color: tierColor, marginLeft: "6px" }}>
+          [{tierLabel}]
+        </span>
         <ToolControl tool={toolId} running={running} error={!!error} pid={pid} />
       </div>
       {error ? (
         <div style={{ color: "#ffaa00", fontSize: "11px" }}>{error}</div>
-      ) : status ? (
+      ) : (
         <>
           <div style={styles.stat}>
             <span style={styles.statLabel}>Target</span>
-            <span style={styles.statHighlight}>{status.targetFaction}</span>
+            <span style={styles.statHighlight}>{status?.targetFaction ?? "—"}</span>
           </div>
           <div style={styles.stat}>
             <span style={styles.statLabel}>Pending Augs</span>
-            <span style={styles.statValue}>{status.pendingAugs}</span>
+            <span style={styles.statValue}>{status?.pendingAugs ?? "—"}</span>
           </div>
           <div style={styles.stat}>
             <span style={styles.statLabel}>Unlocked</span>
-            <span style={styles.statValue}>{status.purchasePlan.length}</span>
+            <span style={styles.statValue}>{status?.purchasePlan?.length ?? "—"}</span>
           </div>
         </>
-      ) : (
-        <div style={styles.dim}>Loading...</div>
       )}
     </div>
   );
@@ -276,12 +322,185 @@ function RepDetailPanel({ status, error, running, toolId, pid }: DetailPanelProp
   }
 
   if (!status) {
-    return <div style={styles.panel}>Loading rep status...</div>;
+    return (
+      <div style={styles.panel}>
+        <div style={styles.row}>
+          <div style={styles.rowLeft}>
+            <span style={styles.statLabel}>REP Daemon</span>
+          </div>
+          <ToolControl tool={toolId} running={running} pid={pid} />
+        </div>
+        {!running ? (
+          <>
+            <div style={{ marginTop: "12px", color: "#ffaa00" }}>
+              REP daemon not running.
+            </div>
+            <div style={{ ...styles.dim, marginTop: "8px", fontSize: "11px" }}>
+              Click to start the daemon and load rep status.
+            </div>
+          </>
+        ) : (
+          <>
+            <div style={{ marginTop: "12px", color: "#ffaa00" }}>
+              Waiting for status...
+            </div>
+            <div style={{ ...styles.dim, marginTop: "8px", fontSize: "11px" }}>
+              Daemon may be starting up. Check the daemon's tail log for details.
+            </div>
+          </>
+        )}
+      </div>
+    );
   }
 
+  // Tier-aware rendering
+  const tier = status.tier ?? 6;
+  const tierColor = TIER_COLORS[tier] ?? "#888";
+  const tierLabel = TIER_LABELS[tier] ?? "Unknown";
+
+  // High tier (3+): Full display
+  if (tier >= 3) {
+    return <HighTierDetailPanel status={status} running={running} toolId={"rep"} pid={pid} tierColor={tierColor} tierLabel={tierLabel} />;
+  }
+
+  // Low tier (0-2): Basic display
+  return <LowTierDetailPanel status={status} running={running} toolId={"rep"} pid={pid} tierColor={tierColor} tierLabel={tierLabel} />;
+}
+
+// === LOW TIER PANEL (0-2) ===
+
+function LowTierDetailPanel({
+  status,
+  running,
+  toolId,
+  pid,
+  tierColor,
+  tierLabel,
+}: {
+  status: FormattedRepStatus;
+  running: boolean;
+  toolId: "rep";
+  pid?: number;
+  tierColor: string;
+  tierLabel: string;
+}): React.ReactElement {
+  return (
+    <div style={styles.panel}>
+      {/* Header */}
+      <div style={styles.row}>
+        <div style={styles.rowLeft}>
+          <span style={styles.statLabel}>REP Daemon</span>
+          <span style={{ color: tierColor, fontSize: "11px", marginLeft: "8px" }}>
+            Tier {status.tier}: {tierLabel}
+          </span>
+        </div>
+        <ToolControl tool={toolId} running={running} pid={pid} />
+      </div>
+
+      {/* RAM Info */}
+      <div style={{
+        ...styles.card,
+        backgroundColor: "rgba(100, 100, 100, 0.15)",
+        borderLeft: `3px solid ${tierColor}`,
+        marginTop: "8px",
+      }}>
+        <div style={{ color: tierColor, fontSize: "11px", marginBottom: "6px" }}>
+          LIMITED FUNCTIONALITY MODE
+        </div>
+        <div style={styles.stat}>
+          <span style={styles.statLabel}>RAM Usage</span>
+          <span style={styles.statValue}>{status.currentRamUsage}GB</span>
+        </div>
+        {status.nextTierRam && (
+          <div style={styles.stat}>
+            <span style={styles.statLabel}>Next Tier Needs</span>
+            <span style={{ color: "#ffaa00" }}>{status.nextTierRam}GB</span>
+          </div>
+        )}
+        <div style={{ ...styles.dim, fontSize: "10px", marginTop: "6px" }}>
+          Features: {status.availableFeatures?.join(", ") ?? "none"}
+        </div>
+        {status.unavailableFeatures && status.unavailableFeatures.length > 0 && (
+          <div style={{ color: "#888", fontSize: "10px", marginTop: "4px" }}>
+            Missing: {status.unavailableFeatures.slice(0, 4).join(", ")}
+            {status.unavailableFeatures.length > 4 && ` +${status.unavailableFeatures.length - 4} more`}
+          </div>
+        )}
+      </div>
+
+      {/* All Factions List (Tier 1+) */}
+      {status.allFactions && status.allFactions.length > 0 && (
+        <div style={styles.section}>
+          <div style={styles.sectionTitle}>
+            JOINED FACTIONS
+            <span style={{ ...styles.dim, marginLeft: "8px", fontWeight: "normal" }}>
+              {status.allFactions.length} total
+            </span>
+          </div>
+          <table style={styles.table}>
+            <thead>
+              <tr>
+                <th style={styles.tableHeader}>Faction</th>
+                <th style={{ ...styles.tableHeader, textAlign: "right" }}>Rep</th>
+                <th style={{ ...styles.tableHeader, textAlign: "right" }}>Favor</th>
+              </tr>
+            </thead>
+            <tbody>
+              {status.allFactions.slice(0, 10).map((faction, i) => (
+                <tr key={i} style={i % 2 === 0 ? styles.tableRow : styles.tableRowAlt}>
+                  <td style={{ ...styles.tableCell, color: "#fff" }}>
+                    {faction.name.substring(0, 24)}
+                  </td>
+                  <td style={{ ...styles.tableCell, textAlign: "right", color: "#00ff00" }}>
+                    {faction.currentRepFormatted}
+                  </td>
+                  <td style={{ ...styles.tableCell, textAlign: "right", color: "#888" }}>
+                    {faction.favor.toFixed(0)}
+                  </td>
+                </tr>
+              ))}
+              {status.allFactions.length > 10 && (
+                <tr style={styles.tableRowAlt}>
+                  <td style={{ ...styles.tableCell, ...styles.dim }} colSpan={3}>
+                    ... +{status.allFactions.length - 10} more
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {/* Lite mode message (Tier 0) */}
+      {status.tier === 0 && (
+        <div style={{ marginTop: "12px", color: "#888", fontSize: "11px" }}>
+          No live data available. Need SF4 (Singularity) for faction rep tracking.
+        </div>
+      )}
+    </div>
+  );
+}
+
+// === HIGH TIER PANEL (3+) ===
+
+function HighTierDetailPanel({
+  status,
+  running,
+  toolId,
+  pid,
+  tierColor,
+  tierLabel,
+}: {
+  status: FormattedRepStatus;
+  running: boolean;
+  toolId: "rep";
+  pid?: number;
+  tierColor: string;
+  tierLabel: string;
+}): React.ReactElement {
   // Calculate affordable count and total
   let runningTotal = 0;
-  const purchaseWithTotals = status.purchasePlan.map(item => {
+  const purchaseWithTotals = (status.purchasePlan ?? []).map(item => {
     runningTotal += item.adjustedCost;
     return { ...item, runningTotal };
   });
@@ -296,7 +515,7 @@ function RepDetailPanel({ status, error, running, toolId, pid }: DetailPanelProp
   };
 
   const handleStartWork = () => {
-    if (status.targetFaction !== "None") {
+    if (status.targetFaction && status.targetFaction !== "None") {
       startFactionWork(status.targetFaction);
     }
   };
@@ -335,14 +554,17 @@ function RepDetailPanel({ status, error, running, toolId, pid }: DetailPanelProp
         <div style={styles.rowLeft}>
           <span>
             <span style={styles.statLabel}>Target: </span>
-            <span style={styles.statHighlight}>{status.targetFaction}</span>
+            <span style={styles.statHighlight}>{status.targetFaction ?? "None"}</span>
           </span>
           <span style={styles.dim}>|</span>
           <span>
             <span style={styles.statLabel}>Favor: </span>
             <span style={styles.statValue}>
-              {status.favor.toFixed(0)}/{status.favorToUnlock.toFixed(0)}
+              {(status.favor ?? 0).toFixed(0)}/{(status.favorToUnlock ?? 150).toFixed(0)}
             </span>
+          </span>
+          <span style={{ color: tierColor, fontSize: "10px", marginLeft: "8px" }}>
+            [{tierLabel}]
           </span>
         </div>
         <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
@@ -351,7 +573,7 @@ function RepDetailPanel({ status, error, running, toolId, pid }: DetailPanelProp
       </div>
 
       {/* Action Buttons */}
-      {(status.hasUnlockedAugs || status.pendingBackdoors.length > 0 || showWorkButton) && (
+      {(status.hasUnlockedAugs || (status.pendingBackdoors && status.pendingBackdoors.length > 0) || showWorkButton) && (
         <div style={{ display: "flex", gap: "8px", marginBottom: "8px", flexWrap: "wrap" }}>
           {showWorkButton && (
             <button
@@ -377,10 +599,10 @@ function RepDetailPanel({ status, error, running, toolId, pid }: DetailPanelProp
               }}
               onClick={handleBuyAugs}
             >
-              Buy Augs ({status.purchasePlan.length})
+              Buy Augs ({status.purchasePlan?.length ?? 0})
             </button>
           )}
-          {status.pendingBackdoors.length > 0 && (
+          {status.pendingBackdoors && status.pendingBackdoors.length > 0 && (
             <button
               style={{
                 ...styles.buttonPlay,
@@ -395,7 +617,7 @@ function RepDetailPanel({ status, error, running, toolId, pid }: DetailPanelProp
               Backdoors ({status.pendingBackdoors.length})
             </button>
           )}
-          {status.pendingAugs > 0 && (
+          {(status.pendingAugs ?? 0) > 0 && (
               <button
                   style={{
                     ...styles.buttonPlay,
@@ -421,9 +643,9 @@ function RepDetailPanel({ status, error, running, toolId, pid }: DetailPanelProp
 
           {/* Progress Bar */}
           <ProgressBar
-            progress={status.repProgress}
-            label={`${(status.repProgress * 100).toFixed(1)}%`}
-            fillColor={status.repProgress >= 1 ? "#00aa00" : "#0088aa"}
+            progress={status.repProgress ?? 0}
+            label={`${((status.repProgress ?? 0) * 100).toFixed(1)}%`}
+            fillColor={(status.repProgress ?? 0) >= 1 ? "#00aa00" : "#0088aa"}
           />
 
           {/* Rep Stats */}
@@ -444,16 +666,16 @@ function RepDetailPanel({ status, error, running, toolId, pid }: DetailPanelProp
           <div style={{ ...styles.stat, marginTop: "8px" }}>
             <span style={styles.statLabel}>ETA</span>
             <span style={styles.etaDisplay}>
-              {status.eta}
-              {status.repGainRate > 0 && (
-                <span style={styles.dim}> @ {status.repGainRate.toFixed(1)}/s</span>
+              {status.eta ?? "???"}
+              {(status.repGainRate ?? 0) > 0 && (
+                <span style={styles.dim}> @ {(status.repGainRate ?? 0).toFixed(1)}/s</span>
               )}
             </span>
           </div>
           <div style={styles.stat}>
             <span style={styles.statLabel}>Cost</span>
             <span style={status.canAffordNextAug ? styles.statHighlight : { color: "#ff4444" }}>
-              {status.canAffordNextAug ? "✓" : "✗"} ${status.nextAugCostFormatted}
+              {status.canAffordNextAug ? "" : ""} ${status.nextAugCostFormatted}
             </span>
           </div>
         </div>
@@ -464,23 +686,23 @@ function RepDetailPanel({ status, error, running, toolId, pid }: DetailPanelProp
         <div style={styles.card}>
           <div style={styles.stat}>
             <span style={styles.statLabel}>Pending Augs</span>
-            <span style={styles.statHighlight}>{status.pendingAugs}</span>
+            <span style={styles.statHighlight}>{status.pendingAugs ?? 0}</span>
           </div>
           <div style={styles.stat}>
             <span style={styles.statLabel}>Installed Augs</span>
-            <span style={styles.statValue}>{status.installedAugs}</span>
+            <span style={styles.statValue}>{status.installedAugs ?? 0}</span>
           </div>
         </div>
         <div style={styles.card}>
           <div style={styles.stat}>
             <span style={styles.statLabel}>Unlocked to Buy</span>
-            <span style={styles.statHighlight}>{status.purchasePlan.length}</span>
+            <span style={styles.statHighlight}>{status.purchasePlan?.length ?? 0}</span>
           </div>
         </div>
       </div>
 
       {/* Non-workable Factions Hint Box */}
-      {status.nonWorkableFactions.length > 0 && (
+      {status.nonWorkableFactions && status.nonWorkableFactions.length > 0 && (
         <div style={{
           ...styles.card,
           backgroundColor: "rgba(128, 0, 128, 0.15)",
@@ -490,7 +712,7 @@ function RepDetailPanel({ status, error, running, toolId, pid }: DetailPanelProp
             PASSIVE PROGRESS (infiltration/special)
           </div>
           {status.nonWorkableFactions.map((item, i) => (
-            <div key={i} style={{ marginBottom: i < status.nonWorkableFactions.length - 1 ? "8px" : 0 }}>
+            <div key={i} style={{ marginBottom: i < status.nonWorkableFactions!.length - 1 ? "8px" : 0 }}>
               <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "2px" }}>
                 <span style={{ color: "#ffffff", fontSize: "11px" }}>{item.factionName}</span>
                 <span style={{ color: "#888", fontSize: "10px" }}>
@@ -524,7 +746,7 @@ function RepDetailPanel({ status, error, running, toolId, pid }: DetailPanelProp
       )}
 
       {/* Purchase Order Table */}
-      {status.purchasePlan.length > 0 && (
+      {status.purchasePlan && status.purchasePlan.length > 0 && (
         <div style={styles.section}>
           <div style={styles.sectionTitle}>
             PURCHASE ORDER
@@ -544,8 +766,6 @@ function RepDetailPanel({ status, error, running, toolId, pid }: DetailPanelProp
             </thead>
             <tbody>
               {purchaseWithTotals.slice(0, 12).map((item, i) => {
-                // We'd need player money passed in to calculate affordability
-                // For now, show all with styling
                 const rowStyle = i % 2 === 0 ? styles.tableRow : styles.tableRowAlt;
 
                 return (
@@ -568,7 +788,7 @@ function RepDetailPanel({ status, error, running, toolId, pid }: DetailPanelProp
               })}
               {status.purchasePlan.length > 12 && (
                 <tr style={styles.tableRowAlt}>
-                  <td style={{ ...styles.tableCell, ...styles.dim }} colSpan={4}>
+                  <td style={{ ...styles.tableCell, ...styles.dim }} colSpan={5}>
                     ... +{status.purchasePlan.length - 12} more
                   </td>
                 </tr>
@@ -579,7 +799,7 @@ function RepDetailPanel({ status, error, running, toolId, pid }: DetailPanelProp
       )}
 
       {/* Sequential Purchase Augs (Shadows of Anarchy, etc.) */}
-      {status.sequentialAugs.length > 0 && (
+      {status.sequentialAugs && status.sequentialAugs.length > 0 && (
         <div style={{
           ...styles.card,
           backgroundColor: "rgba(255, 170, 0, 0.1)",
@@ -598,7 +818,7 @@ function RepDetailPanel({ status, error, running, toolId, pid }: DetailPanelProp
                 <span style={{ color: "#888" }}>{item.faction}</span>
                 {" - "}
                 <span style={{ color: item.canAfford ? "#00ff00" : "#ff4444" }}>
-                  {item.canAfford ? "✓" : "✗"} ${item.costFormatted}
+                  {item.canAfford ? "" : ""} ${item.costFormatted}
                 </span>
               </span>
             </div>
@@ -645,12 +865,12 @@ function RepDetailPanel({ status, error, running, toolId, pid }: DetailPanelProp
                 <span style={styles.statLabel}>Need</span>
                 <span style={{ color: "#ffaa00" }}>{status.neuroFlux.repGapFormatted} more</span>
               </div>
-              {status.repGainRate > 0 && (
+              {(status.repGainRate ?? 0) > 0 && (
                 <div style={styles.stat}>
                   <span style={styles.statLabel}>ETA</span>
                   <span style={styles.etaDisplay}>
-                    {formatTime(status.neuroFlux.repGap / status.repGainRate)}
-                    <span style={styles.dim}> @ {status.repGainRate.toFixed(1)}/s</span>
+                    {formatTime(status.neuroFlux.repGap / (status.repGainRate ?? 1))}
+                    <span style={styles.dim}> @ {(status.repGainRate ?? 0).toFixed(1)}/s</span>
                   </span>
                 </div>
               )}

@@ -67,21 +67,21 @@ function DarkwebOverviewCard({ status, running, toolId, error, pid }: OverviewCa
       </div>
       {error ? (
         <div style={{ color: "#ffaa00", fontSize: "11px" }}>{error}</div>
-      ) : status ? (
+      ) : (
         <>
           <div style={styles.stat}>
             <span style={styles.statLabel}>TOR Router</span>
-            <span style={status.hasTorRouter ? styles.statHighlight : { color: "#ff4444" }}>
-              {status.hasTorRouter ? "INSTALLED" : "NOT OWNED"}
+            <span style={status?.hasTorRouter ? styles.statHighlight : { color: "#888" }}>
+              {status ? (status.hasTorRouter ? "INSTALLED" : "NOT OWNED") : "—"}
             </span>
           </div>
           <div style={styles.stat}>
             <span style={styles.statLabel}>Programs</span>
-            <span style={status.allOwned ? styles.statHighlight : styles.statValue}>
-              {status.ownedCount}/{status.totalPrograms}
+            <span style={status?.allOwned ? styles.statHighlight : styles.statValue}>
+              {status ? `${status.ownedCount}/${status.totalPrograms}` : "—"}
             </span>
           </div>
-          {status.nextProgram && (
+          {status?.nextProgram && (
             <div style={styles.stat}>
               <span style={styles.statLabel}>Next</span>
               <span style={status.canAffordNext ? styles.statHighlight : { color: "#888" }}>
@@ -90,8 +90,6 @@ function DarkwebOverviewCard({ status, running, toolId, error, pid }: OverviewCa
             </div>
           )}
         </>
-      ) : (
-        <div style={styles.dim}>Loading...</div>
       )}
     </div>
   );
@@ -111,7 +109,27 @@ function DarkwebDetailPanel({ status, running, toolId, error, pid }: DetailPanel
   }
 
   if (!status) {
-    return <div style={styles.panel}>Loading darkweb status...</div>;
+    return (
+      <div style={styles.panel}>
+        <div style={styles.row}>
+          <div style={styles.rowLeft}>
+            <span>
+              <span style={styles.statLabel}>TOR Router: </span>
+              <span style={{ color: "#888" }}>—</span>
+            </span>
+            <span style={styles.dim}>|</span>
+            <span>
+              <span style={styles.statLabel}>Programs: </span>
+              <span style={styles.statValue}>—</span>
+            </span>
+          </div>
+          <ToolControl tool={toolId} running={running} pid={pid} />
+        </div>
+        <div style={styles.card}>
+          <div style={{ color: "#888" }}>Waiting for status...</div>
+        </div>
+      </div>
+    );
   }
 
   if (!status.hasTorRouter) {

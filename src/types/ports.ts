@@ -122,20 +122,91 @@ export interface NonWorkableFactionProgress {
   requiredRep: string;
 }
 
-export interface RepStatus {
-  targetFaction: string;
-  nextAugName: string | null;
-  repRequired: number;
-  repRequiredFormatted: string;
+// === REP DAEMON TIER DEFINITIONS ===
+
+/** Tier names for rep daemon functionality levels */
+export type RepTierName = "lite" | "basic" | "target" | "analysis" | "planning" | "prereqs" | "auto-work";
+
+/** Tier configuration for rep daemon */
+export interface RepTierConfig {
+  /** Tier number (0-6) */
+  tier: number;
+  /** Human-readable tier name */
+  name: RepTierName;
+  /**
+   * Minimum RAM required for this tier.
+   * @deprecated RAM is now calculated dynamically at runtime using calculateTierRam().
+   * This field is optional and only used for backward compatibility.
+   */
+  minRam?: number;
+  /**
+   * NS function paths needed for this tier (e.g., "singularity.getFactionRep").
+   * Used by calculateTierRam() to compute actual RAM cost at runtime.
+   */
+  functions: string[];
+  /** Features available at this tier */
+  features: string[];
+  /** Description of this tier's capabilities */
+  description: string;
+}
+
+/** Basic faction rep data (Tier 1+) */
+export interface BasicFactionRep {
+  name: string;
   currentRep: number;
   currentRepFormatted: string;
-  repGap: number;
-  repGapFormatted: string;
-  repGapPositive: boolean;
-  repProgress: number;
-  pendingAugs: number;
-  installedAugs: number;
-  purchasePlan: {
+  favor: number;
+}
+
+export interface RepStatus {
+  // === TIER METADATA (always present) ===
+  /** Current operating tier (0-6) */
+  tier: number;
+  /** Tier name (lite, basic, target, etc.) */
+  tierName: RepTierName;
+  /** Features available at current tier */
+  availableFeatures: string[];
+  /** Features unavailable due to RAM constraints */
+  unavailableFeatures: string[];
+  /** RAM being used by this daemon */
+  currentRamUsage: number;
+  /** RAM that would be needed for next tier */
+  nextTierRam: number | null;
+  /** Whether higher tier is achievable with more RAM */
+  canUpgrade: boolean;
+
+  // === TIER 1+: BASIC REP (optional) ===
+  /** All joined factions with basic rep data */
+  allFactions?: BasicFactionRep[];
+
+  // === TIER 2+: TARGET TRACKING (optional) ===
+  targetFaction?: string;
+  nextAugName?: string | null;
+  repRequired?: number;
+  repRequiredFormatted?: string;
+  currentRep?: number;
+  currentRepFormatted?: string;
+  repGap?: number;
+  repGapFormatted?: string;
+  repGapPositive?: boolean;
+  repProgress?: number;
+  nextAugCost?: number;
+  nextAugCostFormatted?: string;
+  canAffordNextAug?: boolean;
+  favor?: number;
+  favorToUnlock?: number;
+
+  // === TIER 3+: FACTION ANALYSIS (optional) ===
+  /** Available augs per faction (Tier 3+) */
+  factionAugs?: {
+    faction: string;
+    augs: { name: string; repReq: number; repReqFormatted: string }[];
+  }[];
+
+  // === TIER 4+: FULL PLANNING (optional) ===
+  pendingAugs?: number;
+  installedAugs?: number;
+  purchasePlan?: {
     name: string;
     faction: string;
     baseCost: number;
@@ -143,29 +214,18 @@ export interface RepStatus {
     costFormatted: string;
     adjustedCostFormatted: string;
   }[];
-  repGainRate: number;
-  eta: string;
-  nextAugCost: number;
-  nextAugCostFormatted: string;
-  canAffordNextAug: boolean;
-  favor: number;
-  favorToUnlock: number;
-  pendingBackdoors: string[];
-  hasUnlockedAugs: boolean;
-  nonWorkableFactions: NonWorkableFactionProgress[];
-  sequentialAugs: {
+  hasUnlockedAugs?: boolean;
+
+  // === TIER 5+: PREREQUISITE AWARENESS (optional) ===
+  nonWorkableFactions?: NonWorkableFactionProgress[];
+  sequentialAugs?: {
     faction: string;
     augName: string;
     cost: number;
     costFormatted: string;
     canAfford: boolean;
   }[];
-  isWorkingForFaction: boolean;
-  isOptimalWork: boolean;
-  bestWorkType: "hacking" | "field" | "security";
-  currentWorkType: string | null;
-  isWorkable: boolean;
-  neuroFlux: {
+  neuroFlux?: {
     currentLevel: number;
     bestFaction: string | null;
     hasEnoughRep: boolean;
@@ -197,6 +257,16 @@ export interface RepStatus {
       totalCostFormatted: string;
     } | null;
   } | null;
+
+  // === TIER 6: AUTO-WORK (optional) ===
+  isWorkingForFaction?: boolean;
+  isOptimalWork?: boolean;
+  bestWorkType?: "hacking" | "field" | "security";
+  currentWorkType?: string | null;
+  isWorkable?: boolean;
+  pendingBackdoors?: string[];
+  repGainRate?: number;
+  eta?: string;
 }
 
 export interface DarkwebStatus {
@@ -217,6 +287,7 @@ export interface WorkStatus {
   playerCity: string;
   playerMoney: number;
   playerMoneyFormatted: string;
+  isFocused: boolean;
   skills: {
     strength: number;
     defense: number;

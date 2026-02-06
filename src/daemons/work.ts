@@ -47,6 +47,9 @@ const FOCUS_OPTIONS: { value: WorkFocus; label: string }[] = [
 function computeWorkStatus(ns: NS): WorkStatus {
   const rawStatus = getWorkStatus(ns);
 
+  // Check if player is focused on current work
+  const isFocused = ns.singularity.isFocused();
+
   // Calculate combat stat range
   const combatStats = [
     rawStatus.skills.strength,
@@ -60,6 +63,7 @@ function computeWorkStatus(ns: NS): WorkStatus {
   // Determine current activity display and type
   let activityDisplay = "Idle";
   let activityType: "gym" | "university" | "crime" | "idle" | "other" = "idle";
+  const focusedSuffix = isFocused ? " (focused)" : "";
 
   if (rawStatus.currentWork) {
     if (rawStatus.currentWork.type === "class") {
@@ -74,12 +78,13 @@ function computeWorkStatus(ns: NS): WorkStatus {
       if (rawStatus.currentWork.location) {
         activityDisplay += ` @ ${rawStatus.currentWork.location}`;
       }
+      activityDisplay += focusedSuffix;
     } else if (rawStatus.currentWork.type === "crime") {
       activityType = "crime";
-      activityDisplay = `Crime: ${rawStatus.currentWork.stat ?? "Unknown"}`;
+      activityDisplay = `Crime: ${rawStatus.currentWork.stat ?? "Unknown"}${focusedSuffix}`;
     } else {
       activityType = "other";
-      activityDisplay = rawStatus.currentWork.type;
+      activityDisplay = rawStatus.currentWork.type + focusedSuffix;
     }
   }
 
@@ -161,6 +166,7 @@ function computeWorkStatus(ns: NS): WorkStatus {
     playerCity: rawStatus.playerCity,
     playerMoney: rawStatus.playerMoney,
     playerMoneyFormatted: ns.formatNumber(rawStatus.playerMoney),
+    isFocused,
     skills: {
       strength: rawStatus.skills.strength,
       defense: rawStatus.skills.defense,

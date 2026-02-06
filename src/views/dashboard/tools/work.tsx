@@ -42,6 +42,9 @@ function formatWorkStatus(ns: NS): FormattedWorkStatus | null {
   try {
     const status = getWorkStatus(ns);
 
+    // Check if player is focused on current work
+    const isFocused = ns.singularity.isFocused();
+
     // Calculate lowest combat stat for balance progress
     const combatStats = [
       status.skills.strength,
@@ -55,6 +58,7 @@ function formatWorkStatus(ns: NS): FormattedWorkStatus | null {
     // Determine current activity display
     let activityDisplay = "Idle";
     let activityType: "gym" | "university" | "crime" | "idle" | "other" = "idle";
+    const focusedSuffix = isFocused ? " (focused)" : "";
 
     if (status.currentWork) {
       if (status.currentWork.type === "class") {
@@ -69,12 +73,13 @@ function formatWorkStatus(ns: NS): FormattedWorkStatus | null {
         if (status.currentWork.location) {
           activityDisplay += ` @ ${status.currentWork.location}`;
         }
+        activityDisplay += focusedSuffix;
       } else if (status.currentWork.type === "crime") {
         activityType = "crime";
-        activityDisplay = `Crime: ${status.currentWork.stat ?? "Unknown"}`;
+        activityDisplay = `Crime: ${status.currentWork.stat ?? "Unknown"}${focusedSuffix}`;
       } else {
         activityType = "other";
-        activityDisplay = status.currentWork.type;
+        activityDisplay = status.currentWork.type + focusedSuffix;
       }
     }
 
@@ -84,6 +89,7 @@ function formatWorkStatus(ns: NS): FormattedWorkStatus | null {
       playerCity: status.playerCity,
       playerMoney: status.playerMoney,
       playerMoneyFormatted: ns.formatNumber(status.playerMoney),
+      isFocused,
       skills: {
         strength: status.skills.strength,
         defense: status.skills.defense,
@@ -189,36 +195,35 @@ function WorkOverviewCard({
       </div>
       {error ? (
         <div style={{ color: "#ffaa00", fontSize: "11px" }}>{error}</div>
-      ) : status ? (
+      ) : (
         <>
           <div style={styles.stat}>
             <span style={styles.statLabel}>Focus</span>
-            <span style={styles.statHighlight}>{status.focusLabel}</span>
+            <span style={styles.statHighlight}>{status?.focusLabel ?? "—"}</span>
           </div>
           <div style={styles.stat}>
             <span style={styles.statLabel}>Activity</span>
             <span
               style={{
-                color:
-                  status.activityType === "gym"
+                color: status
+                  ? status.activityType === "gym"
                     ? "#ff8800"
                     : status.activityType === "university"
                       ? "#00aaff"
                       : status.activityType === "crime"
                         ? "#ff4444"
-                        : "#888",
+                        : "#888"
+                  : "#888",
               }}
             >
-              {status.isTraining ? "Training" : "Idle"}
+              {status ? (status.isTraining ? "Training" : "Idle") : "—"}
             </span>
           </div>
           <div style={styles.stat}>
             <span style={styles.statLabel}>City</span>
-            <span style={styles.statValue}>{status.playerCity}</span>
+            <span style={styles.statValue}>{status?.playerCity ?? "—"}</span>
           </div>
         </>
-      ) : (
-        <div style={styles.dim}>Loading...</div>
       )}
     </div>
   );
@@ -243,10 +248,6 @@ function WorkDetailPanel({
     );
   }
 
-  if (!status) {
-    return <div style={styles.panel}>Loading work status...</div>;
-  }
-
   const handleFocusChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
     const newFocus = e.target.value as WorkFocus;
     writeWorkFocusCommand(newFocus);
@@ -256,8 +257,8 @@ function WorkDetailPanel({
     writeStartTrainingCommand();
   };
 
-  const isBalanceMode =
-    status.currentFocus === "balance-combat" || status.currentFocus === "balance-all";
+  const isBalanceMode = status &&
+    (status.currentFocus === "balance-combat" || status.currentFocus === "balance-all");
 
   return (
     <div style={styles.panel}>
@@ -266,12 +267,12 @@ function WorkDetailPanel({
         <div style={styles.rowLeft}>
           <span>
             <span style={styles.statLabel}>City: </span>
-            <span style={styles.statValue}>{status.playerCity}</span>
+            <span style={styles.statValue}>{status?.playerCity ?? "—"}</span>
           </span>
           <span style={styles.dim}>|</span>
           <span>
             <span style={styles.statLabel}>Money: </span>
-            <span style={styles.statHighlight}>${status.playerMoneyFormatted}</span>
+            <span style={styles.statHighlight}>${status?.playerMoneyFormatted ?? "—"}</span>
           </span>
         </div>
         <ToolControl tool={toolId} running={running} pid={pid} />
@@ -282,7 +283,7 @@ function WorkDetailPanel({
         <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
           <span style={styles.statLabel}>Focus:</span>
           <select
-            value={status.currentFocus}
+            value={status?.currentFocus ?? "strength"}
             onChange={handleFocusChange}
             style={{
               backgroundColor: "#1a1a1a",
@@ -312,17 +313,18 @@ function WorkDetailPanel({
         <div
           style={{
             fontSize: "14px",
-            color:
-              status.activityType === "gym"
+            color: status
+              ? status.activityType === "gym"
                 ? "#ff8800"
                 : status.activityType === "university"
                   ? "#00aaff"
                   : status.activityType === "crime"
                     ? "#ff4444"
-                    : "#888",
+                    : "#888"
+              : "#888",
           }}
         >
-          {status.activityDisplay}
+          {status?.activityDisplay ?? "—"}
         </div>
       </div>
 
@@ -332,33 +334,33 @@ function WorkDetailPanel({
         <div style={styles.grid}>
           <div style={styles.stat}>
             <span style={{ color: "#ff8800" }}>STR</span>
-            <span style={styles.statValue}>{status.skills.strengthFormatted}</span>
+            <span style={styles.statValue}>{status?.skills.strengthFormatted ?? "—"}</span>
           </div>
           <div style={styles.stat}>
             <span style={{ color: "#ff8800" }}>DEF</span>
-            <span style={styles.statValue}>{status.skills.defenseFormatted}</span>
+            <span style={styles.statValue}>{status?.skills.defenseFormatted ?? "—"}</span>
           </div>
           <div style={styles.stat}>
             <span style={{ color: "#ff8800" }}>DEX</span>
-            <span style={styles.statValue}>{status.skills.dexterityFormatted}</span>
+            <span style={styles.statValue}>{status?.skills.dexterityFormatted ?? "—"}</span>
           </div>
           <div style={styles.stat}>
             <span style={{ color: "#ff8800" }}>AGI</span>
-            <span style={styles.statValue}>{status.skills.agilityFormatted}</span>
+            <span style={styles.statValue}>{status?.skills.agilityFormatted ?? "—"}</span>
           </div>
           <div style={styles.stat}>
             <span style={{ color: "#00aaff" }}>HACK</span>
-            <span style={styles.statValue}>{status.skills.hackingFormatted}</span>
+            <span style={styles.statValue}>{status?.skills.hackingFormatted ?? "—"}</span>
           </div>
           <div style={styles.stat}>
             <span style={{ color: "#aa00ff" }}>CHA</span>
-            <span style={styles.statValue}>{status.skills.charismaFormatted}</span>
+            <span style={styles.statValue}>{status?.skills.charismaFormatted ?? "—"}</span>
           </div>
         </div>
       </div>
 
       {/* Recommendation */}
-      {status.recommendation && (
+      {status?.recommendation && (
         <div
           style={{
             ...styles.card,
@@ -379,7 +381,7 @@ function WorkDetailPanel({
         >
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
             <div style={{ color: "#00ffff", fontSize: "12px" }}>RECOMMENDED</div>
-            {!status.isTraining && (
+            {!status?.isTraining && (
               <button
                 style={{
                   ...styles.buttonPlay,
@@ -459,7 +461,7 @@ function WorkDetailPanel({
       )}
 
       {/* Balance Mode Status */}
-      {isBalanceMode && status.balanceRotation && (
+      {isBalanceMode && status?.balanceRotation && (
         <div style={styles.card}>
           <div style={{ color: "#00ffff", fontSize: "12px", marginBottom: "8px" }}>
             BALANCE ROTATION

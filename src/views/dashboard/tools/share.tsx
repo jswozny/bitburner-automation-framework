@@ -86,36 +86,28 @@ function ShareOverviewCard({ status, running, toolId, pid }: OverviewCardProps<F
         <span>SHARE</span>
         <ToolControl tool={toolId} running={running} pid={pid} />
       </div>
-      {status && (
-        <>
-          <div style={styles.stat}>
-            <span style={styles.statLabel}>Threads</span>
-            <span style={styles.statHighlight}>
-              {status.totalThreads}
-              {status.cycleStatus === "cycle" && (
-                <span style={{ color: "#ffaa00", marginLeft: "4px" }}>(cycle)</span>
-              )}
-            </span>
-          </div>
-          <div style={styles.stat}>
-            <span style={styles.statLabel}>Share Power</span>
-            <span style={styles.statValue}>{status.sharePower}</span>
-          </div>
-          <div style={styles.stat}>
-            <span style={styles.statLabel}>Servers</span>
-            <span style={styles.statValue}>{status.serversWithShare}</span>
-          </div>
-        </>
-      )}
+      <div style={styles.stat}>
+        <span style={styles.statLabel}>Threads</span>
+        <span style={styles.statHighlight}>
+          {status?.totalThreads ?? "—"}
+          {status?.cycleStatus === "cycle" && (
+            <span style={{ color: "#ffaa00", marginLeft: "4px" }}>(cycle)</span>
+          )}
+        </span>
+      </div>
+      <div style={styles.stat}>
+        <span style={styles.statLabel}>Share Power</span>
+        <span style={styles.statValue}>{status?.sharePower ?? "—"}</span>
+      </div>
+      <div style={styles.stat}>
+        <span style={styles.statLabel}>Servers</span>
+        <span style={styles.statValue}>{status?.serversWithShare ?? "—"}</span>
+      </div>
     </div>
   );
 }
 
 function ShareDetailPanel({ status, running, toolId, pid }: DetailPanelProps<FormattedShareStatus>): React.ReactElement {
-  if (!status) {
-    return <div style={styles.panel}>Loading share status...</div>;
-  }
-
   return (
     <div style={styles.panel}>
       <div style={styles.row}>
@@ -123,8 +115,8 @@ function ShareDetailPanel({ status, running, toolId, pid }: DetailPanelProps<For
           <span>
             <span style={styles.statLabel}>Threads: </span>
             <span style={styles.statHighlight}>
-              {status.totalThreads}
-              {status.cycleStatus === "cycle" && (
+              {status?.totalThreads ?? "—"}
+              {status?.cycleStatus === "cycle" && (
                 <span style={{ color: "#ffaa00", marginLeft: "4px" }}>(cycle)</span>
               )}
             </span>
@@ -132,7 +124,7 @@ function ShareDetailPanel({ status, running, toolId, pid }: DetailPanelProps<For
           <span style={styles.dim}>|</span>
           <span>
             <span style={styles.statLabel}>Share Power: </span>
-            <span style={styles.statHighlight}>{status.sharePower}</span>
+            <span style={styles.statHighlight}>{status?.sharePower ?? "—"}</span>
           </span>
         </div>
         <ToolControl tool={toolId} running={running} pid={pid} />
@@ -141,15 +133,15 @@ function ShareDetailPanel({ status, running, toolId, pid }: DetailPanelProps<For
       <div style={styles.card}>
         <div style={styles.stat}>
           <span style={styles.statLabel}>Script RAM</span>
-          <span style={styles.statValue}>{status.shareRam}</span>
+          <span style={styles.statValue}>{status?.shareRam ?? "—"}</span>
         </div>
         <div style={styles.stat}>
           <span style={styles.statLabel}>Servers with share</span>
-          <span style={styles.statValue}>{status.serversWithShare}</span>
+          <span style={styles.statValue}>{status?.serversWithShare ?? "—"}</span>
         </div>
       </div>
 
-      {status.serverStats.length > 0 && (
+      {status?.serverStats && status.serverStats.length > 0 && (
         <div style={styles.section}>
           <div style={styles.sectionTitle}>Top Servers by Threads</div>
           <ul style={styles.list}>

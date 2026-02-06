@@ -92,6 +92,7 @@ export async function main(ns: NS): Promise<void> {
     playerCity: player.city,
     playerMoney: player.money,
     playerMoneyFormatted: ns.formatNumber(player.money, 1),
+    isFocused: focused,
     skills: {
       strength: player.skills.strength,
       defense: player.skills.defense,

@@ -81,26 +81,22 @@ function NukeOverviewCard({ status, running, toolId, pid }: OverviewCardProps<Fo
         <span>NUKE</span>
         <ToolControl tool={toolId} running={running} pid={pid} />
       </div>
-      {status && (
-        <>
-          <div style={styles.stat}>
-            <span style={styles.statLabel}>Rooted</span>
-            <span style={styles.statHighlight}>
-              {status.rootedCount}/{status.totalServers}
-            </span>
-          </div>
-          <div style={styles.stat}>
-            <span style={styles.statLabel}>Tools</span>
-            <span style={styles.statValue}>{status.toolCount}/5</span>
-          </div>
-          <div style={styles.stat}>
-            <span style={styles.statLabel}>Ready</span>
-            <span style={status.ready.length > 0 ? styles.statHighlight : styles.statValue}>
-              {status.ready.length}
-            </span>
-          </div>
-        </>
-      )}
+      <div style={styles.stat}>
+        <span style={styles.statLabel}>Rooted</span>
+        <span style={styles.statHighlight}>
+          {status ? `${status.rootedCount}/${status.totalServers}` : "—"}
+        </span>
+      </div>
+      <div style={styles.stat}>
+        <span style={styles.statLabel}>Tools</span>
+        <span style={styles.statValue}>{status ? `${status.toolCount}/5` : "—"}</span>
+      </div>
+      <div style={styles.stat}>
+        <span style={styles.statLabel}>Ready</span>
+        <span style={status?.ready?.length ? styles.statHighlight : styles.statValue}>
+          {status?.ready?.length ?? "—"}
+        </span>
+      </div>
     </div>
   );
 }
@@ -113,28 +109,31 @@ function NukeDetailPanel({ status, running, toolId, pid }: DetailPanelProps<Form
     setPluginUIState("nuke", "showRooted", !showRooted);
   };
 
-  if (!status) {
-    return <div style={styles.panel}>Loading nuke status...</div>;
-  }
-
   return (
     <div style={styles.panel}>
       <div style={styles.row}>
         <div style={styles.rowLeft}>
           <span>
             <span style={styles.statLabel}>Tools: </span>
-            <span style={styles.statHighlight}>{status.toolCount}/5</span>
+            <span style={styles.statHighlight}>{status ? `${status.toolCount}/5` : "—"}</span>
           </span>
           <span style={styles.dim}>|</span>
           <span>
             <span style={styles.statLabel}>Rooted: </span>
             <span style={styles.statHighlight}>
-              {status.rootedCount}/{status.totalServers}
+              {status ? `${status.rootedCount}/${status.totalServers}` : "—"}
             </span>
           </span>
         </div>
         <ToolControl tool={toolId} running={running} pid={pid} />
       </div>
+
+      {!status ? (
+        <div style={styles.card}>
+          <div style={{ color: "#888" }}>Waiting for status...</div>
+        </div>
+      ) : (
+        <>
 
       {/* Server Table */}
       <table style={styles.table}>
@@ -239,6 +238,8 @@ function NukeDetailPanel({ status, running, toolId, pid }: DetailPanelProps<Form
             </ul>
           )}
         </div>
+      )}
+      </>
       )}
     </div>
   );

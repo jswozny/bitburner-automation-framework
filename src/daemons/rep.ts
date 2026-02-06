@@ -1,23 +1,32 @@
 /**
- * Reputation Daemon
+ * Reputation Daemon (Tiered Architecture)
  *
- * Long-running daemon that automatically grinds faction reputation,
- * tracks progress toward augmentation unlocks, computes purchase plans,
- * and publishes RepStatus + BitnodeStatus to ports for the dashboard.
+ * Long-running daemon that tracks faction reputation and augmentation progress.
+ * Operates in graduated tiers based on available RAM:
  *
- * Wraps the logic from auto/auto-rep.ts with port-based status publishing.
+ *   Tier 0 (Lite):     ~5GB   - Cached data display only
+ *   Tier 1 (Basic):    ~34GB  - Live rep for all factions
+ *   Tier 2 (Target):   ~114GB - Rep progress toward target aug
+ *   Tier 3 (Analysis): ~194GB - Available augs per faction
+ *   Tier 4 (Planning): ~274GB - Filtered purchase plan
+ *   Tier 5 (Prereqs):  ~354GB - Full prerequisite checking
+ *   Tier 6 (AutoWork): ~415GB - Automatic faction work
  *
  * Usage:
- *   run daemons/rep.js
- *   run daemons/rep.js --one-shot
- *   run daemons/rep.js --faction CyberSec
- *   run daemons/rep.js --no-work
+ *   run daemons/rep.js                    # Auto-select best tier
+ *   run daemons/rep.js --tier basic       # Force specific tier
+ *   run daemons/rep.js --no-kill          # Don't kill other scripts
+ *   run daemons/rep.js --faction CyberSec # Target specific faction
  */
 import { NS } from "@ns";
 import { COLORS, makeBar, formatTime } from "/lib/utils";
+import { calcAvailableAfterKills, freeRamForTarget } from "/lib/ram-utils";
 import {
+  getBasicFactionRep,
+  getAvailableAugs,
+  getFilteredAugs,
+  getOrderedAugs,
   analyzeFactions,
-  findNextAugmentation,
   findNextWorkableAugmentation,
   calculatePurchasePriority,
   selectBestWorkType,
@@ -33,9 +42,139 @@ import {
   calculateNFGDonatePurchasePlan,
 } from "/controllers/factions";
 import { publishStatus, peekStatus } from "/lib/ports";
-import { STATUS_PORTS, RepStatus, BitnodeStatus } from "/types/ports";
+import {
+  STATUS_PORTS,
+  RepStatus,
+  BitnodeStatus,
+  RepTierConfig,
+  RepTierName,
+} from "/types/ports";
 
-// === BITNODE REQUIREMENTS (fl1ght.exe) ===
+// === TIER DEFINITIONS ===
+
+// Base functions used by ALL tiers (including tier 0)
+// These are NS functions that the daemon always uses
+const BASE_FUNCTIONS = [
+  "getResetInfo",
+  "getServerMaxRam",
+  "getServerUsedRam",
+  "ps",
+  "getScriptRam",
+  "getPlayer",
+  "getPortHandle",
+  "fileExists",
+];
+
+const REP_TIERS: RepTierConfig[] = [
+  {
+    tier: 0,
+    name: "lite",
+    functions: [], // No additional NS functions beyond base
+    features: ["cached-display"],
+    description: "Shows cached data only (no Singularity)",
+  },
+  {
+    tier: 1,
+    name: "basic",
+    functions: [
+      "singularity.getFactionRep",
+      "singularity.getFactionFavor",
+    ],
+    features: ["live-rep", "all-factions"],
+    description: "Live rep for all joined factions",
+  },
+  {
+    tier: 2,
+    name: "target",
+    functions: [
+      "singularity.getAugmentationRepReq",
+      "singularity.getAugmentationPrice",
+      "getFavorToDonate", // Used in status computation
+    ],
+    features: ["target-tracking", "eta", "aug-cost"],
+    description: "Rep progress toward target augmentation",
+  },
+  {
+    tier: 3,
+    name: "analysis",
+    functions: [
+      "singularity.getAugmentationsFromFaction",
+      "getServer", // Used in getPendingBackdoors
+    ],
+    features: ["faction-augs", "auto-recommend"],
+    description: "List available augs per faction",
+  },
+  {
+    tier: 4,
+    name: "planning",
+    functions: [
+      "singularity.getOwnedAugmentations",
+    ],
+    features: ["purchase-plan", "owned-filter"],
+    description: "Full purchase priority list",
+  },
+  {
+    tier: 5,
+    name: "prereqs",
+    functions: [
+      "singularity.getAugmentationPrereq",
+    ],
+    features: ["prereq-order", "nfg-tracking"],
+    description: "Prerequisite-aware aug ordering",
+  },
+  {
+    tier: 6,
+    name: "auto-work",
+    functions: [
+      "singularity.getCurrentWork",
+      "singularity.workForFaction",
+      "singularity.isFocused",
+    ],
+    features: ["auto-work", "work-status"],
+    description: "Automatic faction work management",
+  },
+];
+
+// === DYNAMIC RAM CALCULATION ===
+
+const BASE_SCRIPT_COST = 1.6; // GB - base cost of running any script
+const RAM_BUFFER_PERCENT = 0.05; // 5% safety margin
+
+/**
+ * Calculate the actual RAM cost for a tier at runtime.
+ * Uses ns.getFunctionRamCost() to get accurate costs that account for SF4 level.
+ */
+function calculateTierRam(ns: NS, tierIndex: number): number {
+  let ram = BASE_SCRIPT_COST;
+
+  // Add base functions (always needed)
+  for (const fn of BASE_FUNCTIONS) {
+    ram += ns.getFunctionRamCost(fn);
+  }
+
+  // Add functions for this tier and all lower tiers (cumulative)
+  for (let i = 0; i <= tierIndex; i++) {
+    for (const fn of REP_TIERS[i].functions) {
+      ram += ns.getFunctionRamCost(fn);
+    }
+  }
+
+  // Add safety buffer
+  ram *= (1 + RAM_BUFFER_PERCENT);
+
+  // Round up to nearest 0.1 GB
+  return Math.ceil(ram * 10) / 10;
+}
+
+/**
+ * Calculate RAM costs for all tiers.
+ * Returns an array where index corresponds to tier number.
+ */
+function calculateAllTierRamCosts(ns: NS): number[] {
+  return REP_TIERS.map((_, i) => calculateTierRam(ns, i));
+}
+
+// === BITNODE REQUIREMENTS ===
 
 const BITNODE_REQUIREMENTS = {
   augmentations: 30,
@@ -51,6 +190,8 @@ const FACTION_BACKDOOR_SERVERS: Record<string, string> = {
   "The Black Hand": "I.I.I.I",
   BitRunners: "run4theh111z",
 };
+
+// === HELPER FUNCTIONS ===
 
 /**
  * Get list of faction servers that need backdoors installed
@@ -71,11 +212,62 @@ function getPendingBackdoors(ns: NS): string[] {
 }
 
 /**
+ * Select the best achievable tier given available RAM and tier RAM costs.
+ * @param potentialRam - Available RAM in GB
+ * @param sf4Level - Source-File 4 level (0 = no Singularity)
+ * @param tierRamCosts - Array of RAM costs per tier (from calculateAllTierRamCosts)
+ * @returns Object with selected tier config and its calculated RAM cost
+ */
+function selectBestTier(
+  potentialRam: number,
+  sf4Level: number,
+  tierRamCosts: number[]
+): { tier: RepTierConfig; ramCost: number } {
+  if (sf4Level === 0) {
+    return { tier: REP_TIERS[0], ramCost: tierRamCosts[0] }; // Lite mode if no SF4
+  }
+
+  // Find highest tier we can afford
+  let bestTierIndex = 0;
+  for (let i = REP_TIERS.length - 1; i >= 0; i--) {
+    if (potentialRam >= tierRamCosts[i]) {
+      bestTierIndex = i;
+      break;
+    }
+  }
+
+  return { tier: REP_TIERS[bestTierIndex], ramCost: tierRamCosts[bestTierIndex] };
+}
+
+/**
+ * Get all features available at a given tier
+ */
+function getAvailableFeatures(tier: number): string[] {
+  const features: string[] = [];
+  for (let i = 0; i <= tier; i++) {
+    features.push(...REP_TIERS[i].features);
+  }
+  return features;
+}
+
+/**
+ * Get features unavailable at a given tier
+ */
+function getUnavailableFeatures(tier: number): string[] {
+  const features: string[] = [];
+  for (let i = tier + 1; i < REP_TIERS.length; i++) {
+    features.push(...REP_TIERS[i].features);
+  }
+  return features;
+}
+
+/**
  * Compute BitnodeStatus for fl1ght.exe completion tracking
  */
-function computeBitnodeStatus(ns: NS): BitnodeStatus {
+function computeBitnodeStatus(ns: NS, installedAugsCount?: number): BitnodeStatus {
   const player = ns.getPlayer();
-  const installedAugs = ns.singularity.getOwnedAugmentations(false).length;
+  // Use provided count if available (avoids extra Singularity call)
+  const installedAugs = installedAugsCount ?? 0;
 
   const augsComplete = installedAugs >= BITNODE_REQUIREMENTS.augmentations;
   const moneyComplete = player.money >= BITNODE_REQUIREMENTS.money;
@@ -97,12 +289,141 @@ function computeBitnodeStatus(ns: NS): BitnodeStatus {
   };
 }
 
+// === TIER-SPECIFIC STATUS COMPUTATION ===
+
 /**
- * Compute the full RepStatus for dashboard consumption
+ * Compute RepStatus for Tier 0 (Lite mode)
  */
-function computeRepStatus(
+function computeTier0Status(ns: NS, currentRam: number, nextTierRam?: number): RepStatus {
+  const cached = peekStatus<RepStatus>(ns, STATUS_PORTS.rep);
+
+  return {
+    tier: 0,
+    tierName: "lite",
+    availableFeatures: getAvailableFeatures(0),
+    unavailableFeatures: getUnavailableFeatures(0),
+    currentRamUsage: currentRam,
+    nextTierRam: nextTierRam ?? null,
+    canUpgrade: false,
+    // Include cached data if available
+    ...(cached && {
+      allFactions: cached.allFactions,
+      targetFaction: cached.targetFaction,
+      pendingAugs: cached.pendingAugs,
+      installedAugs: cached.installedAugs,
+    }),
+  };
+}
+
+/**
+ * Compute RepStatus for Tier 1 (Basic rep)
+ */
+function computeTier1Status(ns: NS, currentRam: number, nextTierRam: number): RepStatus {
+  const player = ns.getPlayer();
+  const basicData = getBasicFactionRep(ns, player);
+
+  return {
+    tier: 1,
+    tierName: "basic",
+    availableFeatures: getAvailableFeatures(1),
+    unavailableFeatures: getUnavailableFeatures(1),
+    currentRamUsage: currentRam,
+    nextTierRam: nextTierRam,
+    canUpgrade: true,
+    allFactions: basicData.map((f) => ({
+      name: f.name,
+      currentRep: f.currentRep,
+      currentRepFormatted: ns.formatNumber(f.currentRep),
+      favor: f.favor,
+    })),
+  };
+}
+
+/**
+ * Compute RepStatus for Tier 2 (Target tracking)
+ */
+function computeTier2Status(
   ns: NS,
+  currentRam: number,
+  nextTierRam: number,
+  targetFactionOverride: string,
+  repGainRate: number
+): RepStatus {
+  const player = ns.getPlayer();
+  const basicData = getBasicFactionRep(ns, player);
+
+  // Find target faction and aug
+  let targetFaction = targetFactionOverride || basicData[0]?.name || "None";
+  let targetAug: string | null = null;
+  let repRequired = 0;
+  let augPrice = 0;
+
+  // Try to find the lowest rep aug we don't have rep for yet
+  // This is a heuristic without full aug list access
+  const factionData = basicData.find((f) => f.name === targetFaction);
+  const currentRep = factionData?.currentRep ?? 0;
+  const favor = factionData?.favor ?? 0;
+
+  // Without getAugmentationsFromFaction, we can't auto-find augs
+  // User must specify target or we just show faction rep
+
+  const repGap = Math.max(0, repRequired - currentRep);
+  const repProgress = repRequired > 0 ? Math.min(1, currentRep / repRequired) : 1;
+
+  let eta = "???";
+  if (repGap > 0 && repGainRate > 0) {
+    eta = formatTime(repGap / repGainRate);
+  } else if (repGap <= 0) {
+    eta = "Ready";
+  }
+
+  const favorToUnlock = ns.getFavorToDonate();
+
+  return {
+    tier: 2,
+    tierName: "target",
+    availableFeatures: getAvailableFeatures(2),
+    unavailableFeatures: getUnavailableFeatures(2),
+    currentRamUsage: currentRam,
+    nextTierRam: nextTierRam,
+    canUpgrade: true,
+    allFactions: basicData.map((f) => ({
+      name: f.name,
+      currentRep: f.currentRep,
+      currentRepFormatted: ns.formatNumber(f.currentRep),
+      favor: f.favor,
+    })),
+    targetFaction,
+    nextAugName: targetAug,
+    repRequired,
+    repRequiredFormatted: ns.formatNumber(repRequired),
+    currentRep,
+    currentRepFormatted: ns.formatNumber(currentRep),
+    repGap,
+    repGapFormatted: ns.formatNumber(repGap),
+    repGapPositive: repGap > 0,
+    repProgress,
+    nextAugCost: augPrice,
+    nextAugCostFormatted: ns.formatNumber(augPrice),
+    canAffordNextAug: player.money >= augPrice,
+    favor,
+    favorToUnlock,
+    repGainRate,
+    eta,
+  };
+}
+
+/**
+ * Compute RepStatus for Tier 3+ (Analysis and higher)
+ * Uses the original full computation for tiers 3-6
+ */
+function computeHighTierStatus(
+  ns: NS,
+  tier: RepTierConfig,
+  currentRamUsage: number,
+  nextTierRam: number | null,
   repGainRate: number,
+  noWork: boolean
 ): RepStatus {
   const player = ns.getPlayer();
   const ownedAugs = getOwnedAugs(ns);
@@ -112,7 +433,7 @@ function computeRepStatus(
   const factionData = analyzeFactions(ns, player, ownedAugs);
   const purchasePlan = calculatePurchasePriority(ns, factionData);
 
-  // Use workable faction target (excludes infiltration-only factions)
+  // Use workable faction target
   const target = findNextWorkableAugmentation(factionData);
 
   // Get non-workable faction progress
@@ -121,7 +442,7 @@ function computeRepStatus(
   // Get NeuroFlux info
   const nfInfo = getNeuroFluxInfo(ns);
 
-  // Determine target faction: regular aug or NFG fallback
+  // Determine target faction
   let targetFaction: string;
   let targetFactionRep = 0;
   let targetFactionFavor = 0;
@@ -132,7 +453,7 @@ function computeRepStatus(
     targetFactionFavor = target.faction.favor;
   } else if (nfInfo.bestFaction) {
     targetFaction = nfInfo.bestFaction;
-    const fd = factionData.find(f => f.name === nfInfo.bestFaction);
+    const fd = factionData.find((f) => f.name === nfInfo.bestFaction);
     targetFactionRep = fd?.currentRep ?? 0;
     targetFactionFavor = fd?.favor ?? 0;
   } else {
@@ -147,7 +468,6 @@ function computeRepStatus(
   const favorToUnlock = ns.getFavorToDonate();
   const playerMoney = player.money;
 
-  // Calculate ETA
   let eta = "???";
   if (repGap > 0 && repGainRate > 0) {
     eta = formatTime(repGap / repGainRate);
@@ -156,37 +476,53 @@ function computeRepStatus(
   }
 
   const nextAugCost = target?.aug?.basePrice ?? 0;
-
-  // Pending backdoors
   const pendingBackdoors = getPendingBackdoors(ns);
-
-  // Unlocked augs available to buy
   const hasUnlockedAugs = purchasePlan.length > 0;
 
-  // Work status for target faction
-  const workStatus = targetFaction !== "None"
-    ? getFactionWorkStatus(ns, player, targetFaction)
-    : {
-        isWorkingForFaction: false,
-        isOptimalWork: false,
-        bestWorkType: "hacking" as const,
-        currentWorkType: null,
-        isWorkable: false,
-      };
+  // Work status (Tier 6 only)
+  const defaultWorkStatus = {
+    isWorkingForFaction: false,
+    isOptimalWork: false,
+    bestWorkType: "hacking" as "hacking" | "field" | "security",
+    currentWorkType: null as string | null,
+    isWorkable: false,
+  };
 
-  // Sequential purchase augs (Shadows of Anarchy, etc.)
+  const workStatus = tier.tier >= 6 && targetFaction !== "None"
+    ? getFactionWorkStatus(ns, player, targetFaction)
+    : defaultWorkStatus;
+
+  // Sequential purchase augs
   const sequentialAugs = getSequentialPurchaseAugs(ns, factionData, playerMoney);
 
-  // NeuroFlux Governor info
+  // NeuroFlux plan
   const nfPlan = calculateNeuroFluxPurchasePlan(ns, playerMoney);
-  const nfRepProgress = nfInfo.repRequired > 0
-    ? Math.min(1, nfInfo.bestFactionRep / nfInfo.repRequired)
-    : 0;
+  const nfRepProgress =
+    nfInfo.repRequired > 0
+      ? Math.min(1, nfInfo.bestFactionRep / nfInfo.repRequired)
+      : 0;
   const nfRepGap = Math.max(0, nfInfo.repRequired - nfInfo.bestFactionRep);
-  const canDonate = nfInfo.bestFaction ? canDonateToFaction(ns, nfInfo.bestFaction) : false;
-  const donatePlan = canDonate ? calculateNFGDonatePurchasePlan(ns, playerMoney) : null;
+  const canDonate = nfInfo.bestFaction
+    ? canDonateToFaction(ns, nfInfo.bestFaction)
+    : false;
+  const donatePlan = canDonate
+    ? calculateNFGDonatePurchasePlan(ns, playerMoney)
+    : null;
 
   return {
+    tier: tier.tier,
+    tierName: tier.name,
+    availableFeatures: getAvailableFeatures(tier.tier),
+    unavailableFeatures: getUnavailableFeatures(tier.tier),
+    currentRamUsage: currentRamUsage,
+    nextTierRam: nextTierRam,
+    canUpgrade: tier.tier < 6,
+    allFactions: factionData.map((f) => ({
+      name: f.name,
+      currentRep: f.currentRep,
+      currentRepFormatted: ns.formatNumber(f.currentRep),
+      favor: f.favor,
+    })),
     targetFaction,
     nextAugName: target?.aug?.name ?? null,
     repRequired,
@@ -199,7 +535,7 @@ function computeRepStatus(
     repProgress,
     pendingAugs: pendingAugs.length,
     installedAugs: installedAugs.length,
-    purchasePlan: purchasePlan.map(item => ({
+    purchasePlan: purchasePlan.map((item) => ({
       name: item.name,
       faction: item.faction,
       baseCost: item.basePrice,
@@ -216,14 +552,14 @@ function computeRepStatus(
     favorToUnlock,
     pendingBackdoors,
     hasUnlockedAugs,
-    nonWorkableFactions: nonWorkableProgress.map(item => ({
+    nonWorkableFactions: nonWorkableProgress.map((item) => ({
       factionName: item.faction.name,
       nextAugName: item.nextAug.name,
       progress: item.progress,
       currentRep: ns.formatNumber(item.faction.currentRep),
       requiredRep: ns.formatNumber(item.nextAug.repReq),
     })),
-    sequentialAugs: sequentialAugs.map(item => ({
+    sequentialAugs: sequentialAugs.map((item) => ({
       faction: item.faction,
       augName: item.aug.name,
       cost: item.aug.basePrice,
@@ -235,139 +571,360 @@ function computeRepStatus(
     bestWorkType: workStatus.bestWorkType,
     currentWorkType: workStatus.currentWorkType,
     isWorkable: workStatus.isWorkable,
-    neuroFlux: nfInfo.bestFaction ? {
-      currentLevel: nfInfo.currentLevel,
-      bestFaction: nfInfo.bestFaction,
-      hasEnoughRep: nfInfo.hasEnoughRep,
-      canPurchase: nfPlan.purchases > 0,
-      currentRep: nfInfo.bestFactionRep,
-      currentRepFormatted: ns.formatNumber(nfInfo.bestFactionRep),
-      repRequired: nfInfo.repRequired,
-      repRequiredFormatted: ns.formatNumber(nfInfo.repRequired),
-      repProgress: nfRepProgress,
-      repGap: nfRepGap,
-      repGapFormatted: ns.formatNumber(nfRepGap),
-      currentPrice: nfInfo.currentPrice,
-      currentPriceFormatted: ns.formatNumber(nfInfo.currentPrice),
-      purchasePlan: nfPlan.purchases > 0 ? {
-        startLevel: nfPlan.startLevel,
-        endLevel: nfPlan.endLevel,
-        purchases: nfPlan.purchases,
-        totalCost: nfPlan.totalCost,
-        totalCostFormatted: ns.formatNumber(nfPlan.totalCost),
-      } : null,
-      canDonate,
-      donationPlan: donatePlan && donatePlan.canExecute ? {
-        purchases: donatePlan.purchases,
-        totalDonationCost: donatePlan.totalDonationCost,
-        totalDonationCostFormatted: ns.formatNumber(donatePlan.totalDonationCost),
-        totalPurchaseCost: donatePlan.totalPurchaseCost,
-        totalPurchaseCostFormatted: ns.formatNumber(donatePlan.totalPurchaseCost),
-        totalCost: donatePlan.totalCost,
-        totalCostFormatted: ns.formatNumber(donatePlan.totalCost),
-      } : null,
-    } : null,
+    neuroFlux: nfInfo.bestFaction
+      ? {
+          currentLevel: nfInfo.currentLevel,
+          bestFaction: nfInfo.bestFaction,
+          hasEnoughRep: nfInfo.hasEnoughRep,
+          canPurchase: nfPlan.purchases > 0,
+          currentRep: nfInfo.bestFactionRep,
+          currentRepFormatted: ns.formatNumber(nfInfo.bestFactionRep),
+          repRequired: nfInfo.repRequired,
+          repRequiredFormatted: ns.formatNumber(nfInfo.repRequired),
+          repProgress: nfRepProgress,
+          repGap: nfRepGap,
+          repGapFormatted: ns.formatNumber(nfRepGap),
+          currentPrice: nfInfo.currentPrice,
+          currentPriceFormatted: ns.formatNumber(nfInfo.currentPrice),
+          purchasePlan:
+            nfPlan.purchases > 0
+              ? {
+                  startLevel: nfPlan.startLevel,
+                  endLevel: nfPlan.endLevel,
+                  purchases: nfPlan.purchases,
+                  totalCost: nfPlan.totalCost,
+                  totalCostFormatted: ns.formatNumber(nfPlan.totalCost),
+                }
+              : null,
+          canDonate,
+          donationPlan:
+            donatePlan && donatePlan.canExecute
+              ? {
+                  purchases: donatePlan.purchases,
+                  totalDonationCost: donatePlan.totalDonationCost,
+                  totalDonationCostFormatted: ns.formatNumber(
+                    donatePlan.totalDonationCost
+                  ),
+                  totalPurchaseCost: donatePlan.totalPurchaseCost,
+                  totalPurchaseCostFormatted: ns.formatNumber(
+                    donatePlan.totalPurchaseCost
+                  ),
+                  totalCost: donatePlan.totalCost,
+                  totalCostFormatted: ns.formatNumber(donatePlan.totalCost),
+                }
+              : null,
+        }
+      : null,
   };
 }
 
+// === PRINT FUNCTIONS ===
+
 /**
- * Print formatted rep status to the script log
+ * Print status for low tiers (0-2)
  */
-function printStatus(ns: NS, repStatus: RepStatus, bitnodeStatus: BitnodeStatus): void {
+function printLowTierStatus(ns: NS, status: RepStatus): void {
   const C = COLORS;
 
-  ns.print(`${C.cyan}=== Rep Daemon ===${C.reset}`);
+  ns.print(`${C.cyan}=== Rep Daemon (${status.tierName}) ===${C.reset}`);
   ns.print(
-    `${C.dim}Target: ${C.reset}${C.white}${repStatus.targetFaction}${C.reset}` +
-    `  ${C.dim}|${C.reset}  ${C.yellow}${repStatus.pendingAugs}${C.reset} ${C.dim}pending${C.reset}` +
-    `  ${C.dim}|${C.reset}  ${C.green}${repStatus.purchasePlan.length}${C.reset} ${C.dim}unlocked${C.reset}`
+    `${C.dim}Tier ${status.tier} | RAM: ${ns.formatRam(status.currentRamUsage)}${C.reset}`
+  );
+
+  if (status.allFactions && status.allFactions.length > 0) {
+    ns.print("");
+    ns.print(`${C.cyan}JOINED FACTIONS${C.reset}`);
+    for (const faction of status.allFactions.slice(0, 10)) {
+      ns.print(
+        `  ${C.white}${faction.name.padEnd(24)}${C.reset} ` +
+          `${C.green}${faction.currentRepFormatted.padStart(10)}${C.reset} rep ` +
+          `${C.dim}(${faction.favor.toFixed(0)} favor)${C.reset}`
+      );
+    }
+    if (status.allFactions.length > 10) {
+      ns.print(`  ${C.dim}... +${status.allFactions.length - 10} more${C.reset}`);
+    }
+  } else {
+    ns.print("");
+    ns.print(`${C.yellow}No faction data available.${C.reset}`);
+    ns.print(`${C.dim}Need more RAM for Singularity calls.${C.reset}`);
+  }
+
+  if (status.canUpgrade && status.nextTierRam) {
+    ns.print("");
+    ns.print(
+      `${C.yellow}Upgrade available: ${C.reset}` +
+        `${C.white}${ns.formatRam(status.nextTierRam)}${C.reset} ${C.dim}for next tier${C.reset}`
+    );
+  }
+}
+
+/**
+ * Print status for high tiers (3-6)
+ */
+function printHighTierStatus(
+  ns: NS,
+  status: RepStatus,
+  bitnodeStatus: BitnodeStatus
+): void {
+  const C = COLORS;
+
+  ns.print(`${C.cyan}=== Rep Daemon (${status.tierName}) ===${C.reset}`);
+  ns.print(
+    `${C.dim}Target: ${C.reset}${C.white}${status.targetFaction}${C.reset}` +
+      `  ${C.dim}|${C.reset}  ${C.yellow}${status.pendingAugs}${C.reset} ${C.dim}pending${C.reset}` +
+      `  ${C.dim}|${C.reset}  ${C.green}${status.purchasePlan?.length ?? 0}${C.reset} ${C.dim}unlocked${C.reset}`
   );
 
   // Next aug progress
-  if (repStatus.nextAugName) {
-    const progress = repStatus.repProgress;
+  if (status.nextAugName) {
+    const progress = status.repProgress ?? 0;
     const bar = makeBar(progress, 30, progress >= 1 ? C.green : C.cyan);
     ns.print("");
-    ns.print(`${C.cyan}NEXT UNLOCK${C.reset}: ${C.yellow}${repStatus.nextAugName}${C.reset}`);
+    ns.print(
+      `${C.cyan}NEXT UNLOCK${C.reset}: ${C.yellow}${status.nextAugName}${C.reset}`
+    );
     ns.print(`${bar} ${C.white}${(progress * 100).toFixed(1)}%${C.reset}`);
     ns.print(
-      `${C.dim}${repStatus.currentRepFormatted} / ${repStatus.repRequiredFormatted} rep${C.reset}` +
-      (repStatus.repGapPositive ? `  ${C.dim}(need ${repStatus.repGapFormatted} more)${C.reset}` : "")
+      `${C.dim}${status.currentRepFormatted} / ${status.repRequiredFormatted} rep${C.reset}` +
+        (status.repGapPositive
+          ? `  ${C.dim}(need ${status.repGapFormatted} more)${C.reset}`
+          : "")
     );
     ns.print(
-      `${C.white}ETA:${C.reset} ${C.cyan}${repStatus.eta}${C.reset}` +
-      (repStatus.repGainRate > 0 ? ` ${C.dim}@ ${ns.formatNumber(repStatus.repGainRate)}/s${C.reset}` : "") +
-      `  ${C.dim}|${C.reset}  ` +
-      (repStatus.canAffordNextAug
-        ? `${C.green}$${repStatus.nextAugCostFormatted}${C.reset}`
-        : `${C.red}$${repStatus.nextAugCostFormatted}${C.reset}`)
+      `${C.white}ETA:${C.reset} ${C.cyan}${status.eta}${C.reset}` +
+        ((status.repGainRate ?? 0) > 0
+          ? ` ${C.dim}@ ${ns.formatNumber(status.repGainRate ?? 0)}/s${C.reset}`
+          : "") +
+        `  ${C.dim}|${C.reset}  ` +
+        (status.canAffordNextAug
+          ? `${C.green}$${status.nextAugCostFormatted}${C.reset}`
+          : `${C.red}$${status.nextAugCostFormatted}${C.reset}`)
     );
-  } else if (repStatus.neuroFlux?.bestFaction) {
+  } else if (status.neuroFlux?.bestFaction) {
     ns.print("");
     ns.print(`${C.cyan}NEUROFLUX GRINDING MODE${C.reset}`);
-    ns.print(`${C.dim}Faction: ${C.reset}${C.white}${repStatus.neuroFlux.bestFaction}${C.reset}`);
-    if (!repStatus.neuroFlux.hasEnoughRep) {
-      ns.print(`${C.dim}NFG rep: ${repStatus.neuroFlux.currentRepFormatted} / ${repStatus.neuroFlux.repRequiredFormatted}${C.reset}`);
+    ns.print(
+      `${C.dim}Faction: ${C.reset}${C.white}${status.neuroFlux.bestFaction}${C.reset}`
+    );
+    if (!status.neuroFlux.hasEnoughRep) {
+      ns.print(
+        `${C.dim}NFG rep: ${status.neuroFlux.currentRepFormatted} / ${status.neuroFlux.repRequiredFormatted}${C.reset}`
+      );
     } else {
-      ns.print(`${C.green}Can purchase NFG${C.reset} ${C.dim}($${repStatus.neuroFlux.currentPriceFormatted})${C.reset}`);
+      ns.print(
+        `${C.green}Can purchase NFG${C.reset} ${C.dim}($${status.neuroFlux.currentPriceFormatted})${C.reset}`
+      );
     }
   } else {
     ns.print("");
     ns.print(`${C.yellow}No faction with available augmentations found.${C.reset}`);
   }
 
-  // Work status
-  if (repStatus.isWorkable) {
-    const workColor = repStatus.isOptimalWork ? C.green : repStatus.isWorkingForFaction ? C.yellow : C.red;
-    const workLabel = repStatus.isOptimalWork
-      ? `${repStatus.currentWorkType} (optimal)`
-      : repStatus.isWorkingForFaction
-        ? `${repStatus.currentWorkType} (not optimal, best: ${repStatus.bestWorkType})`
-        : `not working (best: ${repStatus.bestWorkType})`;
+  // Work status (Tier 6)
+  if (status.isWorkable !== undefined) {
+    const workColor = status.isOptimalWork
+      ? C.green
+      : status.isWorkingForFaction
+        ? C.yellow
+        : C.red;
+    const workLabel = status.isOptimalWork
+      ? `${status.currentWorkType} (optimal)`
+      : status.isWorkingForFaction
+        ? `${status.currentWorkType} (not optimal, best: ${status.bestWorkType})`
+        : `not working (best: ${status.bestWorkType})`;
     ns.print(`${C.dim}Work:${C.reset} ${workColor}${workLabel}${C.reset}`);
   }
 
   // Purchase plan summary
-  if (repStatus.purchasePlan.length > 0) {
-    const totalCost = repStatus.purchasePlan.reduce((sum, a) => sum + a.adjustedCost, 0);
+  if (status.purchasePlan && status.purchasePlan.length > 0) {
+    const totalCost = status.purchasePlan.reduce(
+      (sum, a) => sum + a.adjustedCost,
+      0
+    );
     ns.print("");
-    ns.print(`${C.cyan}PURCHASE ORDER${C.reset} ${C.dim}(${repStatus.purchasePlan.length} augs, $${ns.formatNumber(totalCost)} total)${C.reset}`);
-    for (let i = 0; i < Math.min(repStatus.purchasePlan.length, 8); i++) {
-      const item = repStatus.purchasePlan[i];
-      ns.print(`  ${C.dim}${(i + 1).toString().padStart(2)}.${C.reset} ${C.white}${item.name.substring(0, 30).padEnd(30)}${C.reset} ${C.dim}$${item.adjustedCostFormatted}${C.reset}`);
+    ns.print(
+      `${C.cyan}PURCHASE ORDER${C.reset} ${C.dim}(${status.purchasePlan.length} augs, $${ns.formatNumber(totalCost)} total)${C.reset}`
+    );
+    for (let i = 0; i < Math.min(status.purchasePlan.length, 8); i++) {
+      const item = status.purchasePlan[i];
+      ns.print(
+        `  ${C.dim}${(i + 1).toString().padStart(2)}.${C.reset} ${C.white}${item.name.substring(0, 30).padEnd(30)}${C.reset} ${C.dim}$${item.adjustedCostFormatted}${C.reset}`
+      );
     }
-    if (repStatus.purchasePlan.length > 8) {
-      ns.print(`  ${C.dim}... +${repStatus.purchasePlan.length - 8} more${C.reset}`);
+    if (status.purchasePlan.length > 8) {
+      ns.print(`  ${C.dim}... +${status.purchasePlan.length - 8} more${C.reset}`);
     }
   }
 
   // Bitnode status
   ns.print("");
-  ns.print(`${C.cyan}BITNODE${C.reset}  ` +
-    `${bitnodeStatus.augsComplete ? C.green : C.dim}Augs:${bitnodeStatus.augmentations}/${bitnodeStatus.augmentationsRequired}${C.reset}  ` +
-    `${bitnodeStatus.moneyComplete ? C.green : C.dim}$:${bitnodeStatus.moneyFormatted}/${bitnodeStatus.moneyRequiredFormatted}${C.reset}  ` +
-    `${bitnodeStatus.hackingComplete ? C.green : C.dim}Hack:${bitnodeStatus.hacking}/${bitnodeStatus.hackingRequired}${C.reset}` +
-    (bitnodeStatus.allComplete ? `  ${C.green}READY${C.reset}` : "")
+  ns.print(
+    `${C.cyan}BITNODE${C.reset}  ` +
+      `${bitnodeStatus.augsComplete ? C.green : C.dim}Augs:${bitnodeStatus.augmentations}/${bitnodeStatus.augmentationsRequired}${C.reset}  ` +
+      `${bitnodeStatus.moneyComplete ? C.green : C.dim}$:${bitnodeStatus.moneyFormatted}/${bitnodeStatus.moneyRequiredFormatted}${C.reset}  ` +
+      `${bitnodeStatus.hackingComplete ? C.green : C.dim}Hack:${bitnodeStatus.hacking}/${bitnodeStatus.hackingRequired}${C.reset}` +
+      (bitnodeStatus.allComplete ? `  ${C.green}READY${C.reset}` : "")
   );
 }
 
+// === TIERED RUN FUNCTIONS ===
+
 /**
- * Full mode: all Singularity functions available (SF4).
- * This is the original daemon loop, extracted verbatim.
+ * Lite mode: No Singularity (Tier 0)
+ */
+async function runLiteMode(
+  ns: NS,
+  oneShot: boolean,
+  interval: number,
+  currentRam: number
+): Promise<void> {
+  const C = COLORS;
+  let firstRun = true;
+
+  do {
+    ns.clearLog();
+    const status = computeTier0Status(ns, currentRam);
+    publishStatus(ns, STATUS_PORTS.rep, status);
+
+    ns.print(`${C.yellow}=== Rep Daemon (Lite Mode) ===${C.reset}`);
+    ns.print(`${C.dim}Singularity API not available (need SF4)${C.reset}`);
+
+    if (status.allFactions && status.allFactions.length > 0) {
+      ns.print("");
+      ns.print(`${C.dim}Showing cached data:${C.reset}`);
+      for (const faction of status.allFactions.slice(0, 5)) {
+        ns.print(
+          `  ${C.white}${faction.name}${C.reset}: ${faction.currentRepFormatted} rep`
+        );
+      }
+    } else {
+      ns.print("");
+      ns.print(`${C.dim}No cached data available.${C.reset}`);
+    }
+
+    if (firstRun) {
+      ns.tprint(
+        `INFO: Rep daemon running in lite mode (no Singularity). ` +
+          `Use terminal: singularity.workForFaction("FactionName", "hacking", true)`
+      );
+      firstRun = false;
+    }
+
+    if (!oneShot) await ns.sleep(interval);
+  } while (!oneShot);
+}
+
+/**
+ * Basic mode: Live rep only (Tier 1-2)
+ */
+async function runBasicMode(
+  ns: NS,
+  tier: RepTierConfig,
+  currentTierRam: number,
+  tierRamCosts: number[],
+  targetFactionOverride: string,
+  oneShot: boolean,
+  interval: number,
+  spawnArgs: string[]
+): Promise<void> {
+  let repGainRate = 0;
+  let lastRep = 0;
+  let lastRepTime = Date.now();
+  let lastTargetFaction = "";
+  let cyclesSinceUpgradeCheck = 0;
+  const UPGRADE_CHECK_INTERVAL = 10;
+
+  do {
+    ns.clearLog();
+
+    // Compute status based on tier
+    const nextTierRam = tierRamCosts[tier.tier + 1];
+    let status: RepStatus;
+    if (tier.tier === 1) {
+      status = computeTier1Status(ns, currentTierRam, nextTierRam);
+    } else {
+      status = computeTier2Status(
+        ns,
+        currentTierRam,
+        nextTierRam,
+        targetFactionOverride,
+        repGainRate
+      );
+    }
+
+    // Track rep gain rate
+    if (status.targetFaction && status.currentRep !== undefined) {
+      const now = Date.now();
+      if (lastRep > 0 && lastTargetFaction === status.targetFaction) {
+        const timeDelta = (now - lastRepTime) / 1000;
+        if (timeDelta > 0) {
+          const repDelta = status.currentRep - lastRep;
+          repGainRate = repGainRate * 0.7 + (repDelta / timeDelta) * 0.3;
+        }
+      }
+      lastRep = status.currentRep;
+      lastRepTime = now;
+      lastTargetFaction = status.targetFaction;
+    }
+
+    publishStatus(ns, STATUS_PORTS.rep, status);
+
+    // Publish bitnode status (without installed augs count at low tiers)
+    const bitnodeStatus = computeBitnodeStatus(ns);
+    publishStatus(ns, STATUS_PORTS.bitnode, bitnodeStatus);
+
+    printLowTierStatus(ns, status);
+
+    // Check for upgrade opportunity
+    cyclesSinceUpgradeCheck++;
+    if (cyclesSinceUpgradeCheck >= UPGRADE_CHECK_INTERVAL) {
+      cyclesSinceUpgradeCheck = 0;
+      const potentialRam = calcAvailableAfterKills(ns) + currentTierRam;
+      const sf4Level = ns.getResetInfo().ownedSF.get(4) ?? 0;
+
+      // Check if we can afford a higher tier
+      for (let i = REP_TIERS.length - 1; i > tier.tier; i--) {
+        if (potentialRam >= tierRamCosts[i]) {
+          ns.tprint(
+            `INFO: Upgrading rep daemon from ${tier.name} to ${REP_TIERS[i].name}`
+          );
+          ns.spawn(ns.getScriptName(), { threads: 1, spawnDelay: 100 }, ...spawnArgs);
+          return;
+        }
+      }
+    }
+
+    if (!oneShot) {
+      ns.print(
+        `\n${COLORS.dim}Next check in ${interval / 1000}s...${COLORS.reset}`
+      );
+      await ns.sleep(interval);
+    }
+  } while (!oneShot);
+}
+
+/**
+ * Full mode: All features (Tier 3-6)
  */
 async function runFullMode(
   ns: NS,
+  tier: RepTierConfig,
+  currentTierRam: number,
+  tierRamCosts: number[],
   targetFactionOverride: string,
   noWork: boolean,
-  interval: number,
   oneShot: boolean,
+  interval: number,
+  spawnArgs: string[]
 ): Promise<void> {
-  // Track rep gain rate with exponential smoothing
+  let repGainRate = 0;
   let lastRep = 0;
   let lastRepTime = Date.now();
-  let repGainRate = 0;
   let lastTargetFaction = "";
   let lastNotifiedFaction = "";
+  let cyclesSinceUpgradeCheck = 0;
+  const UPGRADE_CHECK_INTERVAL = 10;
 
   do {
     ns.clearLog();
@@ -381,7 +938,9 @@ async function runFullMode(
 
     // Override with specific faction if requested
     if (targetFactionOverride) {
-      const forcedFaction = factionData.find(f => f.name === targetFactionOverride);
+      const forcedFaction = factionData.find(
+        (f) => f.name === targetFactionOverride
+      );
       if (forcedFaction && forcedFaction.availableAugs.length > 0) {
         workTarget = {
           aug: forcedFaction.availableAugs[0],
@@ -391,7 +950,7 @@ async function runFullMode(
       }
     }
 
-    // Determine work target: regular aug or NFG fallback
+    // Determine work target
     let workTargetFaction: string | null = null;
     let workTargetRep = 0;
 
@@ -399,16 +958,15 @@ async function runFullMode(
       workTargetFaction = workTarget.faction.name;
       workTargetRep = workTarget.faction.currentRep;
     } else {
-      // No regular augs to unlock - fall back to best NFG faction
       const nfInfo = getNeuroFluxInfo(ns);
       if (nfInfo.bestFaction) {
         workTargetFaction = nfInfo.bestFaction;
-        const fd = factionData.find(f => f.name === nfInfo.bestFaction);
+        const fd = factionData.find((f) => f.name === nfInfo.bestFaction);
         workTargetRep = fd?.currentRep ?? 0;
       }
     }
 
-    // Track rep gain rate with exponential smoothing
+    // Track rep gain rate
     if (workTargetFaction) {
       const now = Date.now();
 
@@ -425,15 +983,15 @@ async function runFullMode(
       lastRepTime = now;
       lastTargetFaction = workTargetFaction;
 
-      // Terminal notification when target faction changes
+      // Terminal notification when target changes
       if (workTargetFaction !== lastNotifiedFaction) {
         const bestWork = selectBestWorkType(ns, player);
         ns.tprint(`INFO: >>> Work for ${workTargetFaction} (${bestWork}) <<<`);
         lastNotifiedFaction = workTargetFaction;
       }
 
-      // Auto-work for target faction unless --no-work
-      if (!noWork) {
+      // Auto-work (Tier 6 only)
+      if (!noWork && tier.tier >= 6) {
         const nextAug = workTarget?.aug;
         const needsWork = !nextAug || nextAug.repReq > workTargetRep || !workTarget;
 
@@ -444,106 +1002,83 @@ async function runFullMode(
             currentWork?.type === "FACTION" &&
             currentWork?.factionName === workTargetFaction;
 
-          if (!currentlyWorking ||
-              (currentWork as { factionWorkType?: string }).factionWorkType !== bestWork) {
-            ns.singularity.workForFaction(workTargetFaction, bestWork, ns.singularity.isFocused());
+          if (
+            !currentlyWorking ||
+            (currentWork as { factionWorkType?: string }).factionWorkType !==
+              bestWork
+          ) {
+            ns.singularity.workForFaction(
+              workTargetFaction,
+              bestWork,
+              ns.singularity.isFocused()
+            );
           }
         }
       }
     }
 
     // Compute and publish RepStatus
-    const repStatus = computeRepStatus(ns, repGainRate);
+    // Calculate next tier RAM for display
+    const nextTierRam = tier.tier < 6 ? tierRamCosts[tier.tier + 1] : null;
+    const repStatus = computeHighTierStatus(ns, tier, currentTierRam, nextTierRam, repGainRate, noWork);
     publishStatus(ns, STATUS_PORTS.rep, repStatus);
 
     // Compute and publish BitnodeStatus
-    const bitnodeStatus = computeBitnodeStatus(ns);
+    const bitnodeStatus = computeBitnodeStatus(
+      ns,
+      repStatus.installedAugs
+    );
     publishStatus(ns, STATUS_PORTS.bitnode, bitnodeStatus);
 
-    // Print terminal display
-    printStatus(ns, repStatus, bitnodeStatus);
+    // Print status
+    printHighTierStatus(ns, repStatus, bitnodeStatus);
+
+    // Check for upgrade opportunity
+    cyclesSinceUpgradeCheck++;
+    if (cyclesSinceUpgradeCheck >= UPGRADE_CHECK_INTERVAL) {
+      cyclesSinceUpgradeCheck = 0;
+      const potentialRam = calcAvailableAfterKills(ns) + currentTierRam;
+
+      // Check if we can afford a higher tier
+      for (let i = REP_TIERS.length - 1; i > tier.tier; i--) {
+        if (potentialRam >= tierRamCosts[i]) {
+          ns.tprint(
+            `INFO: Upgrading rep daemon from ${tier.name} to ${REP_TIERS[i].name}`
+          );
+          ns.spawn(ns.getScriptName(), { threads: 1, spawnDelay: 100 }, ...spawnArgs);
+          return;
+        }
+      }
+    }
 
     if (!oneShot) {
-      ns.print(`\n${COLORS.dim}Next check in ${interval / 1000}s...${COLORS.reset}`);
+      ns.print(
+        `\n${COLORS.dim}Next check in ${interval / 1000}s...${COLORS.reset}`
+      );
       await ns.sleep(interval);
     }
   } while (!oneShot);
 }
 
-/**
- * Lite mode: Singularity API not available (no SF4).
- * Displays cached port data and prints terminal instructions.
- */
-async function runLiteMode(ns: NS, oneShot: boolean, interval: number): Promise<void> {
-  const C = COLORS;
-  let firstRun = true;
+// === MAIN ===
 
-  do {
-    ns.clearLog();
-    ns.print(`${C.yellow}=== Rep Daemon (Lite Mode) ===${C.reset}`);
-    ns.print(`${C.dim}Singularity API not available (need SF4)${C.reset}`);
-
-    // Read cached status from port (may exist from a previous full run)
-    const cached = peekStatus<RepStatus>(ns, STATUS_PORTS.rep);
-    if (cached) {
-      ns.print("");
-      ns.print(`${C.dim}Showing cached data:${C.reset}`);
-      ns.print(`  ${C.dim}Target:${C.reset} ${C.white}${cached.targetFaction}${C.reset}`);
-      ns.print(`  ${C.dim}Rep:${C.reset} ${C.white}${cached.currentRepFormatted} / ${cached.repRequiredFormatted}${C.reset}`);
-      ns.print(`  ${C.dim}Pending:${C.reset} ${C.yellow}${cached.pendingAugs}${C.reset} ${C.dim}augs${C.reset}`);
-      if (cached.nextAugName) {
-        ns.print(`  ${C.dim}Next:${C.reset} ${C.white}${cached.nextAugName}${C.reset}`);
-      }
-      if (cached.purchasePlan.length > 0) {
-        ns.print(`  ${C.dim}Unlocked:${C.reset} ${C.green}${cached.purchasePlan.length}${C.reset} ${C.dim}augs${C.reset}`);
-      }
-    } else {
-      ns.print("");
-      ns.print(`${C.dim}No cached data available.${C.reset}`);
-    }
-
-    if (firstRun) {
-      ns.tprint(`INFO: Rep daemon running in lite mode (no Singularity). ` +
-                `Use terminal: singularity.workForFaction("FactionName", "hacking", true)`);
-      firstRun = false;
-    }
-
-    if (!oneShot) await ns.sleep(interval);
-  } while (!oneShot);
-}
-
-/** Singularity functions used by full mode (controllers/factions + this daemon) */
-const SINGULARITY_FUNCTIONS = [
-  "singularity.getOwnedAugmentations",
-  "singularity.getAugmentationsFromFaction",
-  "singularity.getFactionRep",
-  "singularity.getFactionFavor",
-  "singularity.getAugmentationRepReq",
-  "singularity.getAugmentationPrice",
-  "singularity.getAugmentationPrereq",
-  "singularity.getCurrentWork",
-  "singularity.workForFaction",
-  "singularity.isFocused",
-];
-
-/**
- * Calculate the RAM needed for full mode (singularity + base NS functions).
- * Uses getFunctionRamCost (0 GB) to probe actual costs at the current SF4 level.
- */
-function calcFullModeRam(ns: NS): number {
-  let ram = 0;
-  for (const fn of SINGULARITY_FUNCTIONS) {
-    ram += ns.getFunctionRamCost(fn);
-  }
-  // Base NS functions used: getPlayer, getServer, getFavorToDonate, etc.
-  ram += ns.getFunctionRamCost("getPlayer");
-  ram += ns.getFunctionRamCost("getServer");
-  ram += ns.getFunctionRamCost("getFavorToDonate");
-  ram += ns.getFunctionRamCost("getPortHandle");
-  ram += ns.getFunctionRamCost("fileExists");
-  // Base script cost
-  ram += 1.6;
-  return Math.ceil(ram * 100) / 100; // round to Bitburner's precision
+/** Build args array from current flags for respawning */
+function buildSpawnArgs(flags: {
+  faction: string;
+  "no-work": boolean;
+  "no-kill": boolean;
+  tier: string;
+  interval: number;
+  "one-shot": boolean;
+}): string[] {
+  const args: string[] = [];
+  if (flags.faction) args.push("--faction", flags.faction);
+  if (flags["no-work"]) args.push("--no-work");
+  if (flags["no-kill"]) args.push("--no-kill");
+  if (flags.tier) args.push("--tier", flags.tier);
+  if (flags.interval !== 2000) args.push("--interval", String(flags.interval));
+  if (flags["one-shot"]) args.push("--one-shot");
+  return args;
 }
 
 export async function main(ns: NS): Promise<void> {
@@ -553,49 +1088,127 @@ export async function main(ns: NS): Promise<void> {
   const flags = ns.flags([
     ["faction", ""],
     ["no-work", false],
+    ["no-kill", false],
+    ["tier", ""],
     ["interval", 2000],
-    ["reserve", 0],
     ["one-shot", false],
   ]) as {
     faction: string;
     "no-work": boolean;
+    "no-kill": boolean;
+    tier: string;
     interval: number;
-    reserve: number;
     "one-shot": boolean;
     _: string[];
   };
 
   const targetFactionOverride = String(flags.faction);
   const noWork = flags["no-work"];
+  const noKill = flags["no-kill"];
+  const forcedTierName = flags.tier as RepTierName | "";
   const interval = flags.interval;
   const oneShot = flags["one-shot"];
+  const spawnArgs = buildSpawnArgs(flags);
 
-  // Check 1: Does the player own SF4 (Singularity)?
+  // Check SF4 level
   const sf4Level = ns.getResetInfo().ownedSF.get(4) ?? 0;
 
-  // Check 2: Can we afford the RAM for singularity calls?
-  let hasSingularity = false;
-  if (sf4Level > 0) {
-    const needed = calcFullModeRam(ns);
-    const available = ns.getServerMaxRam("home") - ns.getServerUsedRam("home")
-      + 5; // reclaim the 5 GB this script is currently using
-    if (available >= needed) {
-      const actual = ns.ramOverride(needed);
-      hasSingularity = actual >= needed;
-      if (hasSingularity) {
-        ns.tprint(`INFO: Rep daemon: full mode (SF4.${sf4Level}, ${ns.formatRam(actual)} RAM)`);
-      }
+  // Calculate actual RAM cost for each tier dynamically
+  const tierRamCosts = calculateAllTierRamCosts(ns);
+
+  // Calculate potential RAM (current script + killable scripts)
+  const currentScriptRam = 5; // Our bootstrap RAM
+  let potentialRam: number;
+
+  if (noKill) {
+    // Only use currently available RAM
+    potentialRam =
+      ns.getServerMaxRam("home") -
+      ns.getServerUsedRam("home") +
+      currentScriptRam;
+  } else {
+    // Include RAM from killable scripts
+    potentialRam = calcAvailableAfterKills(ns) + currentScriptRam;
+  }
+
+  // Select tier (forced or auto)
+  let selectedTier: RepTierConfig;
+  let requiredRam: number;
+
+  if (forcedTierName) {
+    const forcedIndex = REP_TIERS.findIndex((t) => t.name === forcedTierName);
+    if (forcedIndex >= 0) {
+      selectedTier = REP_TIERS[forcedIndex];
+      requiredRam = tierRamCosts[forcedIndex];
+      ns.tprint(`INFO: Rep daemon: forced ${selectedTier.name} tier`);
+    } else {
+      ns.tprint(`WARN: Unknown tier "${forcedTierName}", using auto-select`);
+      const result = selectBestTier(potentialRam, sf4Level, tierRamCosts);
+      selectedTier = result.tier;
+      requiredRam = result.ramCost;
     }
-    if (!hasSingularity) {
-      ns.tprint(`WARN: Rep daemon: have SF4 but not enough RAM for singularity ` +
-        `(need ${ns.formatRam(calcFullModeRam(ns))}, ` +
-        `server has ${ns.formatRam(ns.getServerMaxRam("home") - ns.getServerUsedRam("home") + 5)} available)`);
+  } else {
+    const result = selectBestTier(potentialRam, sf4Level, tierRamCosts);
+    selectedTier = result.tier;
+    requiredRam = result.ramCost;
+  }
+
+  // Free RAM if needed (unless --no-kill)
+  const currentlyAvailable =
+    ns.getServerMaxRam("home") - ns.getServerUsedRam("home") + currentScriptRam;
+
+  if (requiredRam > currentlyAvailable && !noKill) {
+    ns.tprint(
+      `INFO: Killing lower-priority scripts to reach ${selectedTier.name} tier`
+    );
+    freeRamForTarget(ns, requiredRam);
+  }
+
+  // Upgrade RAM allocation
+  if (selectedTier.tier > 0) {
+    const actual = ns.ramOverride(requiredRam);
+    if (actual < requiredRam) {
+      ns.tprint(
+        `WARN: Could not allocate ${ns.formatRam(requiredRam)} RAM, ` +
+          `got ${ns.formatRam(actual)}. Downgrading tier.`
+      );
+      // Find the tier we can actually run
+      const result = selectBestTier(actual, sf4Level, tierRamCosts);
+      selectedTier = result.tier;
+      requiredRam = result.ramCost;
+      ns.ramOverride(requiredRam);
     }
   }
 
-  if (hasSingularity) {
-    await runFullMode(ns, targetFactionOverride, noWork, interval, oneShot);
+  ns.tprint(
+    `INFO: Rep daemon: ${selectedTier.name} tier (${ns.formatRam(requiredRam)} RAM)`
+  );
+
+  // Run appropriate mode
+  if (selectedTier.tier === 0) {
+    await runLiteMode(ns, oneShot, interval, requiredRam);
+  } else if (selectedTier.tier <= 2) {
+    await runBasicMode(
+      ns,
+      selectedTier,
+      requiredRam,
+      tierRamCosts,
+      targetFactionOverride,
+      oneShot,
+      interval,
+      spawnArgs
+    );
   } else {
-    await runLiteMode(ns, oneShot, interval);
+    await runFullMode(
+      ns,
+      selectedTier,
+      requiredRam,
+      tierRamCosts,
+      targetFactionOverride,
+      noWork,
+      oneShot,
+      interval,
+      spawnArgs
+    );
   }
 }

@@ -739,3 +739,237 @@ export function getRepStatus(ns: NS, player: Player): RepStatusData {
     installedAugs,
   };
 }
+
+// === TIERED FACTION FUNCTIONS ===
+// These functions use progressively more Singularity API calls,
+// allowing the rep daemon to operate at different RAM tiers.
+
+/**
+ * Tier 1: Basic faction rep data
+ * Uses: getFactionRep, getFactionFavor (~34 GB total with base)
+ *
+ * Returns basic rep and favor for all joined factions.
+ */
+export interface BasicFactionData {
+  name: string;
+  currentRep: number;
+  favor: number;
+}
+
+export function getBasicFactionRep(ns: NS, player: Player): BasicFactionData[] {
+  const results: BasicFactionData[] = [];
+
+  for (const faction of player.factions) {
+    results.push({
+      name: faction,
+      currentRep: ns.singularity.getFactionRep(faction),
+      favor: ns.singularity.getFactionFavor(faction),
+    });
+  }
+
+  return results.sort((a, b) => b.currentRep - a.currentRep);
+}
+
+/**
+ * Tier 2: Target tracking with aug requirements
+ * Uses: + getAugmentationRepReq, getAugmentationPrice (~114 GB total)
+ *
+ * Returns faction data with target aug rep requirements and prices.
+ * Requires a target faction to be specified (or uses first faction).
+ */
+export interface TargetAugData {
+  faction: string;
+  factionRep: number;
+  factionFavor: number;
+  targetAug: string | null;
+  repRequired: number;
+  repGap: number;
+  augPrice: number;
+}
+
+export function getFactionAugTargets(
+  ns: NS,
+  factions: BasicFactionData[],
+  targetAugsByFaction: Map<string, string>
+): TargetAugData[] {
+  const results: TargetAugData[] = [];
+
+  for (const faction of factions) {
+    const targetAug = targetAugsByFaction.get(faction.name) ?? null;
+
+    if (targetAug) {
+      const repRequired = ns.singularity.getAugmentationRepReq(targetAug);
+      const augPrice = ns.singularity.getAugmentationPrice(targetAug);
+
+      results.push({
+        faction: faction.name,
+        factionRep: faction.currentRep,
+        factionFavor: faction.favor,
+        targetAug,
+        repRequired,
+        repGap: Math.max(0, repRequired - faction.currentRep),
+        augPrice,
+      });
+    } else {
+      results.push({
+        faction: faction.name,
+        factionRep: faction.currentRep,
+        factionFavor: faction.favor,
+        targetAug: null,
+        repRequired: 0,
+        repGap: 0,
+        augPrice: 0,
+      });
+    }
+  }
+
+  return results;
+}
+
+/**
+ * Tier 3: Available augs per faction
+ * Uses: + getAugmentationsFromFaction (~194 GB total)
+ *
+ * Returns list of available augs for each faction.
+ */
+export interface FactionAugList {
+  faction: string;
+  currentRep: number;
+  favor: number;
+  augs: {
+    name: string;
+    repReq: number;
+    price: number;
+  }[];
+}
+
+export function getAvailableAugs(
+  ns: NS,
+  factions: BasicFactionData[]
+): FactionAugList[] {
+  const results: FactionAugList[] = [];
+
+  for (const faction of factions) {
+    const allAugs = ns.singularity.getAugmentationsFromFaction(faction.name);
+
+    // Get rep req and price for each aug
+    const augs = allAugs
+      .filter((aug) => aug !== "NeuroFlux Governor")
+      .map((aug) => ({
+        name: aug,
+        repReq: ns.singularity.getAugmentationRepReq(aug),
+        price: ns.singularity.getAugmentationPrice(aug),
+      }))
+      .sort((a, b) => a.repReq - b.repReq);
+
+    results.push({
+      faction: faction.name,
+      currentRep: faction.currentRep,
+      favor: faction.favor,
+      augs,
+    });
+  }
+
+  return results;
+}
+
+/**
+ * Tier 4: Filtered augs (excluding owned)
+ * Uses: + getOwnedAugmentations (~274 GB total)
+ *
+ * Returns augs filtered to exclude already-owned ones.
+ */
+export interface FilteredFactionAugs {
+  faction: string;
+  currentRep: number;
+  favor: number;
+  availableAugs: {
+    name: string;
+    repReq: number;
+    price: number;
+    hasRep: boolean;
+  }[];
+}
+
+export function getFilteredAugs(
+  ns: NS,
+  factionAugLists: FactionAugList[]
+): FilteredFactionAugs[] {
+  const ownedAugs = new Set(ns.singularity.getOwnedAugmentations(true));
+  const results: FilteredFactionAugs[] = [];
+
+  for (const factionData of factionAugLists) {
+    const availableAugs = factionData.augs
+      .filter((aug) => !ownedAugs.has(aug.name))
+      .map((aug) => ({
+        ...aug,
+        hasRep: factionData.currentRep >= aug.repReq,
+      }));
+
+    results.push({
+      faction: factionData.faction,
+      currentRep: factionData.currentRep,
+      favor: factionData.favor,
+      availableAugs,
+    });
+  }
+
+  return results;
+}
+
+/**
+ * Tier 5: Ordered augs with prerequisites
+ * Uses: + getAugmentationPrereq (~354 GB total)
+ *
+ * Returns augs ordered by prerequisites, filtering out those
+ * whose prereqs aren't met.
+ */
+export interface OrderedFactionAugs {
+  faction: string;
+  currentRep: number;
+  favor: number;
+  orderedAugs: {
+    name: string;
+    repReq: number;
+    price: number;
+    hasRep: boolean;
+    prereqs: string[];
+    prereqsMet: boolean;
+  }[];
+}
+
+export function getOrderedAugs(
+  ns: NS,
+  filteredAugLists: FilteredFactionAugs[]
+): OrderedFactionAugs[] {
+  const ownedAugs = new Set(ns.singularity.getOwnedAugmentations(true));
+  const results: OrderedFactionAugs[] = [];
+
+  for (const factionData of filteredAugLists) {
+    const orderedAugs = factionData.availableAugs.map((aug) => {
+      const prereqs = ns.singularity.getAugmentationPrereq(aug.name);
+      const prereqsMet = prereqs.every((p) => ownedAugs.has(p));
+
+      return {
+        ...aug,
+        prereqs,
+        prereqsMet,
+      };
+    });
+
+    // Sort: prereqs met first, then by rep requirement
+    orderedAugs.sort((a, b) => {
+      if (a.prereqsMet !== b.prereqsMet) return a.prereqsMet ? -1 : 1;
+      return a.repReq - b.repReq;
+    });
+
+    results.push({
+      faction: factionData.faction,
+      currentRep: factionData.currentRep,
+      favor: factionData.favor,
+      orderedAugs,
+    });
+  }
+
+  return results;
+}

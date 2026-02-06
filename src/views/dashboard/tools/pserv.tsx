@@ -74,26 +74,22 @@ function PservOverviewCard({ status, running, toolId, pid }: OverviewCardProps<F
         <span>PSERV</span>
         <ToolControl tool={toolId} running={running} pid={pid} />
       </div>
-      {status && (
-        <>
-          <div style={styles.stat}>
-            <span style={styles.statLabel}>Servers</span>
-            <span style={styles.statHighlight}>
-              {status.serverCount}/{status.serverCap}
-            </span>
-          </div>
-          <div style={styles.stat}>
-            <span style={styles.statLabel}>Total RAM</span>
-            <span style={styles.statValue}>{status.totalRam}</span>
-          </div>
-          <div style={styles.stat}>
-            <span style={styles.statLabel}>Status</span>
-            <span style={status.allMaxed ? styles.statHighlight : styles.statValue}>
-              {status.allMaxed ? "ALL MAXED" : status.upgradeProgress}
-            </span>
-          </div>
-        </>
-      )}
+      <div style={styles.stat}>
+        <span style={styles.statLabel}>Servers</span>
+        <span style={styles.statHighlight}>
+          {status ? `${status.serverCount}/${status.serverCap}` : "—"}
+        </span>
+      </div>
+      <div style={styles.stat}>
+        <span style={styles.statLabel}>Total RAM</span>
+        <span style={styles.statValue}>{status?.totalRam ?? "—"}</span>
+      </div>
+      <div style={styles.stat}>
+        <span style={styles.statLabel}>Status</span>
+        <span style={status?.allMaxed ? styles.statHighlight : styles.statValue}>
+          {status ? (status.allMaxed ? "ALL MAXED" : status.upgradeProgress) : "—"}
+        </span>
+      </div>
     </div>
   );
 }
@@ -159,14 +155,10 @@ function ServerCell({ server, maxRam, index }: ServerCellProps): React.ReactElem
 }
 
 function PservDetailPanel({ status, running, toolId, pid }: DetailPanelProps<FormattedPservStatus>): React.ReactElement {
-  if (!status) {
-    return <div style={styles.panel}>Loading pserv status...</div>;
-  }
-
   // Create 25 slots (5x5 grid)
   const slots: (FormattedPservStatus["servers"][0] | null)[] = [];
   for (let i = 0; i < 25; i++) {
-    slots.push(status.servers[i] ?? null);
+    slots.push(status?.servers[i] ?? null);
   }
 
   return (
@@ -176,13 +168,13 @@ function PservDetailPanel({ status, running, toolId, pid }: DetailPanelProps<For
           <span>
             <span style={styles.statLabel}>Servers: </span>
             <span style={styles.statHighlight}>
-              {status.serverCount}/{status.serverCap}
+              {status ? `${status.serverCount}/${status.serverCap}` : "—"}
             </span>
           </span>
           <span style={styles.dim}>|</span>
           <span>
             <span style={styles.statLabel}>Total RAM: </span>
-            <span style={styles.statHighlight}>{status.totalRam}</span>
+            <span style={styles.statHighlight}>{status?.totalRam ?? "—"}</span>
           </span>
         </div>
         <ToolControl tool={toolId} running={running} pid={pid} />
@@ -194,7 +186,7 @@ function PservDetailPanel({ status, running, toolId, pid }: DetailPanelProps<For
           <ServerCell
             key={i}
             server={server}
-            maxRam={status.maxPossibleRamNum}
+            maxRam={status?.maxPossibleRamNum ?? 1048576}
             index={i}
           />
         ))}
@@ -224,29 +216,29 @@ function PservDetailPanel({ status, running, toolId, pid }: DetailPanelProps<For
         <div style={styles.card}>
           <div style={styles.stat}>
             <span style={styles.statLabel}>Min RAM</span>
-            <span style={styles.statValue}>{status.minRam}</span>
+            <span style={styles.statValue}>{status?.minRam ?? "—"}</span>
           </div>
           <div style={styles.stat}>
             <span style={styles.statLabel}>Max RAM</span>
-            <span style={styles.statValue}>{status.maxRam}</span>
+            <span style={styles.statValue}>{status?.maxRam ?? "—"}</span>
           </div>
         </div>
         <div style={styles.card}>
           <div style={styles.stat}>
             <span style={styles.statLabel}>Max Possible</span>
-            <span style={styles.statValue}>{status.maxPossibleRam}</span>
+            <span style={styles.statValue}>{status?.maxPossibleRam ?? "—"}</span>
           </div>
           <div style={styles.stat}>
             <span style={styles.statLabel}>Status</span>
-            <span style={status.allMaxed ? styles.statHighlight : styles.statValue}>
-              {status.allMaxed ? "ALL MAXED" : status.upgradeProgress}
+            <span style={status?.allMaxed ? styles.statHighlight : styles.statValue}>
+              {status ? (status.allMaxed ? "ALL MAXED" : status.upgradeProgress) : "—"}
             </span>
           </div>
         </div>
       </div>
 
       {/* Next Upgrade Info */}
-      {status.nextUpgrade && (
+      {status?.nextUpgrade && (
         <div style={styles.card}>
           <div style={styles.stat}>
             <span style={styles.statLabel}>Next Upgrade</span>
