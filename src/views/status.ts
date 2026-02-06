@@ -414,7 +414,7 @@ export async function main(ns: NS): Promise<void> {
   if (flags.live) {
     ns.ui.openTail();
     // eslint-disable-next-line no-constant-condition
-    while (true) {
+    while (flags.live) { // avoids error; never false
       ns.clearLog();
       renderStatus(ns, tool, ns.print.bind(ns));
       await ns.sleep(2000);
