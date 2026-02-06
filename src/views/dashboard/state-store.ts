@@ -69,9 +69,9 @@ export function runScript(tool: ToolName, scriptPath: string, scriptArgs: string
 /**
  * Start optimal faction work with focus.
  */
-export function startFactionWork(factionName: string): void {
+export function startFactionWork(factionName: string, workType: "hacking" | "field" | "security" = "hacking"): void {
   if (!commandPort) return;
-  commandPort.write(JSON.stringify({ tool: "rep", action: "start-faction-work", factionName }));
+  commandPort.write(JSON.stringify({ tool: "rep", action: "start-faction-work", factionName, workType }));
 }
 
 /**
@@ -139,9 +139,10 @@ function executeCommand(ns: NS, cmd: Command): void {
       break;
     case "start-faction-work":
       if (cmd.factionName) {
-        const pid = ns.exec("actions/work-for-faction.js", "home", 1, "--faction", cmd.factionName, "--focus");
+        const workType = cmd.workType ?? "hacking";
+        const pid = ns.exec("actions/work-for-faction.js", "home", 1, "--faction", cmd.factionName, "--type", workType, "--focus");
         if (pid > 0) {
-          ns.toast(`Started ${cmd.factionName} work`, "success", 2000);
+          ns.toast(`Started ${workType} work for ${cmd.factionName}`, "success", 2000);
         } else {
           ns.toast(`Failed to start work for ${cmd.factionName}`, "error", 3000);
         }

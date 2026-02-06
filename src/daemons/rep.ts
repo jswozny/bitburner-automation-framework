@@ -985,7 +985,7 @@ async function runFullMode(
 
       // Terminal notification when target changes
       if (workTargetFaction !== lastNotifiedFaction) {
-        const bestWork = selectBestWorkType(ns, player);
+        const bestWork = selectBestWorkType(ns, player, workTargetFaction);
         ns.tprint(`INFO: >>> Work for ${workTargetFaction} (${bestWork}) <<<`);
         lastNotifiedFaction = workTargetFaction;
       }
@@ -996,7 +996,7 @@ async function runFullMode(
         const needsWork = !nextAug || nextAug.repReq > workTargetRep || !workTarget;
 
         if (needsWork) {
-          const bestWork = selectBestWorkType(ns, player);
+          const bestWork = selectBestWorkType(ns, player, workTargetFaction);
           const currentWork = ns.singularity.getCurrentWork();
           const currentlyWorking =
             currentWork?.type === "FACTION" &&

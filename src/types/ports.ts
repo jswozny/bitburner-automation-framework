@@ -68,6 +68,7 @@ export interface Command {
   scriptPath?: string;
   scriptArgs?: string[];
   factionName?: string;
+  workType?: "hacking" | "field" | "security";
   focus?: string;
 }
 

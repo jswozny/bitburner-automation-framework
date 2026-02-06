@@ -39,8 +39,10 @@ export async function main(ns: NS): Promise<void> {
 
   if (success) {
     ns.tprint(`SUCCESS: Started ${workType} work for ${faction}${focus ? " (focused)" : ""}`);
+    ns.toast(`Started ${workType} work for ${faction}`, "success", 3000);
   } else {
     ns.tprint(`FAILED: Could not start ${workType} work for ${faction}`);
     ns.tprint(`  Check: Are you a member? Does this faction support ${workType} work?`);
+    ns.toast(`FAILED: Could not start ${workType} work for ${faction}`, "error", 5000);
   }
 }

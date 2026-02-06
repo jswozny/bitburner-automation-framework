@@ -515,8 +515,8 @@ function HighTierDetailPanel({
   };
 
   const handleStartWork = () => {
-    if (status.targetFaction && status.targetFaction !== "None") {
-      startFactionWork(status.targetFaction);
+    if (status.targetFaction && status.targetFaction !== "None" && status.bestWorkType) {
+      startFactionWork(status.targetFaction, status.bestWorkType);
     }
   };
 

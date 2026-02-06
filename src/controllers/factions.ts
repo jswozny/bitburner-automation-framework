@@ -245,13 +245,26 @@ export function calculatePurchasePriority(
   return result;
 }
 
+// Factions that don't support hacking work (gang factions, etc.)
+const NO_HACKING_FACTIONS = [
+  "Slum Snakes",
+  "Tetrads",
+  "The Syndicate",
+  "The Dark Army",
+  "Speakers for the Dead",
+];
+
 /**
- * Select best work type based on player skills
+ * Select best work type based on player skills and faction restrictions
  */
 export function selectBestWorkType(
   ns: NS,
-  player: Player
+  player: Player,
+  factionName?: string
 ): "hacking" | "field" | "security" {
+  // Check if faction supports hacking work
+  const supportsHacking = !factionName || !NO_HACKING_FACTIONS.includes(factionName);
+
   // Choose based on best stats
   const hacking = player.skills.hacking;
   const combat =
@@ -263,7 +276,7 @@ export function selectBestWorkType(
   const charisma = player.skills.charisma;
 
   // Hacking is usually best for rep gain if you have high hacking
-  if (hacking > combat && hacking > charisma) {
+  if (supportsHacking && hacking > combat && hacking > charisma) {
     return "hacking";
   } else if (combat > charisma) {
     return "field";
@@ -381,7 +394,7 @@ export function getFactionWorkStatus(
   targetFaction: string
 ): FactionWorkStatus {
   const isWorkable = !NON_WORKABLE_FACTIONS.has(targetFaction);
-  const bestWorkType = selectBestWorkType(ns, player);
+  const bestWorkType = selectBestWorkType(ns, player, targetFaction);
   const currentWork = ns.singularity.getCurrentWork();
 
   const isWorkingForFaction =
@@ -414,7 +427,7 @@ export function startOptimalFactionWork(
   if (NON_WORKABLE_FACTIONS.has(factionName)) {
     return false;
   }
-  const bestWork = selectBestWorkType(ns, player);
+  const bestWork = selectBestWorkType(ns, player, factionName);
   return ns.singularity.workForFaction(factionName, bestWork, true);
 }
 
