@@ -148,7 +148,7 @@ function printOverview(ns: NS, log: Log): void {
   const rep = peekStatus<RepStatus>(ns, STATUS_PORTS.rep);
   log(`  ${C.green}REP${C.reset}  ${formatRunState(runState.rep)}`);
   if (rep) {
-    log(`    Faction: ${rep.targetFaction}  Rep: ${rep.currentRepFormatted}/${rep.repRequiredFormatted}  Progress: ${(rep.repProgress * 100).toFixed(1)}%`);
+    log(`    Faction: ${rep.targetFaction ?? "—"}  Rep: ${rep.currentRepFormatted ?? "—"}/${rep.repRequiredFormatted ?? "—"}  Progress: ${((rep.repProgress ?? 0) * 100).toFixed(1)}%`);
   } else {
     printOffline(log, "rep");
   }
@@ -296,16 +296,16 @@ function printRepDetail(ns: NS, log: Log): void {
   log(`  ${formatRunState(runState.rep)}`);
   if (!rep) { printOffline(log, "rep"); printCliDocs(log, "rep"); return; }
 
-  printField(log, "Target Faction", rep.targetFaction);
+  printField(log, "Target Faction", rep.targetFaction ?? "—");
   printField(log, "Next Aug", rep.nextAugName || "None");
-  printField(log, "Rep", `${rep.currentRepFormatted} / ${rep.repRequiredFormatted}`);
-  printField(log, "Progress", `${(rep.repProgress * 100).toFixed(1)}%`);
-  printField(log, "ETA", rep.eta);
-  printField(log, "Favor", `${rep.favor} / ${rep.favorToUnlock}`);
-  printField(log, "Pending Augs", String(rep.pendingAugs));
-  printField(log, "Installed Augs", String(rep.installedAugs));
+  printField(log, "Rep", `${rep.currentRepFormatted ?? "—"} / ${rep.repRequiredFormatted ?? "—"}`);
+  printField(log, "Progress", `${((rep.repProgress ?? 0) * 100).toFixed(1)}%`);
+  printField(log, "ETA", rep.eta ?? "—");
+  printField(log, "Favor", `${rep.favor ?? 0} / ${rep.favorToUnlock ?? 150}`);
+  printField(log, "Pending Augs", String(rep.pendingAugs ?? 0));
+  printField(log, "Installed Augs", String(rep.installedAugs ?? 0));
 
-  if (rep.purchasePlan.length > 0) {
+  if (rep.purchasePlan && rep.purchasePlan.length > 0) {
     log(`\n  ${C.cyan}Purchase Plan:${C.reset}`);
     for (const aug of rep.purchasePlan.slice(0, 10)) {
       log(`    ${aug.name} (${aug.faction}) — ${aug.adjustedCostFormatted}`);

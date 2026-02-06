@@ -2,6 +2,7 @@
   "include": ["NetscriptDefinitions.d.ts", "src/**/*"],
   "exclude": ["src/lib/react.ts"],
   "compilerOptions": {
+    "skipLibCheck": true,
     "module": "esnext",
     "target": "esnext",
     "moduleResolution": "node",
