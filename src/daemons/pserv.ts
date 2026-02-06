@@ -158,6 +158,12 @@ export async function main(ns: NS): Promise<void> {
     // Print terminal lines
     printStatus(ns, pservStatus, result.bought, result.upgraded);
 
+    // Auto-exit when all servers are purchased and maxed
+    if (pservStatus.allMaxed && pservStatus.serverCount >= pservStatus.serverCap) {
+      ns.tprint("INFO: All personal servers purchased and maxed. Pserv daemon exiting.");
+      return;
+    }
+
     if (!config.oneShot) {
       ns.print(
         `\n${COLORS.dim}Next check in ${config.interval / 1000}s...${COLORS.reset}`,
