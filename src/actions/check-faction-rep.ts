@@ -82,6 +82,10 @@ export async function main(ns: NS): Promise<void> {
     neuroFlux: null,
   };
 
-  publishStatus(ns, STATUS_PORTS.rep, status as RepStatus);
-  ns.print(`Published rep status: ${bestFaction} rep=${ns.formatNumber(bestRep, 1)} favor=${bestFavor}`);
+  if (!ns.isRunning("daemons/rep.js", "home")) {
+    publishStatus(ns, STATUS_PORTS.rep, status as RepStatus);
+    ns.print(`Published rep status: ${bestFaction} rep=${ns.formatNumber(bestRep, 1)} favor=${bestFavor}`);
+  } else {
+    ns.print("Skipped publish — rep daemon is running");
+  }
 }

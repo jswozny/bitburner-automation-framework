@@ -120,6 +120,10 @@ export async function main(ns: NS): Promise<void> {
     crimeInfo: null,  // Not computed in lightweight action
   };
 
-  publishStatus(ns, STATUS_PORTS.work, status);
-  ns.print("Published work status to port " + STATUS_PORTS.work);
+  if (!ns.isRunning("daemons/work.js", "home")) {
+    publishStatus(ns, STATUS_PORTS.work, status);
+    ns.print("Published work status to port " + STATUS_PORTS.work);
+  } else {
+    ns.print("Skipped publish — work daemon is running");
+  }
 }

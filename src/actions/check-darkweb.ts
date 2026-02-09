@@ -38,8 +38,12 @@ export async function main(ns: NS): Promise<void> {
       programs: [],
       allOwned: false,
     };
-    publishStatus(ns, STATUS_PORTS.darkweb, status);
-    ns.print("Published darkweb status (no TOR)");
+    if (!ns.isRunning("daemons/darkweb.js", "home")) {
+      publishStatus(ns, STATUS_PORTS.darkweb, status);
+      ns.print("Published darkweb status (no TOR)");
+    } else {
+      ns.print("Skipped publish — darkweb daemon is running");
+    }
     return;
   }
 
@@ -80,6 +84,10 @@ export async function main(ns: NS): Promise<void> {
     allOwned,
   };
 
-  publishStatus(ns, STATUS_PORTS.darkweb, status);
-  ns.print("Published darkweb status to port " + STATUS_PORTS.darkweb);
+  if (!ns.isRunning("daemons/darkweb.js", "home")) {
+    publishStatus(ns, STATUS_PORTS.darkweb, status);
+    ns.print("Published darkweb status to port " + STATUS_PORTS.darkweb);
+  } else {
+    ns.print("Skipped publish — darkweb daemon is running");
+  }
 }
