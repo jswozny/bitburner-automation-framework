@@ -1,7 +1,8 @@
+import { NS } from "@ns";
 import { COLORS, discoverAllWithDepthAndPath, pathToArray } from '/lib/utils.js';
 
-/** @param {NS} ns */
-export async function main(ns) {
+export async function main(ns: NS) {
+    ns.disableLog("ALL")
     ns.ui.openTail();
 
     const BACKDOOR = [
@@ -9,22 +10,27 @@ export async function main(ns) {
         "avmnite-02h",
         "I.I.I.I",
         "run4theh111z",
+        "w0r1d_d43m0n",
     ];
 
     for (const host of BACKDOOR) {
+        // Skip w0r1d_d43m0n before Red Pill
+        if(!ns.serverExists(host)) { continue; }
+
         const server = ns.getServer(host);
+
+        // Skip already backdoored servers
         if (server.backdoorInstalled) { continue; }
 
         const start = "home";
 
         const { parentByHost } = discoverAllWithDepthAndPath(ns, start, 100);
-        const path = pathToArray(parentByHost, host, true);
+        const path = pathToArray(parentByHost, host);
 
         const rooted = server.hasAdminRights ? `${COLORS.green}✓${COLORS.reset}` : `${COLORS.red}✗${COLORS.red}`;
+        const reqHack =  server.hasAdminRights ? '' : `${COLORS.yellow}(Req. ${server.requiredHackingSkill} Hack)${COLORS.reset}`;
 
-        ns.tprint(`${rooted} ${COLORS.cyan}${host}${COLORS.reset}`)
-        ns.print(`${rooted} ${COLORS.cyan}${host}${COLORS.reset}`)
-        ns.tprint(path.map(x => `connect ${x}`).join("; ") + "; backdoor");
+        ns.print(`${rooted} ${COLORS.cyan}${host}${COLORS.reset} ${reqHack}`)
         ns.print(path.map(x => `connect ${x}`).join("; ") + "; backdoor");
     }
 }
