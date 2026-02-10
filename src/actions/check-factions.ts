@@ -86,5 +86,9 @@ export async function main(ns: NS): Promise<void> {
     playerAugsInstalled: playerStats.augsInstalled,
   };
 
-  publishStatus(ns, STATUS_PORTS.faction, status);
+  if (!ns.isRunning("daemons/faction.js", "home")) {
+    publishStatus(ns, STATUS_PORTS.faction, status);
+  } else {
+    ns.print("Skipped publish — faction daemon is running");
+  }
 }
