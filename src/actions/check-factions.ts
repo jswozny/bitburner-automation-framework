@@ -23,6 +23,11 @@ import {
 export async function main(ns: NS): Promise<void> {
   ns.disableLog("ALL");
 
+  // Exit early if the faction daemon is running (it publishes richer status)
+  if (ns.ps("home").some(p => p.filename === "daemons/faction.js")) {
+    return;
+  }
+
   const player = ns.getPlayer();
 
   let invitations: string[] = [];
@@ -86,9 +91,5 @@ export async function main(ns: NS): Promise<void> {
     playerAugsInstalled: playerStats.augsInstalled,
   };
 
-  if (!ns.isRunning("daemons/faction.js", "home")) {
-    publishStatus(ns, STATUS_PORTS.faction, status);
-  } else {
-    ns.print("Skipped publish — faction daemon is running");
-  }
+  publishStatus(ns, STATUS_PORTS.faction, status);
 }

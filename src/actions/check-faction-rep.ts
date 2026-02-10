@@ -17,6 +17,11 @@ export const MANUAL_COMMAND = 'ns.singularity.getFactionRep("FACTION_NAME")';
 export async function main(ns: NS): Promise<void> {
   ns.disableLog("ALL");
 
+  // Exit early if the rep daemon is running (it publishes richer status)
+  if (ns.ps("home").some(p => p.filename === "daemons/rep.js")) {
+    return;
+  }
+
   const flags = ns.flags([
     ["faction", ""],
   ]) as { faction: string; _: string[] };
@@ -82,10 +87,6 @@ export async function main(ns: NS): Promise<void> {
     neuroFlux: null,
   };
 
-  if (!ns.isRunning("daemons/rep.js", "home")) {
-    publishStatus(ns, STATUS_PORTS.rep, status as RepStatus);
-    ns.print(`Published rep status: ${bestFaction} rep=${ns.formatNumber(bestRep, 1)} favor=${bestFavor}`);
-  } else {
-    ns.print("Skipped publish — rep daemon is running");
-  }
+  publishStatus(ns, STATUS_PORTS.rep, status as RepStatus);
+  ns.print(`Published rep status: ${bestFaction} rep=${ns.formatNumber(bestRep, 1)} favor=${bestFavor}`);
 }

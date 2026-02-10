@@ -16,6 +16,11 @@ export const MANUAL_COMMAND = 'ns.singularity.getCurrentWork()';
 export async function main(ns: NS): Promise<void> {
   ns.disableLog("ALL");
 
+  // Exit early if the work daemon is running (it publishes richer status)
+  if (ns.ps("home").some(p => p.filename === "daemons/work.js")) {
+    return;
+  }
+
   const player = ns.getPlayer();
   const currentWork = ns.singularity.getCurrentWork();
   const focused = ns.singularity.isFocused();
@@ -120,10 +125,6 @@ export async function main(ns: NS): Promise<void> {
     crimeInfo: null,  // Not computed in lightweight action
   };
 
-  if (!ns.isRunning("daemons/work.js", "home")) {
-    publishStatus(ns, STATUS_PORTS.work, status);
-    ns.print("Published work status to port " + STATUS_PORTS.work);
-  } else {
-    ns.print("Skipped publish — work daemon is running");
-  }
+  publishStatus(ns, STATUS_PORTS.work, status);
+  ns.print("Published work status to port " + STATUS_PORTS.work);
 }

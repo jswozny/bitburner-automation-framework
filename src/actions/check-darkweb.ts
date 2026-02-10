@@ -16,6 +16,11 @@ export const MANUAL_COMMAND = 'ns.singularity.getDarkwebPrograms()';
 export async function main(ns: NS): Promise<void> {
   ns.disableLog("ALL");
 
+  // Exit early if the darkweb daemon is running (it publishes richer status)
+  if (ns.ps("home").some(p => p.filename === "daemons/darkweb.js")) {
+    return;
+  }
+
   // Check if TOR router is owned - getDarkwebPrograms returns [] without it
   let programNames: string[];
   let hasTor = false;
@@ -38,12 +43,8 @@ export async function main(ns: NS): Promise<void> {
       programs: [],
       allOwned: false,
     };
-    if (!ns.isRunning("daemons/darkweb.js", "home")) {
-      publishStatus(ns, STATUS_PORTS.darkweb, status);
-      ns.print("Published darkweb status (no TOR)");
-    } else {
-      ns.print("Skipped publish — darkweb daemon is running");
-    }
+    publishStatus(ns, STATUS_PORTS.darkweb, status);
+    ns.print("Published darkweb status (no TOR)");
     return;
   }
 
@@ -84,10 +85,6 @@ export async function main(ns: NS): Promise<void> {
     allOwned,
   };
 
-  if (!ns.isRunning("daemons/darkweb.js", "home")) {
-    publishStatus(ns, STATUS_PORTS.darkweb, status);
-    ns.print("Published darkweb status to port " + STATUS_PORTS.darkweb);
-  } else {
-    ns.print("Skipped publish — darkweb daemon is running");
-  }
+  publishStatus(ns, STATUS_PORTS.darkweb, status);
+  ns.print("Published darkweb status to port " + STATUS_PORTS.darkweb);
 }
