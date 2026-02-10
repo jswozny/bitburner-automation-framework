@@ -81,6 +81,8 @@ const FACTION_TIERS: FactionTierConfig[] = [
     functions: [
       "singularity.getAugmentationsFromFaction",
       "singularity.getOwnedAugmentations",
+      "serverExists",
+      "getServer",
     ],
     features: ["aug-counts", "aug-filter"],
     description: "Show aug counts, filter travel by aug availability",
@@ -90,6 +92,7 @@ const FACTION_TIERS: FactionTierConfig[] = [
     name: "auto-manage",
     functions: [
       "singularity.travelToCity",
+      "exec",
     ],
     features: ["auto-travel"],
     description: "Auto-travel for location-locked + preferred city faction",
