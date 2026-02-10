@@ -15,8 +15,8 @@
 import { NS } from "@ns";
 import { COLORS, getAllServers } from "/lib/utils";
 import { getShareStatus, DEFAULT_SHARE_SCRIPT, ShareConfig, deployShareScript, launchShareThreads } from "/controllers/share";
-import { publishStatus } from "/lib/ports";
-import { STATUS_PORTS, ShareStatus } from "/types/ports";
+import { publishStatus, peekStatus } from "/lib/ports";
+import { STATUS_PORTS, ShareStatus, FleetAllocation } from "/types/ports";
 
 // === MODULE-LEVEL CYCLE TRACKING ===
 // Share threads are ephemeral (they run share() and exit), so between cycles
@@ -31,7 +31,7 @@ const GRACE_PERIOD_MS = 2000;
  * Build a ShareStatus object with formatted values for the dashboard.
  * Handles the ephemeral nature of share threads with cycle-aware state.
  */
-function computeShareStatus(ns: NS): ShareStatus {
+function computeShareStatus(ns: NS, targetPercent = 0): ShareStatus {
   const raw = getShareStatus(ns, DEFAULT_SHARE_SCRIPT);
   const now = Date.now();
 
@@ -69,6 +69,7 @@ function computeShareStatus(ns: NS): ShareStatus {
     serverStats,
     cycleStatus,
     lastKnownThreads: lastKnownThreads.toLocaleString(),
+    targetPercent: targetPercent > 0 ? targetPercent : undefined,
   };
 }
 
@@ -80,6 +81,9 @@ function printStatus(ns: NS, status: ShareStatus, launched: number, serversUsed:
 
   ns.print(`${C.cyan}═══ Share Daemon ═══${C.reset}`);
   ns.print(`${C.dim}Share script RAM: ${status.shareRam}${C.reset}`);
+  if (status.targetPercent && status.targetPercent > 0) {
+    ns.print(`${C.yellow}Target: ${status.targetPercent}% of capacity${C.reset}`);
+  }
   ns.print("");
 
   // Show cycle status indicator
@@ -125,11 +129,13 @@ export async function main(ns: NS): Promise<void> {
     ["home-reserve", 32],
     ["interval", 10000],
     ["one-shot", false],
+    ["target-percent", 0],
   ]) as {
     "min-free": number;
     "home-reserve": number;
     interval: number;
     "one-shot": boolean;
+    "target-percent": number;
     _: string[];
   };
 
@@ -139,6 +145,7 @@ export async function main(ns: NS): Promise<void> {
     interval: Number(flags.interval),
     oneShot: flags["one-shot"],
     shareScript: DEFAULT_SHARE_SCRIPT,
+    targetPercent: Number(flags["target-percent"]),
   };
 
   // Deploy share script to all servers on startup
@@ -154,11 +161,17 @@ export async function main(ns: NS): Promise<void> {
   do {
     ns.clearLog();
 
-    // Launch share threads on available servers
-    const cycleResult = launchShareThreads(ns, config);
+    // Read fleet allocation from hack daemon (if running)
+    const fleetAllocation = peekStatus<FleetAllocation>(ns, STATUS_PORTS.fleet);
+    const allowedServers = fleetAllocation?.shareServers
+      ? new Set(fleetAllocation.shareServers)
+      : undefined; // No allocation = use everything (hack not running)
+
+    // Launch share threads on available/assigned servers
+    const cycleResult = launchShareThreads(ns, config, allowedServers);
 
     // Compute formatted status for the dashboard
-    const shareStatus = computeShareStatus(ns);
+    const shareStatus = computeShareStatus(ns, config.targetPercent);
 
     // Publish to port for dashboard consumption
     publishStatus(ns, STATUS_PORTS.share, shareStatus);

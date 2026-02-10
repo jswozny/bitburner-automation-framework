@@ -29,11 +29,24 @@ function computeNukeStatus(ns: NS): NukeStatus {
   const needPorts: NukeStatus["needPorts"] = [];
   const rooted: string[] = [];
 
+  // Fleet RAM aggregation
+  let fleetMaxRam = 0;
+  let fleetUsedRam = 0;
+  let fleetServerCount = 0;
+
   for (const hostname of allServers) {
     const server = ns.getServer(hostname);
 
     if (server.hasAdminRights) {
       rooted.push(hostname);
+
+      // Aggregate fleet RAM for rooted servers with RAM
+      if (server.maxRam > 0) {
+        fleetMaxRam += server.maxRam;
+        fleetUsedRam += server.ramUsed;
+        fleetServerCount++;
+      }
+
       continue;
     }
 
@@ -53,6 +66,9 @@ function computeNukeStatus(ns: NS): NukeStatus {
   needHacking.sort((a, b) => a.required - b.required);
   needPorts.sort((a, b) => a.required - b.required);
 
+  const fleetFreeRam = fleetMaxRam - fleetUsedRam;
+  const fleetUtilization = fleetMaxRam > 0 ? (fleetUsedRam / fleetMaxRam) * 100 : 0;
+
   return {
     rootedCount: rooted.length,
     totalServers: allServers.length,
@@ -61,6 +77,13 @@ function computeNukeStatus(ns: NS): NukeStatus {
     needHacking,
     needPorts,
     rooted,
+    fleetRam: {
+      totalMaxRam: ns.formatRam(fleetMaxRam),
+      totalUsedRam: ns.formatRam(fleetUsedRam),
+      totalFreeRam: ns.formatRam(fleetFreeRam),
+      utilization: Math.round(fleetUtilization),
+      serverCount: fleetServerCount,
+    },
   };
 }
 
@@ -86,33 +109,24 @@ function printStatus(ns: NS, nukedCount: number, nukedNames: string[], status: N
 
   if (status.ready.length > 0) {
     ns.print(`${C.green}READY TO NUKE (${status.ready.length}):${C.reset}`);
-    for (const s of status.ready.slice(0, 10)) {
+    for (const s of status.ready) {
       ns.print(`  ${C.green}\u25CF${C.reset} ${s.hostname} ${C.dim}(hack:${s.requiredHacking} ports:${s.requiredPorts})${C.reset}`);
-    }
-    if (status.ready.length > 10) {
-      ns.print(`  ${C.dim}... +${status.ready.length - 10} more${C.reset}`);
     }
     ns.print("");
   }
 
   if (status.needPorts.length > 0) {
     ns.print(`${C.yellow}NEED MORE TOOLS (${status.needPorts.length}):${C.reset}`);
-    for (const s of status.needPorts.slice(0, 5)) {
+    for (const s of status.needPorts) {
       ns.print(`  ${C.yellow}\u25CB${C.reset} ${s.hostname} ${C.dim}(need ${s.required} ports, have ${s.current})${C.reset}`);
-    }
-    if (status.needPorts.length > 5) {
-      ns.print(`  ${C.dim}... +${status.needPorts.length - 5} more${C.reset}`);
     }
     ns.print("");
   }
 
   if (status.needHacking.length > 0) {
     ns.print(`${C.red}NEED HIGHER HACKING (${status.needHacking.length}):${C.reset}`);
-    for (const s of status.needHacking.slice(0, 5)) {
+    for (const s of status.needHacking) {
       ns.print(`  ${C.red}\u25CB${C.reset} ${s.hostname} ${C.dim}(need ${s.required}, have ${s.current})${C.reset}`);
-    }
-    if (status.needHacking.length > 5) {
-      ns.print(`  ${C.dim}... +${status.needHacking.length - 5} more${C.reset}`);
     }
   }
 }

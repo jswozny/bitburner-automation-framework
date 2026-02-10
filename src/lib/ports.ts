@@ -12,19 +12,21 @@ import { QUEUE_PORT, QueueEntry } from "/types/ports";
 /**
  * Publish a status object to a port (clear + write).
  * Each port holds exactly one current JSON value.
+ * Injects `_publishedAt` timestamp for staleness detection.
  */
 export function publishStatus<T>(ns: NS, port: number, data: T): void {
   const handle = ns.getPortHandle(port);
   handle.clear();
-  handle.write(JSON.stringify(data));
+  handle.write(JSON.stringify({ ...data, _publishedAt: Date.now() }));
 }
 
 /**
  * Peek at a status port and parse the JSON value.
- * Returns null if the port is empty or contains invalid data.
+ * Returns null if the port is empty, contains invalid data,
+ * or if maxAgeMs is provided and the data is older than that threshold.
  * Non-destructive (does not consume the value).
  */
-export function peekStatus<T>(ns: NS, port: number): T | null {
+export function peekStatus<T>(ns: NS, port: number, maxAgeMs?: number): T | null {
   const handle = ns.getPortHandle(port);
   if (handle.empty()) return null;
 
@@ -32,7 +34,13 @@ export function peekStatus<T>(ns: NS, port: number): T | null {
   if (raw === "NULL PORT DATA") return null;
 
   try {
-    return JSON.parse(raw as string) as T;
+    const parsed = JSON.parse(raw as string);
+
+    if (maxAgeMs !== undefined && typeof parsed._publishedAt === "number") {
+      if (Date.now() - parsed._publishedAt > maxAgeMs) return null;
+    }
+
+    return parsed as T;
   } catch {
     return null;
   }

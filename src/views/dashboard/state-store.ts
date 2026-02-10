@@ -21,10 +21,12 @@ import {
   ShareStatus,
   RepStatus,
   HackStatus,
+  HackStrategy,
   DarkwebStatus,
   WorkStatus,
   BitnodeStatus,
   FactionStatus,
+  FleetAllocation,
   Command,
 } from "/types/ports";
 
@@ -129,6 +131,37 @@ export function joinFactionCommand(factionName: string): void {
 export function restartFactionDaemon(cityFaction?: string): void {
   if (!commandPort) return;
   commandPort.write(JSON.stringify({ tool: "faction", action: "restart-faction-daemon", cityFaction }));
+}
+
+/**
+ * Restart the hack daemon with new strategy/batch settings.
+ * Share% is now auto-detected by hack from the share status port.
+ */
+export function restartHackDaemon(
+  strategy?: HackStrategy,
+  maxBatches?: number,
+  homeReserve?: number,
+): void {
+  if (!commandPort) return;
+  commandPort.write(JSON.stringify({
+    tool: "hack",
+    action: "restart-hack-daemon",
+    hackStrategy: strategy,
+    hackMaxBatches: maxBatches,
+    hackHomeReserve: homeReserve,
+  }));
+}
+
+/**
+ * Restart the share daemon with a target percent cap.
+ */
+export function restartShareDaemon(targetPercent?: number): void {
+  if (!commandPort) return;
+  commandPort.write(JSON.stringify({
+    tool: "share",
+    action: "restart-share-daemon",
+    shareTargetPercent: targetPercent,
+  }));
 }
 
 /**
@@ -278,6 +311,51 @@ function executeCommand(ns: NS, cmd: Command): void {
         }
       }
       break;
+    case "restart-hack-daemon":
+      {
+        const currentHackPid = cachedData.pids.hack;
+        if (currentHackPid > 0) {
+          ns.kill(currentHackPid);
+          cachedData.pids.hack = 0;
+        }
+        const hackArgs: string[] = [];
+        if (cmd.hackStrategy) hackArgs.push("--strategy", cmd.hackStrategy);
+        if (cmd.hackMaxBatches !== undefined) hackArgs.push("--max-batches", String(cmd.hackMaxBatches));
+        if (cmd.hackHomeReserve !== undefined) hackArgs.push("--home-reserve", String(cmd.hackHomeReserve));
+        const hackPid = ns.exec("daemons/hack.js", "home", 1, ...hackArgs);
+        if (hackPid > 0) {
+          cachedData.pids.hack = hackPid;
+          ns.toast(`Hack daemon: ${cmd.hackStrategy ?? "money"} mode`, "success", 2000);
+        } else {
+          ns.toast("Failed to restart hack daemon (not enough RAM)", "error", 3000);
+        }
+        saveDashboardSettings(ns);
+      }
+      break;
+    case "restart-share-daemon":
+      {
+        const currentSharePid = cachedData.pids.share;
+        if (currentSharePid > 0) {
+          ns.kill(currentSharePid);
+          cachedData.pids.share = 0;
+        }
+        const shareArgs: string[] = [];
+        if (cmd.shareTargetPercent !== undefined && cmd.shareTargetPercent > 0) {
+          shareArgs.push("--target-percent", String(cmd.shareTargetPercent));
+        }
+        const sharePid = ns.exec("daemons/share.js", "home", 1, ...shareArgs);
+        if (sharePid > 0) {
+          cachedData.pids.share = sharePid;
+          const label = cmd.shareTargetPercent && cmd.shareTargetPercent > 0
+            ? `Share daemon: ${cmd.shareTargetPercent}% cap`
+            : "Share daemon: greedy mode";
+          ns.toast(label, "success", 2000);
+        } else {
+          ns.toast("Failed to restart share daemon (not enough RAM)", "error", 3000);
+        }
+        saveDashboardSettings(ns);
+      }
+      break;
   }
 }
 
@@ -344,6 +422,61 @@ export function setPluginUIState(plugin: ToolName, key: string, value: unknown):
   uiState.pluginUIState[plugin][key] = value;
 }
 
+// === PERSISTENT SETTINGS ===
+
+const SETTINGS_FILE = "/data/dashboard-settings.txt";
+
+interface DashboardSettings {
+  hack: {
+    strategy: string;
+    maxBatches: number;
+    homeReserve: number;
+  };
+  share: {
+    targetPercent: number;
+  };
+}
+
+/**
+ * Save current hack/share settings to a file for persistence across restarts.
+ */
+export function saveDashboardSettings(ns: NS): void {
+  const settings: DashboardSettings = {
+    hack: {
+      strategy: (uiState.pluginUIState.hack.strategy as string) || "money",
+      maxBatches: (uiState.pluginUIState.hack.maxBatches as number) || 1,
+      homeReserve: (uiState.pluginUIState.hack.homeReserve as number) || 640,
+    },
+    share: {
+      targetPercent: (uiState.pluginUIState.share.targetPercent as number) || 0,
+    },
+  };
+  ns.write(SETTINGS_FILE, JSON.stringify(settings), "w");
+}
+
+/**
+ * Load saved settings from file and populate pluginUIState.
+ */
+export function loadDashboardSettings(ns: NS): void {
+  if (!ns.fileExists(SETTINGS_FILE)) return;
+
+  try {
+    const raw = ns.read(SETTINGS_FILE);
+    const settings = JSON.parse(raw) as DashboardSettings;
+
+    if (settings.hack) {
+      if (settings.hack.strategy) uiState.pluginUIState.hack.strategy = settings.hack.strategy;
+      if (settings.hack.maxBatches !== undefined) uiState.pluginUIState.hack.maxBatches = settings.hack.maxBatches;
+      if (settings.hack.homeReserve !== undefined) uiState.pluginUIState.hack.homeReserve = settings.hack.homeReserve;
+    }
+    if (settings.share) {
+      if (settings.share.targetPercent !== undefined) uiState.pluginUIState.share.targetPercent = settings.share.targetPercent;
+    }
+  } catch {
+    // Invalid settings file, ignore
+  }
+}
+
 // === CACHED DATA ===
 
 interface CachedData {
@@ -361,6 +494,7 @@ interface CachedData {
   bitnodeStatus: BitnodeStatus | null;
   factionStatus: FactionStatus | null;
   factionError: string | null;
+  fleetAllocation: FleetAllocation | null;
 }
 
 const cachedData: CachedData = {
@@ -378,49 +512,62 @@ const cachedData: CachedData = {
   bitnodeStatus: null,
   factionStatus: null,
   factionError: null,
+  fleetAllocation: null,
 };
 
 // === PORT-BASED STATUS READING ===
+
+/** Port data older than this is considered stale (e.g. from a previous session). */
+const STALE_THRESHOLD_MS = 30_000;
 
 /**
  * Read all status ports and update cached data.
  * Replaces the old updatePluginsIfNeeded() which called controller functions.
  * This is extremely lightweight — just port.peek() + JSON.parse.
+ * Uses staleness threshold to auto-expire data from previous sessions.
  */
 export function readStatusPorts(ns: NS): void {
-  cachedData.nukeStatus = peekStatus<NukeStatus>(ns, STATUS_PORTS.nuke);
-  cachedData.hackStatus = peekStatus<HackStatus>(ns, STATUS_PORTS.hack);
-  cachedData.pservStatus = peekStatus<PservStatus>(ns, STATUS_PORTS.pserv);
-  cachedData.shareStatus = peekStatus<ShareStatus>(ns, STATUS_PORTS.share);
+  cachedData.nukeStatus = peekStatus<NukeStatus>(ns, STATUS_PORTS.nuke, STALE_THRESHOLD_MS);
+  cachedData.hackStatus = peekStatus<HackStatus>(ns, STATUS_PORTS.hack, STALE_THRESHOLD_MS);
+  cachedData.pservStatus = peekStatus<PservStatus>(ns, STATUS_PORTS.pserv, STALE_THRESHOLD_MS);
+  cachedData.shareStatus = peekStatus<ShareStatus>(ns, STATUS_PORTS.share, STALE_THRESHOLD_MS);
 
-  const rep = peekStatus<RepStatus>(ns, STATUS_PORTS.rep);
-  if (rep) {
-    cachedData.repStatus = rep;
-    cachedData.repError = null;
-  }
+  const rep = peekStatus<RepStatus>(ns, STATUS_PORTS.rep, STALE_THRESHOLD_MS);
+  cachedData.repStatus = rep;
+  if (rep) cachedData.repError = null;
 
-  const work = peekStatus<WorkStatus>(ns, STATUS_PORTS.work);
-  if (work) {
-    cachedData.workStatus = work;
-    cachedData.workError = null;
-  }
+  const work = peekStatus<WorkStatus>(ns, STATUS_PORTS.work, STALE_THRESHOLD_MS);
+  cachedData.workStatus = work;
+  if (work) cachedData.workError = null;
 
-  const darkweb = peekStatus<DarkwebStatus>(ns, STATUS_PORTS.darkweb);
-  if (darkweb) {
-    cachedData.darkwebStatus = darkweb;
-    cachedData.darkwebError = null;
-  }
+  const darkweb = peekStatus<DarkwebStatus>(ns, STATUS_PORTS.darkweb, STALE_THRESHOLD_MS);
+  cachedData.darkwebStatus = darkweb;
+  if (darkweb) cachedData.darkwebError = null;
 
-  cachedData.bitnodeStatus = peekStatus<BitnodeStatus>(ns, STATUS_PORTS.bitnode);
+  cachedData.bitnodeStatus = peekStatus<BitnodeStatus>(ns, STATUS_PORTS.bitnode, STALE_THRESHOLD_MS);
 
-  const faction = peekStatus<FactionStatus>(ns, STATUS_PORTS.faction);
-  if (faction) {
-    cachedData.factionStatus = faction;
-    cachedData.factionError = null;
-  }
+  const faction = peekStatus<FactionStatus>(ns, STATUS_PORTS.faction, STALE_THRESHOLD_MS);
+  cachedData.factionStatus = faction;
+  if (faction) cachedData.factionError = null;
+
+  cachedData.fleetAllocation = peekStatus<FleetAllocation>(ns, STATUS_PORTS.fleet, STALE_THRESHOLD_MS);
 }
 
 // === TOOL CONTROL ===
+
+/** Clear cached status for a tool (used when stopping or when daemon dies). */
+function clearToolStatus(tool: ToolName): void {
+  switch (tool) {
+    case "nuke":    cachedData.nukeStatus = null; break;
+    case "hack":    cachedData.hackStatus = null; break;
+    case "pserv":   cachedData.pservStatus = null; break;
+    case "share":   cachedData.shareStatus = null; break;
+    case "rep":     cachedData.repStatus = null; cachedData.repError = null; break;
+    case "work":    cachedData.workStatus = null; cachedData.workError = null; break;
+    case "darkweb": cachedData.darkwebStatus = null; cachedData.darkwebError = null; break;
+    case "faction": cachedData.factionStatus = null; cachedData.factionError = null; break;
+  }
+}
 
 function startTool(ns: NS, tool: ToolName): void {
   const currentPid = cachedData.pids[tool];
@@ -468,7 +615,26 @@ function startTool(ns: NS, tool: ToolName): void {
     return;
   }
 
-  const pid = ns.exec(script, "home");
+  let pid: number;
+  if (tool === "hack") {
+    const hackState = uiState.pluginUIState.hack;
+    const strategy = (hackState.strategy as string) || "money";
+    const batches = (hackState.maxBatches as number) || 1;
+    const reserve = (hackState.homeReserve as number) || 640;
+    const args = ["--strategy", strategy, "--max-batches", String(batches), "--home-reserve", String(reserve)];
+    pid = ns.exec(script, "home", 1, ...args);
+  } else if (tool === "share") {
+    const shareState = uiState.pluginUIState.share;
+    const targetPercent = (shareState.targetPercent as number) || 0;
+    const args: string[] = [];
+    if (targetPercent > 0) {
+      args.push("--target-percent", String(targetPercent));
+    }
+    pid = ns.exec(script, "home", 1, ...args);
+  } else {
+    pid = ns.exec(script, "home");
+  }
+
   if (pid > 0) {
     cachedData.pids[tool] = pid;
     ns.toast(`Started ${tool}`, "success", 2000);
@@ -482,8 +648,13 @@ function stopTool(ns: NS, tool: ToolName): void {
   if (pid > 0) {
     ns.kill(pid);
     cachedData.pids[tool] = 0;
+    clearToolStatus(tool);
     ns.toast(`Stopped ${tool}`, "warning", 2000);
   }
+}
+
+export function getFleetAllocation(): FleetAllocation | null {
+  return cachedData.fleetAllocation;
 }
 
 export function isToolRunning(tool: ToolName): boolean {
@@ -509,6 +680,7 @@ export function detectRunningTools(ns: NS): void {
       cachedData.pids[tool] = proc.pid;
     } else if (cachedData.pids[tool] > 0 && !ns.isRunning(cachedData.pids[tool])) {
       cachedData.pids[tool] = 0;
+      clearToolStatus(tool);
     }
   }
 }
@@ -539,5 +711,6 @@ export function getStateSnapshot(): DashboardState {
     bitnodeStatus: cachedData.bitnodeStatus,
     factionStatus: cachedData.factionStatus,
     factionError: cachedData.factionError,
+    fleetAllocation: cachedData.fleetAllocation,
   };
 }

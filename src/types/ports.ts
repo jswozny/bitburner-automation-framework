@@ -19,6 +19,7 @@ export const STATUS_PORTS = {
   darkweb: 7,
   bitnode: 8,
   faction: 9,
+  fleet: 10,
 } as const;
 
 export const QUEUE_PORT = 19;
@@ -66,7 +67,7 @@ export interface QueueEntry {
 
 export interface Command {
   tool: ToolName;
-  action: "start" | "stop" | "open-tail" | "run-script" | "start-faction-work" | "set-focus" | "start-training" | "install-augments" | "run-backdoors" | "restart-rep-daemon" | "join-faction" | "restart-faction-daemon";
+  action: "start" | "stop" | "open-tail" | "run-script" | "start-faction-work" | "set-focus" | "start-training" | "install-augments" | "run-backdoors" | "restart-rep-daemon" | "join-faction" | "restart-faction-daemon" | "restart-hack-daemon" | "restart-share-daemon";
   scriptPath?: string;
   scriptArgs?: string[];
   factionName?: string;
@@ -74,6 +75,10 @@ export interface Command {
   focus?: string;
   factionFocus?: string;
   cityFaction?: string;
+  hackStrategy?: HackStrategy;
+  hackMaxBatches?: number;
+  hackHomeReserve?: number;
+  shareTargetPercent?: number;
 }
 
 // === STATUS INTERFACES ===
@@ -86,6 +91,13 @@ export interface NukeStatus {
   needHacking: { hostname: string; required: number; current: number }[];
   needPorts: { hostname: string; required: number; current: number }[];
   rooted: string[];
+  fleetRam?: {
+    totalMaxRam: string;
+    totalUsedRam: string;
+    totalFreeRam: string;
+    utilization: number;  // 0-100
+    serverCount: number;  // rooted servers with RAM > 0
+  };
 }
 
 export interface PservStatus {
@@ -117,6 +129,7 @@ export interface ShareStatus {
   serverStats: { hostname: string; threads: string }[];
   cycleStatus: "active" | "cycle" | "idle";
   lastKnownThreads: string;
+  targetPercent?: number;  // 0 or undefined = greedy, 1-100 = capped
 }
 
 export interface NonWorkableFactionProgress {
@@ -359,6 +372,23 @@ export interface WorkStatus {
   } | null;
 }
 
+// === HACK STRATEGY ===
+
+export type HackStrategy = "money" | "xp";
+
+// === FLEET ALLOCATION ===
+
+export interface FleetAllocation {
+  hackServers: string[];
+  shareServers: string[];
+  hackStrategy: HackStrategy;
+  sharePercent: number;
+  totalFleetRam: number;
+  hackFleetRam: number;
+  shareFleetRam: number;
+  timestamp: number;
+}
+
 export interface HackStatus {
   totalRam: string;
   serverCount: number;
@@ -491,6 +521,7 @@ export interface DashboardState {
   bitnodeStatus: BitnodeStatus | null;
   factionStatus: FactionStatus | null;
   factionError: string | null;
+  fleetAllocation: FleetAllocation | null;
 }
 
 // === PLUGIN INTERFACE (for dashboard) ===

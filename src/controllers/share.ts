@@ -34,6 +34,7 @@ export interface ShareConfig {
   oneShot: boolean;
   interval: number;
   shareScript: string;
+  targetPercent: number;  // 0 = greedy (use all available), 1-100 = cap to N% of capacity
 }
 
 export interface ShareCycleResult {
@@ -164,7 +165,8 @@ export async function deployShareScript(
  */
 export function launchShareThreads(
   ns: NS,
-  config: ShareConfig
+  config: ShareConfig,
+  allowedServers?: Set<string>,
 ): ShareCycleResult {
   const { minFree, homeReserve, shareScript } = config;
   const shareRam = ns.getScriptRam(shareScript);
@@ -177,6 +179,9 @@ export function launchShareThreads(
   let serversUsed = 0;
 
   for (const hostname of getAllServers(ns)) {
+    // If allocation exists, only use assigned servers
+    if (allowedServers && !allowedServers.has(hostname)) continue;
+
     const server = ns.getServer(hostname);
     if (!server.hasAdminRights) continue;
     if (server.maxRam === 0) continue;
@@ -185,8 +190,21 @@ export function launchShareThreads(
     const reserve = hostname === "home" ? homeReserve : minFree;
     const available = server.maxRam - server.ramUsed - reserve;
 
+    // Apply target percent cap if configured and no fleet allocation
+    // When allowedServers is set, the server-level split already limits share's footprint
+    let maxForShare = available;
+    if (!allowedServers && config.targetPercent > 0) {
+      const totalUsable = server.maxRam - reserve;
+      const shareAllocation = totalUsable * (config.targetPercent / 100);
+      // Subtract share workers already running on this server
+      const shareUsed = ns.ps(hostname)
+        .filter(p => p.filename === shareScript)
+        .reduce((sum, p) => sum + p.threads * shareRam, 0);
+      maxForShare = Math.min(available, Math.max(0, shareAllocation - shareUsed));
+    }
+
     // How many share threads can we fit?
-    const canRun = Math.floor(available / shareRam);
+    const canRun = Math.floor(maxForShare / shareRam);
 
     if (canRun > 0) {
       const pid = ns.exec(shareScript, hostname, canRun, Date.now());

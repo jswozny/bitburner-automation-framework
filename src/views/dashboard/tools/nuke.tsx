@@ -97,6 +97,14 @@ function NukeOverviewCard({ status, running, toolId, pid }: OverviewCardProps<Fo
           {status?.ready?.length ?? "—"}
         </span>
       </div>
+      {status?.fleetRam && (
+        <div style={styles.stat}>
+          <span style={styles.statLabel}>Fleet</span>
+          <span style={{ color: "#00ffff", fontSize: "11px" }}>
+            {status.fleetRam.totalUsedRam} / {status.fleetRam.totalMaxRam} ({status.fleetRam.utilization}%)
+          </span>
+        </div>
+      )}
     </div>
   );
 }
@@ -147,7 +155,7 @@ function NukeDetailPanel({ status, running, toolId, pid }: DetailPanelProps<Form
         </thead>
         <tbody>
           {/* Ready to nuke */}
-          {status.ready.slice(0, 8).map((server, i) => (
+          {status.ready.map((server, i) => (
             <tr key={`ready-${i}`} style={i % 2 === 0 ? styles.tableRow : styles.tableRowAlt}>
               <td style={{ ...styles.tableCell, color: "#fff" }}>{server.hostname}</td>
               <td style={{ ...styles.tableCell, textAlign: "center" }}>{server.requiredHacking}</td>
@@ -155,16 +163,9 @@ function NukeDetailPanel({ status, running, toolId, pid }: DetailPanelProps<Form
               <td style={{ ...styles.tableCell, ...styles.statusReady }}>Ready</td>
             </tr>
           ))}
-          {status.ready.length > 8 && (
-            <tr style={styles.tableRowAlt}>
-              <td style={{ ...styles.tableCell, ...styles.dim }} colSpan={4}>
-                ... +{status.ready.length - 8} more ready
-              </td>
-            </tr>
-          )}
 
           {/* Need hacking level */}
-          {status.needHacking.slice(0, 5).map((server, i) => (
+          {status.needHacking.map((server, i) => (
             <tr
               key={`hack-${i}`}
               style={(status.ready.length + i) % 2 === 0 ? styles.tableRow : styles.tableRowAlt}
@@ -179,19 +180,12 @@ function NukeDetailPanel({ status, running, toolId, pid }: DetailPanelProps<Form
               </td>
             </tr>
           ))}
-          {status.needHacking.length > 5 && (
-            <tr style={styles.tableRowAlt}>
-              <td style={{ ...styles.tableCell, ...styles.dim }} colSpan={4}>
-                ... +{status.needHacking.length - 5} more need hacking
-              </td>
-            </tr>
-          )}
 
           {/* Need ports */}
-          {status.needPorts.slice(0, 5).map((server, i) => (
+          {status.needPorts.map((server, i) => (
             <tr
               key={`ports-${i}`}
-              style={(status.ready.length + Math.min(5, status.needHacking.length) + i) % 2 === 0 ? styles.tableRow : styles.tableRowAlt}
+              style={(status.ready.length + status.needHacking.length + i) % 2 === 0 ? styles.tableRow : styles.tableRowAlt}
             >
               <td style={{ ...styles.tableCell, color: "#fff" }}>{server.hostname}</td>
               <td style={{ ...styles.tableCell, textAlign: "center" }}>-</td>
@@ -203,13 +197,6 @@ function NukeDetailPanel({ status, running, toolId, pid }: DetailPanelProps<Form
               </td>
             </tr>
           ))}
-          {status.needPorts.length > 5 && (
-            <tr style={styles.tableRowAlt}>
-              <td style={{ ...styles.tableCell, ...styles.dim }} colSpan={4}>
-                ... +{status.needPorts.length - 5} more need ports
-              </td>
-            </tr>
-          )}
         </tbody>
       </table>
 
@@ -225,16 +212,11 @@ function NukeDetailPanel({ status, running, toolId, pid }: DetailPanelProps<Form
           </div>
           {showRooted && (
             <ul style={styles.list}>
-              {status.rooted.slice(0, 20).map((hostname, i) => (
+              {status.rooted.map((hostname, i) => (
                 <li key={i} style={{ ...styles.listItem, ...styles.statusRooted }}>
                   ✓ {hostname}
                 </li>
               ))}
-              {status.rooted.length > 20 && (
-                <li style={{ ...styles.listItem, ...styles.dim }}>
-                  ... +{status.rooted.length - 20} more
-                </li>
-              )}
             </ul>
           )}
         </div>

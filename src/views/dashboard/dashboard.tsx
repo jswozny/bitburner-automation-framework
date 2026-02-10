@@ -22,6 +22,7 @@ import {
   setActiveTab,
   detectRunningTools,
   getStateSnapshot,
+  loadDashboardSettings,
 } from "views/dashboard/state-store";
 import { BitnodeStatusBar } from "views/dashboard/components/BitnodeStatus";
 
@@ -250,6 +251,7 @@ export async function main(ns: NS): Promise<void> {
 
   // Initialize the command port for React→MainLoop communication
   initCommandPort(ns);
+  loadDashboardSettings(ns);
   ns.clearLog()
   ns.printRaw(<Dashboard />);
 

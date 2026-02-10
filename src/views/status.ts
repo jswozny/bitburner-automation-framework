@@ -42,9 +42,11 @@ type Log = (msg: string) => void;
 
 const DAEMON_DOCS: Record<ToolName, { start: string; stop: string; flags: string | null }> = {
   nuke:    { start: "run daemons/nuke.js",    stop: "kill daemons/nuke.js",    flags: null },
-  hack:    { start: "run daemons/hack.js",    stop: "kill daemons/hack.js",    flags: null },
+  hack:    { start: "run daemons/hack.js",    stop: "kill daemons/hack.js",
+             flags: "--strategy money|xp --max-batches <N> (0=legacy, 1+=HWGW batch mode) --max-targets <N> --home-reserve <GB>" },
   pserv:   { start: "run daemons/pserv.js",   stop: "kill daemons/pserv.js",   flags: null },
-  share:   { start: "run daemons/share.js",   stop: "kill daemons/share.js",   flags: null },
+  share:   { start: "run daemons/share.js",   stop: "kill daemons/share.js",
+             flags: "--target-percent <N> (0=greedy, 1-100=% of capacity for share)" },
   rep:     { start: "run daemons/rep.js",      stop: "kill daemons/rep.js",     flags: null },
   darkweb: { start: "run daemons/darkweb.js",  stop: "kill daemons/darkweb.js", flags: null },
   work:    { start: "run daemons/work.js",     stop: "kill daemons/work.js",
@@ -116,6 +118,9 @@ function printOverview(ns: NS, log: Log): void {
   log(`  ${C.green}NUKE${C.reset}  ${formatRunState(runState.nuke)}`);
   if (nuke) {
     log(`    Rooted: ${nuke.rootedCount}/${nuke.totalServers}  Tools: ${nuke.toolCount}  Ready: ${nuke.ready.length}`);
+    if (nuke.fleetRam) {
+      log(`    Fleet RAM: ${nuke.fleetRam.totalUsedRam} / ${nuke.fleetRam.totalMaxRam} (${nuke.fleetRam.utilization}%) on ${nuke.fleetRam.serverCount} servers`);
+    }
   } else {
     printOffline(log, "nuke");
   }
@@ -202,6 +207,10 @@ function printNukeDetail(ns: NS, log: Log): void {
 
   printField(log, "Rooted", `${nuke.rootedCount}/${nuke.totalServers}`);
   printField(log, "Tools", String(nuke.toolCount));
+
+  if (nuke.fleetRam) {
+    printField(log, "Fleet RAM", `${nuke.fleetRam.totalUsedRam} / ${nuke.fleetRam.totalMaxRam} (${nuke.fleetRam.utilization}%) on ${nuke.fleetRam.serverCount} servers`, C.cyan);
+  }
 
   if (nuke.ready.length > 0) {
     log(`\n  ${C.green}Ready to root:${C.reset}`);
