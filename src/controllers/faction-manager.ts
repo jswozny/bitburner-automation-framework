@@ -29,14 +29,14 @@ export const CITY_FACTIONS: Record<string, string> = {
   "Volhaven": "Volhaven",
 };
 
-/** City factions that conflict with each other. */
+/** City factions that conflict with each other (from game source FactionInfo.tsx). */
 export const CITY_FACTION_CONFLICTS: Record<string, string[]> = {
-  "Sector-12": ["Chongqing", "New Tokyo", "Volhaven"],
-  "Aevum": ["Chongqing", "New Tokyo", "Volhaven"],
+  "Sector-12": ["Chongqing", "New Tokyo", "Ishima", "Volhaven"],
+  "Aevum": ["Chongqing", "New Tokyo", "Ishima", "Volhaven"],
   "Chongqing": ["Sector-12", "Aevum", "Volhaven"],
-  "New Tokyo": ["Sector-12", "Aevum"],
-  "Ishima": [],
-  "Volhaven": ["Sector-12", "Aevum", "Chongqing"],
+  "New Tokyo": ["Sector-12", "Aevum", "Volhaven"],
+  "Ishima": ["Sector-12", "Aevum", "Volhaven"],
+  "Volhaven": ["Sector-12", "Aevum", "Chongqing", "New Tokyo", "Ishima"],
 };
 
 /** Factions that require being in a specific city to receive an invitation. */
