@@ -12,6 +12,7 @@ import { ToolControl } from "views/dashboard/components/ToolControl";
 import {
   joinFactionCommand,
   restartFactionDaemon,
+  runBackdoors,
   getPluginUIState,
   setPluginUIState,
 } from "views/dashboard/state-store";
@@ -370,6 +371,52 @@ function FactionDetailPanel({ status, error, running, toolId, pid }: DetailPanel
               <span style={{ color: "#00ffff", fontSize: "11px" }}>{status.autoTraveled}</span>
             </div>
           )}
+        </div>
+      )}
+
+      {/* Pending Backdoors */}
+      {status.pendingBackdoors && status.pendingBackdoors.length > 0 && (
+        <div style={{
+          ...styles.card,
+          backgroundColor: "rgba(0, 200, 255, 0.08)",
+          borderLeft: "3px solid #00aaff",
+          marginTop: "8px",
+        }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+            <span style={{ color: "#00aaff", fontSize: "11px" }}>
+              BACKDOORS NEEDED
+            </span>
+            <button
+              style={{
+                ...styles.buttonPlay,
+                marginLeft: 0,
+                padding: "2px 8px",
+                fontSize: "11px",
+                backgroundColor: "#004455",
+                color: "#00ffff",
+              }}
+              onClick={() => runBackdoors()}
+            >
+              Run Backdoors
+            </button>
+          </div>
+          {status.pendingBackdoors.map(b => (
+            <div key={b.server} style={{ ...styles.stat, marginTop: "4px" }}>
+              <span style={{ color: "#fff", fontSize: "11px" }}>
+                {b.faction}
+                <span style={{ color: "#666", fontSize: "10px" }}> ({b.server})</span>
+              </span>
+              <span style={{ fontSize: "10px" }}>
+                {b.rooted && b.haveHacking ? (
+                  <span style={{ color: "#00ff00" }}>Ready</span>
+                ) : !b.rooted ? (
+                  <span style={{ color: "#ff4444" }}>Need root</span>
+                ) : (
+                  <span style={{ color: "#ffaa00" }}>Need hacking</span>
+                )}
+              </span>
+            </div>
+          ))}
         </div>
       )}
 

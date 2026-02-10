@@ -480,6 +480,19 @@ function printFactionDetail(ns: NS, log: Log): void {
     }
   }
 
+  // Pending backdoors
+  if (faction.pendingBackdoors && faction.pendingBackdoors.length > 0) {
+    log(`\n  ${C.cyan}Pending Backdoors:${C.reset}`);
+    for (const b of faction.pendingBackdoors) {
+      const status = b.rooted && b.haveHacking
+        ? `${C.green}READY${C.reset}`
+        : !b.rooted
+          ? `${C.red}need root${C.reset}`
+          : `${C.yellow}need hacking${C.reset}`;
+      log(`    ${b.faction} (${b.server}) — ${status}`);
+    }
+  }
+
   // Last action (tier 3)
   if (faction.lastAction) {
     log(`\n  ${C.green}Last Action:${C.reset} ${faction.lastAction}`);

@@ -29,6 +29,7 @@ import {
   evaluateRequirements,
   isEligibleForFaction,
   CITY_FACTIONS,
+  FACTION_BACKDOOR_SERVERS,
   TRAVEL_COST,
   PlayerLike,
   PlayerWithStats,
@@ -172,6 +173,7 @@ function computeStatus(
   autoTraveled: string,
   lastAction: string,
   playerStats?: PlayerWithStats,
+  pendingBackdoors?: FactionStatus["pendingBackdoors"],
 ): FactionStatus {
   const player = ns.getPlayer();
 
@@ -212,6 +214,9 @@ function computeStatus(
       status.playerDexterity = playerStats.dexterity;
       status.playerAgility = playerStats.agility;
       status.playerAugsInstalled = playerStats.augsInstalled;
+    }
+    if (pendingBackdoors && pendingBackdoors.length > 0) {
+      status.pendingBackdoors = pendingBackdoors;
     }
   }
 
@@ -447,6 +452,41 @@ export async function main(ns: NS): Promise<void> {
       });
     }
 
+    // Backdoor detection (Tier 2+) — check hacking faction servers
+    let pendingBackdoors: FactionStatus["pendingBackdoors"];
+    if (selectedTier.tier >= 2) {
+      pendingBackdoors = [];
+      for (const [faction, server] of Object.entries(FACTION_BACKDOOR_SERVERS)) {
+        // Skip if already joined or invited
+        const fi = factions.find(f => f.name === faction);
+        if (fi && (fi.status === "joined" || fi.status === "invited")) continue;
+
+        try {
+          if (!ns.serverExists(server)) continue;
+          const srv = ns.getServer(server);
+          if (srv.backdoorInstalled) continue;
+          pendingBackdoors.push({
+            faction,
+            server,
+            rooted: srv.hasAdminRights,
+            haveHacking: player.skills.hacking >= (srv.requiredHackingSkill ?? 0),
+          });
+        } catch { /* server doesn't exist yet */ }
+      }
+
+      // Auto-trigger backdoors at tier 3 if any are ready
+      if (selectedTier.tier >= 3 && pendingBackdoors.some(b => b.rooted && b.haveHacking)) {
+        const alreadyRunning = ns.ps("home").some(p => p.filename === "actions/faction-backdoors.js");
+        if (!alreadyRunning) {
+          const pid = ns.exec("actions/faction-backdoors.js", "home", 1);
+          if (pid > 0) {
+            lastAction = "Auto-started backdoor installation";
+            ns.toast("Auto-started faction backdoors", "info", 3000);
+          }
+        }
+      }
+    }
+
     // Auto-join logic (Tier 1+)
     if (selectedTier.tier >= 1) {
       for (const invitation of invitations) {
@@ -526,7 +566,7 @@ export async function main(ns: NS): Promise<void> {
     const status = computeStatus(
       ns, selectedTier, requiredRam, nextTierRam,
       factions, preferredCity, autoJoined, autoTraveled, lastAction,
-      playerStats,
+      playerStats, pendingBackdoors,
     );
 
     publishStatus(ns, STATUS_PORTS.faction, status);

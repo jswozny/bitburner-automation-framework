@@ -101,6 +101,14 @@ export const ALL_KNOWN_FACTIONS: Record<string, FactionDef> = {
   "Church of the Machine God": { type: "special" },
 };
 
+/** Hacking faction → server that needs a backdoor for invitation. */
+export const FACTION_BACKDOOR_SERVERS: Record<string, string> = {
+  "CyberSec": "CSEC",
+  "NiteSec": "avmnite-02h",
+  "The Black Hand": "I.I.I.I",
+  "BitRunners": "run4theh111z",
+};
+
 // === EXPORTED FUNCTIONS ===
 
 export interface PlayerLike {

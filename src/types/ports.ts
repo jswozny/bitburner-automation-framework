@@ -465,6 +465,7 @@ export interface FactionStatus {
   playerDexterity?: number;
   playerAgility?: number;
   playerAugsInstalled?: number;
+  pendingBackdoors?: { faction: string; server: string; rooted: boolean; haveHacking: boolean }[];
 
   // Tier 3 (auto-manage)
   preferredCityFaction?: string;
