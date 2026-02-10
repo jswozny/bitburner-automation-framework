@@ -18,7 +18,7 @@
 import { NS, CityName } from "@ns";
 import { COLORS } from "/lib/utils";
 import { calcAvailableAfterKills, freeRamForTarget } from "/lib/ram-utils";
-import { publishStatus, peekStatus } from "/lib/ports";
+import { publishStatus } from "/lib/ports";
 import { STATUS_PORTS, FactionStatus, FactionInfo } from "/types/ports";
 import {
   classifyFactions,
@@ -28,7 +28,6 @@ import {
   getCityForFaction,
   evaluateRequirements,
   isEligibleForFaction,
-  CITY_FACTIONS,
   FACTION_BACKDOOR_SERVERS,
   TRAVEL_COST,
   PlayerLike,
@@ -446,11 +445,11 @@ export async function main(ns: NS): Promise<void> {
     }
 
     // Requirement evaluation (Tier 2+)
-    if (selectedTier.tier >= 2 && playerStats) {
+    if (selectedTier.tier >= 2 && playerStats !== undefined) {
       factions = factions.map(f => {
         if (f.status === "joined") return f;
-        const reqs = evaluateRequirements(f.name, playerStats!);
-        const eligible = isEligibleForFaction(f.name, playerStats!);
+        const reqs = evaluateRequirements(f.name, <PlayerWithStats>playerStats);
+        const eligible = isEligibleForFaction(f.name, <PlayerWithStats>playerStats);
         return { ...f, requirements: reqs ?? undefined, eligible };
       });
     }
