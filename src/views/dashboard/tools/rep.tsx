@@ -588,7 +588,7 @@ function HighTierDetailPanel({
       </div>
 
       {/* Action Buttons */}
-      {(status.hasUnlockedAugs || (status.pendingBackdoors && status.pendingBackdoors.length > 0) || showWorkButton) && (
+      {(status.hasUnlockedAugs || (status.pendingBackdoors && status.pendingBackdoors.length > 0) || showWorkButton || (status.pendingAugs ?? 0) > 0) && (
         <div style={{ display: "flex", gap: "8px", marginBottom: "8px", flexWrap: "wrap" }}>
           {showWorkButton && (
             <button
