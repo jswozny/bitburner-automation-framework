@@ -24,6 +24,7 @@ import {
   DarkwebStatus,
   WorkStatus,
   BitnodeStatus,
+  FactionStatus,
   Command,
 } from "/types/ports";
 
@@ -112,6 +113,22 @@ export function runBackdoors(): void {
 export function restartRepDaemon(factionFocus?: string): void {
   if (!commandPort) return;
   commandPort.write(JSON.stringify({ tool: "rep", action: "restart-rep-daemon", factionFocus }));
+}
+
+/**
+ * Join a faction via the command port (dispatches to join-faction action).
+ */
+export function joinFactionCommand(factionName: string): void {
+  if (!commandPort) return;
+  commandPort.write(JSON.stringify({ tool: "faction", action: "join-faction", factionName }));
+}
+
+/**
+ * Restart the faction daemon, optionally with a preferred city override.
+ */
+export function restartFactionDaemon(cityFaction?: string): void {
+  if (!commandPort) return;
+  commandPort.write(JSON.stringify({ tool: "faction", action: "restart-faction-daemon", cityFaction }));
 }
 
 /**
@@ -231,6 +248,36 @@ function executeCommand(ns: NS, cmd: Command): void {
         }
       }
       break;
+    case "join-faction":
+      if (cmd.factionName) {
+        const pid = ns.exec("actions/join-faction.js", "home", 1, "--faction", cmd.factionName);
+        if (pid > 0) {
+          ns.toast(`Joining ${cmd.factionName}...`, "info", 2000);
+        } else {
+          ns.toast(`Failed to launch join-faction (not enough RAM)`, "error", 3000);
+        }
+      }
+      break;
+    case "restart-faction-daemon":
+      {
+        const currentFactionPid = cachedData.pids.faction;
+        if (currentFactionPid > 0) {
+          ns.kill(currentFactionPid);
+          cachedData.pids.faction = 0;
+        }
+        const factionArgs: string[] = [];
+        if (cmd.cityFaction) {
+          factionArgs.push("--preferred-city", cmd.cityFaction);
+        }
+        const factionPid = ns.exec("daemons/faction.js", "home", 1, ...factionArgs);
+        if (factionPid > 0) {
+          cachedData.pids.faction = factionPid;
+          ns.toast(cmd.cityFaction ? `Faction daemon: preferred ${cmd.cityFaction}` : "Faction daemon restarted", "success", 2000);
+        } else {
+          ns.toast("Failed to restart faction daemon (not enough RAM)", "error", 3000);
+        }
+      }
+      break;
   }
 }
 
@@ -273,6 +320,7 @@ const uiState: UIState = {
     hack: {},
     darkweb: {},
     work: {},
+    faction: {},
   },
 };
 
@@ -311,10 +359,12 @@ interface CachedData {
   workStatus: WorkStatus | null;
   workError: string | null;
   bitnodeStatus: BitnodeStatus | null;
+  factionStatus: FactionStatus | null;
+  factionError: string | null;
 }
 
 const cachedData: CachedData = {
-  pids: { nuke: 0, pserv: 0, share: 0, rep: 0, hack: 0, darkweb: 0, work: 0 },
+  pids: { nuke: 0, pserv: 0, share: 0, rep: 0, hack: 0, darkweb: 0, work: 0, faction: 0 },
   nukeStatus: null,
   pservStatus: null,
   shareStatus: null,
@@ -326,6 +376,8 @@ const cachedData: CachedData = {
   workStatus: null,
   workError: null,
   bitnodeStatus: null,
+  factionStatus: null,
+  factionError: null,
 };
 
 // === PORT-BASED STATUS READING ===
@@ -360,6 +412,12 @@ export function readStatusPorts(ns: NS): void {
   }
 
   cachedData.bitnodeStatus = peekStatus<BitnodeStatus>(ns, STATUS_PORTS.bitnode);
+
+  const faction = peekStatus<FactionStatus>(ns, STATUS_PORTS.faction);
+  if (faction) {
+    cachedData.factionStatus = faction;
+    cachedData.factionError = null;
+  }
 }
 
 // === TOOL CONTROL ===
@@ -479,5 +537,7 @@ export function getStateSnapshot(): DashboardState {
     workStatus: cachedData.workStatus,
     workError: cachedData.workError,
     bitnodeStatus: cachedData.bitnodeStatus,
+    factionStatus: cachedData.factionStatus,
+    factionError: cachedData.factionError,
   };
 }

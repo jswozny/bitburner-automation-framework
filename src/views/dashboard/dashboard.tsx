@@ -38,8 +38,9 @@ import { repPlugin } from "views/dashboard/tools/rep";
 import { hackPlugin } from "views/dashboard/tools/hack";
 import { darkwebPlugin } from "views/dashboard/tools/darkweb";
 import { workPlugin } from "views/dashboard/tools/work";
+import { factionPlugin } from "views/dashboard/tools/faction";
 
-const TAB_NAMES = ["Overview", "Hack", "Nuke", "Pserv", "Share", "Rep", "Work", "Darkweb"];
+const TAB_NAMES = ["Overview", "Nuke", "Hack", "Pserv", "Share", "Faction", "Rep", "Work", "Darkweb"];
 
 // === OVERVIEW PANEL ===
 
@@ -53,17 +54,17 @@ function OverviewPanel({ state }: OverviewPanelProps): React.ReactElement {
   return (
     <div style={styles.panel}>
       <div style={styles.grid}>
-        <hackPlugin.OverviewCard
-            status={state.hackStatus}
-            running={pids.hack > 0}
-            toolId="hack"
-            pid={pids.hack}
-        />
         <nukePlugin.OverviewCard
           status={state.nukeStatus}
           running={pids.nuke > 0}
           toolId="nuke"
           pid={pids.nuke}
+        />
+        <hackPlugin.OverviewCard
+            status={state.hackStatus}
+            running={pids.hack > 0}
+            toolId="hack"
+            pid={pids.hack}
         />
         <pservPlugin.OverviewCard
           status={state.pservStatus}
@@ -76,6 +77,13 @@ function OverviewPanel({ state }: OverviewPanelProps): React.ReactElement {
           running={pids.share > 0}
           toolId="share"
           pid={pids.share}
+        />
+        <factionPlugin.OverviewCard
+          status={state.factionStatus}
+          running={pids.faction > 0}
+          toolId="faction"
+          error={state.factionError}
+          pid={pids.faction}
         />
         <repPlugin.OverviewCard
           status={state.repStatus}
@@ -141,21 +149,21 @@ function Dashboard(): React.ReactElement {
         return <OverviewPanel state={state} />;
       case 1:
         return (
-            <hackPlugin.DetailPanel
-                status={state.hackStatus}
-                running={state.pids.hack > 0}
-                toolId="hack"
-                pid={state.pids.hack}
-            />
-        );
-      case 2:
-        return (
           <nukePlugin.DetailPanel
             status={state.nukeStatus}
             running={state.pids.nuke > 0}
             toolId="nuke"
             pid={state.pids.nuke}
           />
+        );
+      case 2:
+        return (
+            <hackPlugin.DetailPanel
+                status={state.hackStatus}
+                running={state.pids.hack > 0}
+                toolId="hack"
+                pid={state.pids.hack}
+            />
         );
       case 3:
         return (
@@ -177,6 +185,16 @@ function Dashboard(): React.ReactElement {
         );
       case 5:
         return (
+          <factionPlugin.DetailPanel
+            status={state.factionStatus}
+            running={state.pids.faction > 0}
+            toolId="faction"
+            error={state.factionError}
+            pid={state.pids.faction}
+          />
+        );
+      case 6:
+        return (
           <repPlugin.DetailPanel
             status={state.repStatus}
             running={state.pids.rep > 0}
@@ -185,7 +203,7 @@ function Dashboard(): React.ReactElement {
             pid={state.pids.rep}
           />
         );
-      case 6:
+      case 7:
         return (
           <workPlugin.DetailPanel
             status={state.workStatus}
@@ -195,7 +213,7 @@ function Dashboard(): React.ReactElement {
             pid={state.pids.work}
           />
         );
-      case 7:
+      case 8:
         return (
           <darkwebPlugin.DetailPanel
             status={state.darkwebStatus}

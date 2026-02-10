@@ -18,6 +18,7 @@ export const STATUS_PORTS = {
   work: 6,
   darkweb: 7,
   bitnode: 8,
+  faction: 9,
 } as const;
 
 export const QUEUE_PORT = 19;
@@ -25,7 +26,7 @@ export const COMMAND_PORT = 20;
 
 // === TOOL NAMES ===
 
-export type ToolName = "nuke" | "pserv" | "share" | "rep" | "hack" | "darkweb" | "work";
+export type ToolName = "nuke" | "pserv" | "share" | "rep" | "hack" | "darkweb" | "work" | "faction";
 
 // === TOOL SCRIPTS (daemon paths) ===
 
@@ -37,6 +38,7 @@ export const TOOL_SCRIPTS: Record<ToolName, string> = {
   hack: "daemons/hack.js",
   darkweb: "daemons/darkweb.js",
   work: "daemons/work.js",
+  faction: "daemons/faction.js",
 };
 
 // === PRIORITY CONSTANTS ===
@@ -64,13 +66,14 @@ export interface QueueEntry {
 
 export interface Command {
   tool: ToolName;
-  action: "start" | "stop" | "open-tail" | "run-script" | "start-faction-work" | "set-focus" | "start-training" | "install-augments" | "run-backdoors" | "restart-rep-daemon";
+  action: "start" | "stop" | "open-tail" | "run-script" | "start-faction-work" | "set-focus" | "start-training" | "install-augments" | "run-backdoors" | "restart-rep-daemon" | "join-faction" | "restart-faction-daemon";
   scriptPath?: string;
   scriptArgs?: string[];
   factionName?: string;
   workType?: "hacking" | "field" | "security";
   focus?: string;
   factionFocus?: string;
+  cityFaction?: string;
 }
 
 // === STATUS INTERFACES ===
@@ -412,6 +415,64 @@ export interface BitnodeStatus {
   allComplete: boolean;
 }
 
+// === FACTION MANAGER STATUS ===
+
+export interface FactionRequirement {
+  label: string;
+  met: boolean;
+  verifiable: boolean;
+}
+
+export interface FactionInfo {
+  name: string;
+  status: "joined" | "invited" | "not-invited";
+  type: "city-exclusive" | "location-locked" | "hacking" | "combat"
+      | "endgame" | "megacorp" | "special";
+  city?: string;
+  hasAugsAvailable?: boolean;
+  augCount?: number;
+  availableAugCount?: number;
+  eligible?: boolean;
+  requirements?: FactionRequirement[];
+}
+
+export interface FactionStatus {
+  // Tier metadata (always present)
+  tier: number;
+  tierName: string;
+  availableFeatures: string[];
+  unavailableFeatures: string[];
+  currentRamUsage: number;
+  nextTierRam: number | null;
+  canUpgrade: boolean;
+
+  // Core data (always present)
+  factions: FactionInfo[];
+  joinedCount: number;
+  invitedCount: number;
+  notInvitedCount: number;
+
+  // Tier 1+
+  pendingInvitations?: string[];
+
+  // Tier 2+
+  playerCity?: string;
+  playerMoney?: number;
+  playerMoneyFormatted?: string;
+  playerHacking?: number;
+  playerStrength?: number;
+  playerDefense?: number;
+  playerDexterity?: number;
+  playerAgility?: number;
+  playerAugsInstalled?: number;
+
+  // Tier 3 (auto-manage)
+  preferredCityFaction?: string;
+  autoJoined?: string[];
+  autoTraveled?: string;
+  lastAction?: string;
+}
+
 // === DASHBOARD STATE ===
 
 export interface DashboardState {
@@ -427,6 +488,8 @@ export interface DashboardState {
   workStatus: WorkStatus | null;
   workError: string | null;
   bitnodeStatus: BitnodeStatus | null;
+  factionStatus: FactionStatus | null;
+  factionError: string | null;
 }
 
 // === PLUGIN INTERFACE (for dashboard) ===

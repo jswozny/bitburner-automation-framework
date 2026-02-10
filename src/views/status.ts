@@ -31,6 +31,7 @@ import {
   WorkStatus,
   DarkwebStatus,
   BitnodeStatus,
+  FactionStatus,
 } from "/types/ports";
 
 const C = COLORS;
@@ -48,6 +49,8 @@ const DAEMON_DOCS: Record<ToolName, { start: string; stop: string; flags: string
   darkweb: { start: "run daemons/darkweb.js",  stop: "kill daemons/darkweb.js", flags: null },
   work:    { start: "run daemons/work.js",     stop: "kill daemons/work.js",
              flags: "--focus <focus> (strength, defense, dexterity, agility, hacking, charisma, balance-combat, balance-all, crime-money, crime-stats)" },
+  faction: { start: "run daemons/faction.js", stop: "kill daemons/faction.js",
+             flags: "--preferred-city <city> (Sector-12, Aevum, Chongqing, New Tokyo, Ishima, Volhaven)" },
 };
 
 // === RUNNING STATE ===
@@ -170,6 +173,18 @@ function printOverview(ns: NS, log: Log): void {
     log(`    ${tor}  Programs: ${darkweb.ownedCount}/${darkweb.totalPrograms}  ${darkweb.allOwned ? C.green + "ALL OWNED" + C.reset : `Next: ${darkweb.nextProgram?.name || "-"}`}`);
   } else {
     printOffline(log, "darkweb");
+  }
+
+  // Faction
+  const faction = peekStatus<FactionStatus>(ns, STATUS_PORTS.faction);
+  log(`  ${C.green}FACTION${C.reset}  ${formatRunState(runState.faction)}`);
+  if (faction) {
+    const cityPart = faction.preferredCityFaction && faction.preferredCityFaction !== "None"
+      ? `  City: ${faction.preferredCityFaction}`
+      : "";
+    log(`    Joined: ${faction.joinedCount}/${faction.factions.length}  Invited: ${faction.invitedCount}${cityPart}`);
+  } else {
+    printOffline(log, "faction");
   }
 
   log("");
@@ -389,6 +404,91 @@ function printDarkwebDetail(ns: NS, log: Log): void {
   log("");
 }
 
+function printFactionDetail(ns: NS, log: Log): void {
+  const processes = ns.ps("home");
+  const runState = getDaemonRunState(processes);
+  const faction = peekStatus<FactionStatus>(ns, STATUS_PORTS.faction);
+  printHeader(log, "FACTION DETAIL");
+  log(`  ${formatRunState(runState.faction)}`);
+  if (!faction) { printOffline(log, "faction"); printCliDocs(log, "faction"); return; }
+
+  printField(log, "Tier", `${faction.tier} (${faction.tierName})`);
+  printField(log, "Joined", `${faction.joinedCount}/${faction.factions.length}`);
+  printField(log, "Invited", String(faction.invitedCount));
+  printField(log, "Remaining", String(faction.notInvitedCount));
+
+  // Player stats (tier 2+)
+  if (faction.playerHacking !== undefined) {
+    log(`\n  ${C.cyan}Player Stats:${C.reset}`);
+    printField(log, "  Hacking", String(faction.playerHacking));
+    printField(log, "  Strength", String(faction.playerStrength ?? 0));
+    printField(log, "  Defense", String(faction.playerDefense ?? 0));
+    printField(log, "  Dexterity", String(faction.playerDexterity ?? 0));
+    printField(log, "  Agility", String(faction.playerAgility ?? 0));
+    if (faction.playerAugsInstalled !== undefined) {
+      printField(log, "  Augs Installed", String(faction.playerAugsInstalled));
+    }
+  }
+
+  // Invited factions
+  const invited = faction.factions.filter(f => f.status === "invited");
+  if (invited.length > 0) {
+    log(`\n  ${C.yellow}Invited:${C.reset}`);
+    for (const f of invited) {
+      const augPart = f.availableAugCount !== undefined ? ` (${f.availableAugCount} augs)` : "";
+      log(`    ${f.name} ${C.dim}${f.type}${C.reset}${augPart}`);
+    }
+  }
+
+  // Joined factions
+  const joined = faction.factions.filter(f => f.status === "joined");
+  if (joined.length > 0) {
+    log(`\n  ${C.green}Joined:${C.reset}`);
+    for (const f of joined) {
+      const augPart = f.availableAugCount !== undefined ? ` (${f.availableAugCount} augs left)` : "";
+      log(`    ${f.name} ${C.dim}${f.type}${C.reset}${augPart}`);
+    }
+  }
+
+  // Not invited — split by eligible/ineligible
+  const notInvited = faction.factions.filter(f => f.status === "not-invited");
+  if (notInvited.length > 0) {
+    const eligible = notInvited.filter(f => f.eligible !== false);
+    const ineligible = notInvited.filter(f => f.eligible === false);
+
+    if (eligible.length > 0) {
+      log(`\n  ${C.cyan}Not Invited (eligible):${C.reset}`);
+      for (const f of eligible) {
+        const augPart = f.availableAugCount !== undefined ? ` (${f.availableAugCount} augs)` : "";
+        const reqSummary = f.requirements
+          ? " — " + f.requirements.map(r => {
+              const icon = !r.verifiable ? "?" : r.met ? "+" : "-";
+              return `[${icon}] ${r.label}`;
+            }).join(", ")
+          : "";
+        log(`    ${f.name} ${C.dim}${f.type}${C.reset}${augPart}${C.dim}${reqSummary}${C.reset}`);
+      }
+    }
+
+    if (ineligible.length > 0) {
+      log(`\n  ${C.dim}Not Invited (not eligible):${C.reset}`);
+      for (const f of ineligible) {
+        const unmet = f.requirements?.filter(r => r.verifiable && !r.met).map(r => r.label) ?? [];
+        const unmetStr = unmet.length > 0 ? ` — need: ${unmet.join(", ")}` : "";
+        log(`    ${C.dim}${f.name} ${f.type}${unmetStr}${C.reset}`);
+      }
+    }
+  }
+
+  // Last action (tier 3)
+  if (faction.lastAction) {
+    log(`\n  ${C.green}Last Action:${C.reset} ${faction.lastAction}`);
+  }
+
+  printCliDocs(log, "faction");
+  log("");
+}
+
 // === RENDER DISPATCHER ===
 
 function renderStatus(ns: NS, tool: string, log: Log): void {
@@ -400,6 +500,7 @@ function renderStatus(ns: NS, tool: string, log: Log): void {
     case "rep":     printRepDetail(ns, log); break;
     case "work":    printWorkDetail(ns, log); break;
     case "darkweb": printDarkwebDetail(ns, log); break;
+    case "faction": printFactionDetail(ns, log); break;
     default:        printOverview(ns, log); break;
   }
 }
