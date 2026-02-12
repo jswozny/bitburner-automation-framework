@@ -451,6 +451,7 @@ export interface HackStatus {
 
   // Batch-mode fields (undefined when running in legacy mode)
   mode?: "legacy" | "batch";
+  maxBatches?: number;
   incomePerSec?: number;
   incomePerSecFormatted?: string;
   totalBatchesActive?: number;

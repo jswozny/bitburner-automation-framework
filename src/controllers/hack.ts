@@ -318,9 +318,13 @@ export function executeAssignments(
  */
 export async function runDistributedCycle(
   ns: NS,
-  config: DistributedConfig
+  config: DistributedConfig,
+  allowedServers?: Set<string>,
 ): Promise<DistributedResult> {
-  const servers = getUsableServers(ns, config.homeReserve);
+  let servers = getUsableServers(ns, config.homeReserve);
+  if (allowedServers) {
+    servers = servers.filter(s => allowedServers.has(s.hostname));
+  }
   const totalRam = servers.reduce((sum, s) => sum + s.availableRam, 0);
 
   await deployWorkers(ns, servers);
