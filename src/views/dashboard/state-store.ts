@@ -529,6 +529,18 @@ const STALE_THRESHOLD_MS = 30_000;
 export function readStatusPorts(ns: NS): void {
   cachedData.nukeStatus = peekStatus<NukeStatus>(ns, STATUS_PORTS.nuke, STALE_THRESHOLD_MS);
   cachedData.hackStatus = peekStatus<HackStatus>(ns, STATUS_PORTS.hack, STALE_THRESHOLD_MS);
+
+  // Sync UI state from daemon's published status (reflects auto-mode changes)
+  if (cachedData.hackStatus) {
+    const hs = cachedData.hackStatus;
+    if (hs.maxBatches !== undefined) {
+      uiState.pluginUIState.hack.maxBatches = hs.maxBatches;
+    }
+    if (hs.strategy) {
+      uiState.pluginUIState.hack.strategy = hs.strategy;
+    }
+  }
+
   cachedData.pservStatus = peekStatus<PservStatus>(ns, STATUS_PORTS.pserv, STALE_THRESHOLD_MS);
   cachedData.shareStatus = peekStatus<ShareStatus>(ns, STATUS_PORTS.share, STALE_THRESHOLD_MS);
 

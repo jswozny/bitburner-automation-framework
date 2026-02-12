@@ -158,6 +158,18 @@ export async function main(ns: NS): Promise<void> {
     return;
   }
 
+  // Wait for fleet allocation from hack daemon (up to 10s)
+  {
+    const POLL_MS = 500;
+    const MAX_WAIT = 10_000;
+    let waited = 0;
+    while (waited < MAX_WAIT) {
+      if (peekStatus<FleetAllocation>(ns, STATUS_PORTS.fleet)) break;
+      await ns.sleep(POLL_MS);
+      waited += POLL_MS;
+    }
+  }
+
   do {
     ns.clearLog();
 

@@ -21,16 +21,31 @@ import {
   DistributedConfig,
 } from "/controllers/hack";
 import { getAllServers, HackAction } from "lib/utils";
+import {
+  restartHackDaemon,
+  getPluginUIState,
+  setPluginUIState,
+  getFleetAllocation,
+} from "views/dashboard/state-store";
+import { HackStrategy, FleetAllocation } from "/types/ports";
 
 // === CONFIG ===
 
 const DEFAULT_CONFIG: Pick<DistributedConfig, "homeReserve" | "maxTargets" | "moneyThreshold" | "securityBuffer" | "hackPercent"> = {
-  homeReserve: 32,
+  homeReserve: 640,
   maxTargets: 100,
   moneyThreshold: 0.8,
   securityBuffer: 5,
   hackPercent: 0.25,
 };
+
+// === RAM FORMATTING ===
+
+function formatRam(gb: number): string {
+  if (gb >= 1e6) return `${(gb / 1e6).toFixed(1)}PB`;
+  if (gb >= 1e3) return `${(gb / 1e3).toFixed(1)}TB`;
+  return `${gb.toFixed(0)}GB`;
+}
 
 // === ACTION COLORS ===
 
@@ -325,36 +340,218 @@ function formatHackStatus(ns: NS): FormattedHackStatus | null {
   }
 }
 
+// === PHASE COLORS ===
+
+const PHASE_COLORS: Record<string, string> = {
+  prep: "#ffaa00",
+  batch: "#00ff00",
+  "desync-recovery": "#ff4444",
+};
+
+// === CONTROL STYLES ===
+
+const controlSelectStyle: React.CSSProperties = {
+  backgroundColor: "#1a1a1a",
+  color: "#00ff00",
+  border: "1px solid #333",
+  borderRadius: "3px",
+  padding: "1px 4px",
+  fontSize: "12px",
+  fontFamily: "inherit",
+  cursor: "pointer",
+};
+
+const controlInputStyle: React.CSSProperties = {
+  backgroundColor: "#1a1a1a",
+  color: "#00ff00",
+  border: "1px solid #333",
+  borderRadius: "3px",
+  padding: "1px 4px",
+  fontSize: "12px",
+  fontFamily: "inherit",
+  width: "50px",
+  textAlign: "right",
+};
+
+// === HACK CONTROLS ===
+
+function HackControls({ running, sharePercent }: { running: boolean; sharePercent?: number }): React.ReactElement {
+  const strategy = getPluginUIState<HackStrategy>("hack", "strategy", "money");
+  const maxBatches = getPluginUIState<number>("hack", "maxBatches", 1);
+  const homeReserve = getPluginUIState<number>("hack", "homeReserve", 640);
+
+  const applySettings = (
+    newStrategy?: HackStrategy,
+    newBatches?: number,
+    newReserve?: number,
+  ) => {
+    const s = newStrategy ?? strategy;
+    const b = newBatches ?? maxBatches;
+    const hr = newReserve ?? homeReserve;
+    if (running) {
+      restartHackDaemon(s, b, hr);
+    }
+  };
+
+  return (
+    <div style={{ display: "flex", gap: "10px", alignItems: "center", flexWrap: "wrap", marginBottom: "6px", padding: "4px 6px", backgroundColor: "#111", borderRadius: "3px", border: "1px solid #222" }}>
+      <span style={{ display: "flex", alignItems: "center", gap: "4px" }}>
+        <span style={{ ...styles.statLabel, fontSize: "11px" }}>Strategy</span>
+        <select
+          style={controlSelectStyle}
+          value={strategy}
+          onChange={(e) => {
+            const val = (e.target as HTMLSelectElement).value as HackStrategy;
+            setPluginUIState("hack", "strategy", val);
+            applySettings(val);
+          }}
+        >
+          <option value="money">Money</option>
+          <option value="xp">XP</option>
+        </select>
+      </span>
+      {strategy === "money" && (
+        <span style={{ display: "flex", alignItems: "center", gap: "4px" }}>
+          <span style={{ ...styles.statLabel, fontSize: "11px" }}>Batches</span>
+          <input
+            type="number"
+            min={0}
+            max={100}
+            style={controlInputStyle}
+            value={maxBatches}
+            onChange={(e) => {
+              const val = Math.max(0, parseInt((e.target as HTMLInputElement).value) || 0);
+              setPluginUIState("hack", "maxBatches", val);
+            }}
+            onBlur={() => applySettings()}
+            onKeyDown={(e) => {
+              if ((e as unknown as KeyboardEvent).key === "Enter") applySettings();
+            }}
+          />
+        </span>
+      )}
+      <span style={{ display: "flex", alignItems: "center", gap: "4px" }}>
+        <span style={{ ...styles.statLabel, fontSize: "11px" }} title="RAM reserved on home for dashboard and other scripts (GB)">Reserve</span>
+        <input
+          type="number"
+          min={0}
+          step={64}
+          style={controlInputStyle}
+          value={homeReserve}
+          onChange={(e) => {
+            const val = Math.max(0, parseInt((e.target as HTMLInputElement).value) || 0);
+            setPluginUIState("hack", "homeReserve", val);
+          }}
+          onBlur={() => applySettings()}
+          onKeyDown={(e) => {
+            if ((e as unknown as KeyboardEvent).key === "Enter") applySettings();
+          }}
+        />
+      </span>
+      {(sharePercent ?? 0) > 0 && (
+        <span style={{ display: "flex", alignItems: "center", gap: "4px" }}>
+          <span style={{ ...styles.statLabel, fontSize: "11px", color: "#ffaa00" }}>Share</span>
+          <span style={{ color: "#ffaa00", fontSize: "12px" }}>{sharePercent}%</span>
+        </span>
+      )}
+    </div>
+  );
+}
+
 // === COMPONENTS ===
 
+function FleetAllocationLine(): React.ReactElement | null {
+  const alloc = getFleetAllocation();
+  if (!alloc || alloc.shareServers.length === 0) return null;
+
+  return (
+    <div style={styles.stat}>
+      <span style={styles.statLabel}>Fleet</span>
+      <span style={{ color: "#888", fontSize: "11px" }}>
+        {alloc.hackServers.length}H / {alloc.shareServers.length}S
+        <span style={{ color: "#555" }}> | </span>
+        {formatRam(alloc.hackFleetRam)} / {formatRam(alloc.shareFleetRam)}
+      </span>
+    </div>
+  );
+}
+
 function HackOverviewCard({ status, running, toolId, pid }: OverviewCardProps<FormattedHackStatus>): React.ReactElement {
+  const isBatch = status?.mode === "batch";
+  const isXp = status?.strategy === "xp";
+
+  const modeLabel = isXp ? " (XP)" : isBatch ? " (HWGW)" : "";
+
   return (
     <div style={styles.card}>
       <div style={styles.cardTitle}>
-        <span>HACK</span>
+        <span>HACK{modeLabel}</span>
         <ToolControl tool={toolId} running={running} pid={pid} />
       </div>
       {status ? (
-        <>
-          <div style={styles.stat}>
-            <span style={styles.statLabel}>Targets</span>
-            <span style={styles.statValue}>{status.activeTargets}/{status.totalTargets}</span>
-          </div>
-          <div style={styles.stat}>
-            <span style={styles.statLabel}>Threads</span>
-            <span style={styles.statValue}>{status.totalThreads}</span>
-          </div>
-          <div style={styles.stat}>
-            <span style={styles.statLabel}>Expected</span>
-            <span style={{ color: status.totalExpectedMoney > 0 ? "#00ff00" : "#666" }}>
-              {status.totalExpectedMoneyFormatted}
-            </span>
-          </div>
-          <div style={styles.stat}>
-            <span style={styles.statLabel}>Next ETA</span>
-            <span style={styles.etaDisplay}>{status.shortestWait}</span>
-          </div>
-        </>
+        isXp ? (
+          <>
+            <div style={styles.stat}>
+              <span style={styles.statLabel}>XP Target</span>
+              <span style={{ color: "#00ffff" }}>{status.xpTarget ?? "none"}</span>
+            </div>
+            <div style={styles.stat}>
+              <span style={styles.statLabel}>Threads</span>
+              <span style={styles.statValue}>{status.totalThreads}</span>
+            </div>
+            <div style={styles.stat}>
+              <span style={styles.statLabel}>XP Rate</span>
+              <span style={{ color: "#00ff00" }}>{status.xpRateFormatted ?? "0 XP/s"}</span>
+            </div>
+            <FleetAllocationLine />
+          </>
+        ) : isBatch ? (
+          <>
+            <div style={styles.stat}>
+              <span style={styles.statLabel}>Income</span>
+              <span style={{ color: (status.incomePerSec ?? 0) > 0 ? "#00ff00" : "#666" }}>
+                {status.incomePerSecFormatted}
+              </span>
+            </div>
+            <div style={styles.stat}>
+              <span style={styles.statLabel}>Batches</span>
+              <span style={styles.statValue}>{status.totalBatchesActive} active</span>
+            </div>
+            <div style={styles.stat}>
+              <span style={styles.statLabel}>Targets</span>
+              <span style={styles.statValue}>
+                {status.preppingCount}P / {status.batchingCount}B
+              </span>
+            </div>
+            <div style={styles.stat}>
+              <span style={styles.statLabel}>Threads</span>
+              <span style={styles.statValue}>{status.totalThreads}</span>
+            </div>
+            <FleetAllocationLine />
+          </>
+        ) : (
+          <>
+            <div style={styles.stat}>
+              <span style={styles.statLabel}>Targets</span>
+              <span style={styles.statValue}>{status.activeTargets}/{status.totalTargets}</span>
+            </div>
+            <div style={styles.stat}>
+              <span style={styles.statLabel}>Threads</span>
+              <span style={styles.statValue}>{status.totalThreads}</span>
+            </div>
+            <div style={styles.stat}>
+              <span style={styles.statLabel}>Expected</span>
+              <span style={{ color: status.totalExpectedMoney > 0 ? "#00ff00" : "#666" }}>
+                {status.totalExpectedMoneyFormatted}
+              </span>
+            </div>
+            <div style={styles.stat}>
+              <span style={styles.statLabel}>Next ETA</span>
+              <span style={styles.etaDisplay}>{status.shortestWait}</span>
+            </div>
+            <FleetAllocationLine />
+          </>
+        )
       ) : (
         <div style={styles.dim}>No targets</div>
       )}
@@ -367,10 +564,14 @@ function HackDetailPanel({ status, running, toolId, pid }: DetailPanelProps<Form
     return (
       <div style={styles.panel}>
         <ToolControl tool={toolId} running={running} pid={pid} />
+        <HackControls running={running} sharePercent={0} />
         <div style={{ ...styles.dim, marginTop: "12px" }}>No hackable targets found</div>
       </div>
     );
   }
+
+  const isBatch = status.mode === "batch";
+  const isXp = status.strategy === "xp";
 
   // Color helpers
   const getMoneyColor = (percent: number): string => {
@@ -386,6 +587,228 @@ function HackDetailPanel({ status, running, toolId, pid }: DetailPanelProps<Form
     return "#ff4444";
   };
 
+  // === XP MODE DETAIL PANEL ===
+  if (isXp) {
+    return (
+      <div style={styles.panel}>
+        {/* Header */}
+        <div style={styles.row}>
+          <div style={styles.rowLeft}>
+            <span>
+              <span style={styles.statLabel}>RAM: </span>
+              <span style={styles.statValue}>{status.totalRam}</span>
+            </span>
+            <span style={styles.dim}>|</span>
+            <span>
+              <span style={styles.statLabel}>Servers: </span>
+              <span style={styles.statValue}>{status.serverCount}</span>
+            </span>
+            <span style={styles.dim}>|</span>
+            <span style={{ color: "#ff00ff", fontSize: "11px" }}>XP MODE</span>
+          </div>
+          <ToolControl tool={toolId} running={running} pid={pid} />
+        </div>
+
+        {/* Controls */}
+        <HackControls running={running} sharePercent={status.sharePercent} />
+
+        {/* XP Info */}
+        <div style={styles.grid}>
+          <div style={styles.card}>
+            <div style={styles.stat}>
+              <span style={styles.statLabel}>XP Target</span>
+              <span style={{ color: "#00ffff", fontWeight: "bold" }}>{status.xpTarget ?? "none"}</span>
+            </div>
+            <div style={styles.stat}>
+              <span style={styles.statLabel}>Weaken Threads</span>
+              <span style={styles.statValue}>{status.xpThreads ?? 0}</span>
+            </div>
+          </div>
+          <div style={styles.card}>
+            <div style={styles.stat}>
+              <span style={styles.statLabel}>XP Rate</span>
+              <span style={{ color: "#00ff00", fontWeight: "bold" }}>{status.xpRateFormatted ?? "0 XP/s"}</span>
+            </div>
+            <div style={styles.stat}>
+              <span style={styles.statLabel}>Weaken Time</span>
+              <span style={styles.etaDisplay}>{status.shortestWait}</span>
+            </div>
+          </div>
+        </div>
+
+      </div>
+    );
+  }
+
+  if (isBatch) {
+    return (
+      <div style={styles.panel}>
+        {/* Header */}
+        <div style={styles.row}>
+          <div style={styles.rowLeft}>
+            <span>
+              <span style={styles.statLabel}>RAM: </span>
+              <span style={styles.statValue}>{status.totalRam}</span>
+            </span>
+            <span style={styles.dim}>|</span>
+            <span>
+              <span style={styles.statLabel}>Servers: </span>
+              <span style={styles.statValue}>{status.serverCount}</span>
+            </span>
+            <span style={styles.dim}>|</span>
+            <span style={{ color: "#00ffff", fontSize: "11px" }}>HWGW BATCH</span>
+          </div>
+          <ToolControl tool={toolId} running={running} pid={pid} />
+        </div>
+
+        {/* Controls */}
+        <HackControls running={running} sharePercent={status.sharePercent} />
+
+        {/* Batch Summary */}
+        <div style={styles.grid}>
+          <div style={styles.card}>
+            <div style={styles.stat}>
+              <span style={styles.statLabel}>Income/sec</span>
+              <span style={{ color: (status.incomePerSec ?? 0) > 0 ? "#00ff00" : "#666", fontWeight: "bold" }}>
+                {status.incomePerSecFormatted}
+              </span>
+            </div>
+            <div style={styles.stat}>
+              <span style={styles.statLabel}>Running Threads</span>
+              <span style={styles.statValue}>{status.totalThreads}</span>
+            </div>
+          </div>
+          <div style={styles.card}>
+            <div style={styles.stat}>
+              <span style={styles.statLabel}>Active Batches</span>
+              <span style={styles.statHighlight}>{status.totalBatchesActive}</span>
+            </div>
+            <div style={styles.stat}>
+              <span style={{ color: "#00ff00" }}>Landed</span>
+              <span style={styles.statValue}>{status.totalBatchesLanded}</span>
+            </div>
+            <div style={styles.stat}>
+              <span style={{ color: "#ff4444" }}>Failed</span>
+              <span style={styles.statValue}>{status.totalBatchesFailed}</span>
+            </div>
+          </div>
+        </div>
+
+        {/* Phase Counts */}
+        <div style={styles.card}>
+          <div style={styles.stat}>
+            <span style={{ color: PHASE_COLORS.prep }}>Prepping</span>
+            <span style={styles.statValue}>{status.preppingCount}</span>
+          </div>
+          <div style={styles.stat}>
+            <span style={{ color: PHASE_COLORS.batch }}>Batching</span>
+            <span style={styles.statValue}>{status.batchingCount}</span>
+          </div>
+          <div style={styles.stat}>
+            <span style={{ color: "#ff4444" }}>Desyncs</span>
+            <span style={styles.statValue}>{status.totalDesyncCount}</span>
+          </div>
+        </div>
+
+        {/* Batch Target Table */}
+        {status.batchTargets && status.batchTargets.length > 0 && (
+          <div style={styles.section}>
+            <div style={styles.sectionTitle}>
+              TARGETS BY SCORE
+              <span style={{ ...styles.dim, marginLeft: "8px", fontWeight: "normal" }}>
+                {status.batchTargets.length} targets
+              </span>
+            </div>
+            <div style={{ maxHeight: "300px", overflowY: "auto" }}>
+              <table style={styles.table}>
+                <thead>
+                  <tr>
+                    <th style={{ ...styles.tableHeader, width: "24px" }} title="Rank by profitability score">#</th>
+                    <th style={styles.tableHeader} title="Target server hostname">Target</th>
+                    <th style={{ ...styles.tableHeader, width: "55px" }} title="Current phase: Prep (weakening/growing to ideal state), Batch (running HWGW batches), or Desync-Recovery">Phase</th>
+                    <th style={{ ...styles.tableHeader, textAlign: "right", width: "40px" }} title="Active batches / max batches allowed">B</th>
+                    <th style={{ ...styles.tableHeader, textAlign: "right", width: "40px" }} title="Hack percentage per batch (how much money stolen)">H%</th>
+                    <th style={{ ...styles.tableHeader, textAlign: "right", width: "50px" }} title="Current money as % of maximum">Money</th>
+                    <th style={{ ...styles.tableHeader, textAlign: "right", width: "50px" }} title="Security level above minimum (+0 is ideal)">Sec</th>
+                    <th style={{ ...styles.tableHeader, textAlign: "right", width: "55px" }} title="Estimated time until next batch completes">ETA</th>
+                    <th style={{ ...styles.tableHeader, textAlign: "right", width: "35px" }} title="Total batches landed successfully">L</th>
+                    <th style={{ ...styles.tableHeader, textAlign: "right", width: "30px" }} title="Total batches failed (desync)">F</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {status.batchTargets.map((bt, i) => {
+                    const rowStyle = i % 2 === 0 ? styles.tableRow : styles.tableRowAlt;
+                    const phaseColor = PHASE_COLORS[bt.phase] || "#888";
+
+                    return (
+                      <tr key={bt.hostname} style={rowStyle}>
+                        <td style={{ ...styles.tableCell, color: "#888" }}>{bt.rank}</td>
+                        <td style={{ ...styles.tableCell, color: "#00ffff" }}>
+                          {bt.hostname.substring(0, 16)}
+                        </td>
+                        <td style={{ ...styles.tableCell, color: phaseColor, fontSize: "10px" }}>
+                          {bt.phase === "prep"
+                            ? `PREP ${(bt.prepProgress * 100).toFixed(0)}%`
+                            : bt.phase.toUpperCase()}
+                        </td>
+                        <td style={{ ...styles.tableCell, textAlign: "right" }}>
+                          {bt.activeBatches}/{bt.maxBatches}
+                        </td>
+                        <td style={{ ...styles.tableCell, textAlign: "right" }}>
+                          {(bt.hackPercent * 100).toFixed(0)}%
+                        </td>
+                        <td style={{
+                          ...styles.tableCell,
+                          textAlign: "right",
+                          color: getMoneyColor(bt.moneyPercent),
+                        }}>
+                          {bt.moneyPercent.toFixed(0)}%
+                        </td>
+                        <td style={{
+                          ...styles.tableCell,
+                          textAlign: "right",
+                          color: getSecurityColor(bt.securityClean, bt.securityDelta),
+                        }}>
+                          {bt.securityDelta}
+                        </td>
+                        <td style={{ ...styles.tableCell, textAlign: "right", color: "#888" }}>
+                          {bt.eta}
+                        </td>
+                        <td style={{ ...styles.tableCell, textAlign: "right", color: "#00ff00" }}>
+                          {bt.totalLanded}
+                        </td>
+                        <td style={{ ...styles.tableCell, textAlign: "right", color: bt.totalFailed > 0 ? "#ff4444" : "#666" }}>
+                          {bt.totalFailed}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+
+        {/* Footer */}
+        <div style={styles.legend}>
+          <div style={styles.legendItem}>
+            <div style={{ ...styles.legendSwatch, backgroundColor: PHASE_COLORS.prep }} />
+            <span>Prep</span>
+          </div>
+          <div style={styles.legendItem}>
+            <div style={{ ...styles.legendSwatch, backgroundColor: PHASE_COLORS.batch }} />
+            <span>Batch</span>
+          </div>
+          <div style={styles.legendItem}>
+            <div style={{ ...styles.legendSwatch, backgroundColor: "#ff4444" }} />
+            <span>Desync</span>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // === LEGACY MODE DETAIL PANEL ===
   return (
     <div style={styles.panel}>
       {/* Header */}
@@ -403,6 +826,9 @@ function HackDetailPanel({ status, running, toolId, pid }: DetailPanelProps<Form
         </div>
         <ToolControl tool={toolId} running={running} pid={pid} />
       </div>
+
+      {/* Controls */}
+      <HackControls running={running} sharePercent={status.sharePercent} />
 
       {/* Expected Money Display */}
       <div style={styles.card}>
@@ -459,15 +885,15 @@ function HackDetailPanel({ status, running, toolId, pid }: DetailPanelProps<Form
             <table style={styles.table}>
               <thead>
                 <tr>
-                  <th style={{ ...styles.tableHeader, width: "24px" }}>#</th>
-                  <th style={styles.tableHeader}>Target</th>
-                  <th style={{ ...styles.tableHeader, textAlign: "right", width: "45px", color: ACTION_COLORS.hack }}>H</th>
-                  <th style={{ ...styles.tableHeader, textAlign: "right", width: "45px", color: ACTION_COLORS.grow }}>G</th>
-                  <th style={{ ...styles.tableHeader, textAlign: "right", width: "45px", color: ACTION_COLORS.weaken }}>W</th>
-                  <th style={{ ...styles.tableHeader, textAlign: "right", width: "80px" }}>Expected</th>
-                  <th style={{ ...styles.tableHeader, textAlign: "right", width: "60px" }}>Money</th>
-                  <th style={{ ...styles.tableHeader, textAlign: "right", width: "50px" }}>Sec</th>
-                  <th style={{ ...styles.tableHeader, textAlign: "right", width: "55px" }}>ETA</th>
+                  <th style={{ ...styles.tableHeader, width: "24px" }} title="Rank by target value">#</th>
+                  <th style={styles.tableHeader} title="Target server hostname">Target</th>
+                  <th style={{ ...styles.tableHeader, textAlign: "right", width: "45px", color: ACTION_COLORS.hack }} title="Active hack threads">H</th>
+                  <th style={{ ...styles.tableHeader, textAlign: "right", width: "45px", color: ACTION_COLORS.grow }} title="Active grow threads">G</th>
+                  <th style={{ ...styles.tableHeader, textAlign: "right", width: "45px", color: ACTION_COLORS.weaken }} title="Active weaken threads">W</th>
+                  <th style={{ ...styles.tableHeader, textAlign: "right", width: "80px" }} title="Expected money from current hack threads">Expected</th>
+                  <th style={{ ...styles.tableHeader, textAlign: "right", width: "60px" }} title="Current money as % of maximum">Money</th>
+                  <th style={{ ...styles.tableHeader, textAlign: "right", width: "50px" }} title="Security level above minimum (+0 is ideal)">Sec</th>
+                  <th style={{ ...styles.tableHeader, textAlign: "right", width: "55px" }} title="Time until current operation completes">ETA</th>
                 </tr>
               </thead>
               <tbody>

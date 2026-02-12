@@ -389,6 +389,49 @@ export interface FleetAllocation {
   timestamp: number;
 }
 
+// === BATCH HACKING TYPES ===
+
+export type TargetPhase = "prep" | "batch" | "desync-recovery";
+
+export interface BatchTargetState {
+  hostname: string;
+  phase: TargetPhase;
+  score: number;
+  hackPercent: number;
+  activeBatches: number;
+  totalLanded: number;
+  totalFailed: number;
+  desyncCount: number;
+  prepProgress: number;
+  lastBatchLandTime: number | null;
+}
+
+export interface BatchTargetStatus {
+  rank: number;
+  hostname: string;
+  phase: TargetPhase;
+  score: number;
+  scoreFormatted: string;
+  hackPercent: number;
+  activeBatches: number;
+  maxBatches: number;
+  totalLanded: number;
+  totalFailed: number;
+  desyncCount: number;
+  prepProgress: number;
+  moneyPercent: number;
+  moneyDisplay: string;
+  securityDelta: string;
+  securityClean: boolean;
+  incomeRate: number;
+  incomeRateFormatted: string;
+  eta: string;
+  hackThreads: number;
+  growThreads: number;
+  weakenThreads: number;
+  totalThreads: number;
+}
+
 export interface HackStatus {
   totalRam: string;
   serverCount: number;
@@ -405,6 +448,29 @@ export interface HackStatus {
   totalExpectedMoney: number;
   totalExpectedMoneyFormatted: string;
   needHigherLevel: { count: number; nextLevel: number } | null;
+
+  // Batch-mode fields (undefined when running in legacy mode)
+  mode?: "legacy" | "batch";
+  maxBatches?: number;
+  incomePerSec?: number;
+  incomePerSecFormatted?: string;
+  totalBatchesActive?: number;
+  totalBatchesLanded?: number;
+  totalBatchesFailed?: number;
+  totalDesyncCount?: number;
+  preppingCount?: number;
+  batchingCount?: number;
+  batchTargets?: BatchTargetStatus[];
+
+  // Strategy & share fields
+  strategy?: HackStrategy;
+  sharePercent?: number;
+
+  // XP mode fields
+  xpRate?: number;
+  xpRateFormatted?: string;
+  xpTarget?: string;
+  xpThreads?: number;
 }
 
 export interface TargetAssignment {
