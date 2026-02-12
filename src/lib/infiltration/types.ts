@@ -15,12 +15,14 @@ export interface MiniGameSolver {
 
 export interface InfiltrationConfig {
   targetCompanyOverride?: string;
+  rewardMode: "rep" | "money";
   enabledSolvers: Set<string>;
   rewardStaleThresholdMs: number;
   logBufferSize: number;
 }
 
 export const DEFAULT_CONFIG: InfiltrationConfig = {
+  rewardMode: "rep",
   enabledSolvers: new Set(),
   rewardStaleThresholdMs: 60_000,
   logBufferSize: 100,

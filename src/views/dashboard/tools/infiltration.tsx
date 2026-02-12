@@ -10,6 +10,13 @@ import { ToolPlugin, OverviewCardProps, DetailPanelProps } from "views/dashboard
 import { styles } from "views/dashboard/styles";
 import { ToolControl } from "views/dashboard/components/ToolControl";
 import { InfiltrationStatus } from "/types/ports";
+import {
+  getPluginUIState,
+  setPluginUIState,
+  getStateSnapshot,
+  configureInfiltration,
+  isToolRunning,
+} from "views/dashboard/state-store";
 
 // === STATUS FORMATTING ===
 
@@ -55,6 +62,55 @@ function timeAgo(ts: number): string {
   if (diff < 60) return `${diff}s ago`;
   if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
   return `${Math.floor(diff / 3600)}h ago`;
+}
+
+// === CONTROL STYLES ===
+
+const controlSelectStyle: React.CSSProperties = {
+  backgroundColor: "#1a1a1a",
+  color: "#00ff00",
+  border: "1px solid #333",
+  borderRadius: "3px",
+  padding: "1px 4px",
+  fontSize: "12px",
+  fontFamily: "inherit",
+  cursor: "pointer",
+};
+
+// === REWARD MODE CONTROLS ===
+
+function InfiltrationControls({ running }: { running: boolean }): React.ReactElement {
+  const rewardMode = getPluginUIState<"rep" | "money">("infiltration", "rewardMode", "rep");
+
+  // Check if rep daemon has a target faction
+  const snapshot = getStateSnapshot();
+  const repStatus = snapshot.repStatus;
+  const hasFaction = !!repStatus?.targetFaction;
+
+  return (
+    <div style={{ display: "flex", gap: "10px", alignItems: "center", flexWrap: "wrap", marginBottom: "6px", padding: "4px 6px", backgroundColor: "#111", borderRadius: "3px", border: "1px solid #222" }}>
+      <span style={{ display: "flex", alignItems: "center", gap: "4px" }}>
+        <span style={{ ...styles.statLabel, fontSize: "11px" }}>Reward</span>
+        <select
+          style={controlSelectStyle}
+          value={rewardMode}
+          onChange={(e) => {
+            const val = (e.target as HTMLSelectElement).value as "rep" | "money";
+            setPluginUIState("infiltration", "rewardMode", val);
+            if (running) {
+              configureInfiltration(val);
+            }
+          }}
+        >
+          <option value="rep">Rep (auto){!hasFaction ? " - no faction" : ""}</option>
+          <option value="money">Money</option>
+        </select>
+      </span>
+      {rewardMode === "rep" && !hasFaction && (
+        <span style={{ color: "#888", fontSize: "10px" }}>No faction target — will fall back to money</span>
+      )}
+    </div>
+  );
 }
 
 // === OVERVIEW CARD ===
@@ -129,6 +185,7 @@ function InfiltrationDetailPanel({ status, running, toolId, error, pid }: Detail
           </div>
           <ToolControl tool={toolId} running={running} pid={pid} />
         </div>
+        <InfiltrationControls running={false} />
         <div style={styles.card}>
           <div style={{ color: "#888" }}>
             Daemon not running. Start it to begin automated infiltration.
@@ -184,6 +241,9 @@ function InfiltrationDetailPanel({ status, running, toolId, error, pid }: Detail
         </div>
         <ToolControl tool={toolId} running={running} error={status.state === "ERROR"} pid={pid} />
       </div>
+
+      {/* Controls */}
+      <InfiltrationControls running={running} />
 
       {/* Error Display */}
       {status.error && (
@@ -250,41 +310,6 @@ function InfiltrationDetailPanel({ status, running, toolId, error, pid }: Detail
         </div>
       </div>
 
-      {/* Solver Stats */}
-      {Object.keys(status.solverStats).length > 0 && (
-        <div style={styles.section}>
-          <div style={styles.sectionTitle}>SOLVER STATS</div>
-          <table style={styles.table}>
-            <thead>
-              <tr>
-                <th style={styles.tableHeader}>Solver</th>
-                <th style={{ ...styles.tableHeader, textAlign: "right" }}>Attempts</th>
-                <th style={{ ...styles.tableHeader, textAlign: "right" }}>Success</th>
-                <th style={{ ...styles.tableHeader, textAlign: "right" }}>Avg Time</th>
-              </tr>
-            </thead>
-            <tbody>
-              {Object.entries(status.solverStats).map(([id, stats], i) => (
-                <tr key={id} style={i % 2 === 0 ? styles.tableRow : styles.tableRowAlt}>
-                  <td style={styles.tableCell}>{id}</td>
-                  <td style={{ ...styles.tableCell, textAlign: "right" }}>{stats.attempts}</td>
-                  <td style={{
-                    ...styles.tableCell,
-                    textAlign: "right",
-                    color: stats.failures > 0 ? "#ffaa00" : "#00ff00",
-                  }}>
-                    {stats.attempts > 0 ? formatRate(stats.successes / stats.attempts) : "—"}
-                  </td>
-                  <td style={{ ...styles.tableCell, textAlign: "right", color: "#888" }}>
-                    {stats.avgSolveTimeMs > 0 ? `${stats.avgSolveTimeMs.toFixed(0)}ms` : "—"}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
-
       {/* Company Stats */}
       {Object.keys(status.companyStats).length > 0 && (
         <div style={styles.section}>
@@ -313,29 +338,35 @@ function InfiltrationDetailPanel({ status, running, toolId, error, pid }: Detail
       )}
 
       {/* Available Locations */}
-      {status.locations.length > 0 && (
-        <div style={styles.section}>
-          <div style={styles.sectionTitle}>
-            LOCATIONS
-            <span style={{ ...styles.dim, marginLeft: "8px", fontWeight: "normal" }}>
-              {status.locations.length} available
-            </span>
-          </div>
-          <table style={styles.table}>
-            <thead>
-              <tr>
-                <th style={styles.tableHeader}>Company</th>
-                <th style={styles.tableHeader}>City</th>
-                <th style={{ ...styles.tableHeader, textAlign: "right" }}>Diff</th>
-                <th style={{ ...styles.tableHeader, textAlign: "right" }}>Levels</th>
-                <th style={{ ...styles.tableHeader, textAlign: "right" }}>Rep</th>
-                <th style={{ ...styles.tableHeader, textAlign: "right" }}>Cash</th>
-              </tr>
-            </thead>
-            <tbody>
-              {status.locations
-                .sort((a, b) => b.difficulty - a.difficulty)
-                .map((loc, i) => (
+      {status.locations.length > 0 && (() => {
+        const mode = status.config.rewardMode;
+        const perLevel = (loc: typeof status.locations[0]) =>
+          mode === "money"
+            ? loc.reward.sellCash / loc.maxClearanceLevel
+            : loc.reward.tradeRep / loc.maxClearanceLevel;
+        const sorted = [...status.locations].sort((a, b) => perLevel(b) - perLevel(a));
+
+        return (
+          <div style={styles.section}>
+            <div style={styles.sectionTitle}>
+              LOCATIONS
+              <span style={{ ...styles.dim, marginLeft: "8px", fontWeight: "normal" }}>
+                {status.locations.length} available — sorted by {mode === "money" ? "$/lvl" : "rep/lvl"}
+              </span>
+            </div>
+            <table style={styles.table}>
+              <thead>
+                <tr>
+                  <th style={styles.tableHeader}>Company</th>
+                  <th style={styles.tableHeader}>City</th>
+                  <th style={{ ...styles.tableHeader, textAlign: "right" }}>Lvls</th>
+                  <th style={{ ...styles.tableHeader, textAlign: "right" }}>Rep</th>
+                  <th style={{ ...styles.tableHeader, textAlign: "right" }}>Cash</th>
+                  <th style={{ ...styles.tableHeader, textAlign: "right" }}>{mode === "money" ? "$/lvl" : "Rep/lvl"}</th>
+                </tr>
+              </thead>
+              <tbody>
+                {sorted.map((loc, i) => (
                   <tr
                     key={loc.name}
                     style={{
@@ -349,7 +380,6 @@ function InfiltrationDetailPanel({ status, running, toolId, error, pid }: Detail
                       {loc.name}
                     </td>
                     <td style={{ ...styles.tableCell, color: "#888" }}>{loc.city}</td>
-                    <td style={{ ...styles.tableCell, textAlign: "right" }}>{loc.difficulty.toFixed(1)}</td>
                     <td style={{ ...styles.tableCell, textAlign: "right" }}>{loc.maxClearanceLevel}</td>
                     <td style={{ ...styles.tableCell, textAlign: "right", color: "#00ffff" }}>
                       {formatNumber(loc.reward.tradeRep)}
@@ -357,12 +387,16 @@ function InfiltrationDetailPanel({ status, running, toolId, error, pid }: Detail
                     <td style={{ ...styles.tableCell, textAlign: "right", color: "#ffff00" }}>
                       ${formatNumber(loc.reward.sellCash)}
                     </td>
+                    <td style={{ ...styles.tableCell, textAlign: "right", color: mode === "money" ? "#ffff00" : "#00ffff" }}>
+                      {mode === "money" ? `$${formatNumber(perLevel(loc))}` : formatNumber(perLevel(loc))}
+                    </td>
                   </tr>
                 ))}
-            </tbody>
-          </table>
-        </div>
-      )}
+              </tbody>
+            </table>
+          </div>
+        );
+      })()}
 
       {/* Live Log */}
       {status.log.length > 0 && (
@@ -406,7 +440,13 @@ function InfiltrationDetailPanel({ status, running, toolId, error, pid }: Detail
         <div style={styles.sectionTitle}>CONFIG</div>
         <div style={styles.stat}>
           <span style={styles.statLabel}>Target</span>
-          <span style={styles.statValue}>{status.config.targetCompanyOverride || "Auto (highest difficulty)"}</span>
+          <span style={styles.statValue}>
+            {status.config.targetCompanyOverride || `Auto (best ${status.config.rewardMode === "money" ? "$/lvl" : "rep/lvl"})`}
+          </span>
+        </div>
+        <div style={styles.stat}>
+          <span style={styles.statLabel}>Reward</span>
+          <span style={styles.statValue}>{status.config.rewardMode === "money" ? "Money" : "Rep (auto)"}</span>
         </div>
         <div style={styles.stat}>
           <span style={styles.statLabel}>Solvers</span>

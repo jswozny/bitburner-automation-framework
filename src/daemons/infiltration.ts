@@ -53,7 +53,6 @@ let totalRepEarned = 0;
 let totalCashEarned = 0;
 const rewardBreakdown = { factionRep: 0, money: 0 };
 const companyStats: Record<string, { attempts: number; successes: number; failures: number }> = {};
-const solverStats: Record<string, { attempts: number; successes: number; failures: number; totalTimeMs: number }> = {};
 
 // Cached data
 let locations: InfiltrationLocationInfo[] = [];
@@ -87,16 +86,6 @@ function publishCurrentStatus(ns: NS): void {
     ? runsCompleted / (runsCompleted + runsFailed)
     : 0;
 
-  const formattedSolverStats: Record<string, { attempts: number; successes: number; failures: number; avgSolveTimeMs: number }> = {};
-  for (const [id, stats] of Object.entries(solverStats)) {
-    formattedSolverStats[id] = {
-      attempts: stats.attempts,
-      successes: stats.successes,
-      failures: stats.failures,
-      avgSolveTimeMs: stats.attempts > 0 ? stats.totalTimeMs / stats.successes : 0,
-    };
-  }
-
   // Read rep daemon status for expected reward display
   let expectedReward: InfiltrationStatus["expectedReward"];
   if (currentTarget) {
@@ -128,9 +117,9 @@ function publishCurrentStatus(ns: NS): void {
     totalCashEarned,
     rewardBreakdown: { ...rewardBreakdown },
     companyStats: { ...companyStats },
-    solverStats: formattedSolverStats,
     config: {
       targetCompanyOverride: config.targetCompanyOverride,
+      rewardMode: config.rewardMode,
       enabledSolvers: Array.from(config.enabledSolvers),
     },
     log: [...logBuffer],
@@ -182,17 +171,30 @@ function selectTarget(): InfiltrationLocationInfo | null {
     return override;
   }
 
-  // Default: highest difficulty
-  return locations.reduce((best, loc) =>
-    loc.difficulty > best.difficulty ? loc : best
-  );
+  // Pick by best reward-per-level for the current reward mode
+  const rewardPerLevel = (loc: InfiltrationLocationInfo): number =>
+    config.rewardMode === "money"
+      ? loc.reward.sellCash / loc.maxClearanceLevel
+      : loc.reward.tradeRep / loc.maxClearanceLevel;
+
+  return locations.reduce((best, loc) => {
+    const locRpl = rewardPerLevel(loc);
+    const bestRpl = rewardPerLevel(best);
+    if (locRpl !== bestRpl) return locRpl > bestRpl ? loc : best;
+    // Tie-break: prefer more levels (amortizes navigation overhead)
+    return loc.maxClearanceLevel > best.maxClearanceLevel ? loc : best;
+  });
 }
 
 // === REWARD STRATEGY ===
 
 function determineRewardType(ns: NS): { type: "faction-rep" | "money"; faction?: string } {
-  const repStatus = peekStatus<RepStatus>(ns, STATUS_PORTS.rep, config.rewardStaleThresholdMs);
+  if (config.rewardMode === "money") {
+    return { type: "money" };
+  }
 
+  // Rep mode: use faction rep if a target faction is available, otherwise fall back to money
+  const repStatus = peekStatus<RepStatus>(ns, STATUS_PORTS.rep, config.rewardStaleThresholdMs);
   if (repStatus?.targetFaction) {
     return { type: "faction-rep", faction: repStatus.targetFaction };
   }
@@ -209,7 +211,7 @@ function checkControlPort(ns: NS): void {
     if (data === "NULL PORT DATA") break;
 
     try {
-      const msg = JSON.parse(data as string) as { action: string; target?: string; solvers?: string[] };
+      const msg = JSON.parse(data as string) as { action: string; target?: string; solvers?: string[]; rewardMode?: "rep" | "money" };
 
       switch (msg.action) {
         case "stop":
@@ -221,6 +223,10 @@ function checkControlPort(ns: NS): void {
             config.targetCompanyOverride = msg.target || undefined;
             log("info", `Target override: ${msg.target || "auto"}`);
           }
+          if (msg.rewardMode) {
+            config.rewardMode = msg.rewardMode;
+            log("info", `Reward mode: ${msg.rewardMode}`);
+          }
           if (msg.solvers) {
             config.enabledSolvers = new Set(msg.solvers);
             log("info", `Enabled solvers updated: ${msg.solvers.join(", ")}`);
@@ -230,28 +236,6 @@ function checkControlPort(ns: NS): void {
     } catch {
       // Invalid control message
     }
-  }
-}
-
-// === SOLVER STATS ===
-
-function recordSolverAttempt(solverId: string): void {
-  if (!solverStats[solverId]) {
-    solverStats[solverId] = { attempts: 0, successes: 0, failures: 0, totalTimeMs: 0 };
-  }
-  solverStats[solverId].attempts++;
-}
-
-function recordSolverSuccess(solverId: string, timeMs: number): void {
-  if (solverStats[solverId]) {
-    solverStats[solverId].successes++;
-    solverStats[solverId].totalTimeMs += timeMs;
-  }
-}
-
-function recordSolverFailure(solverId: string): void {
-  if (solverStats[solverId]) {
-    solverStats[solverId].failures++;
   }
 }
 
@@ -440,19 +424,10 @@ async function runSingleInfiltration(ns: NS): Promise<boolean> {
       const solveTime = Date.now() - solveStart;
 
       currentSolver = solverId;
-      recordSolverAttempt(solverId);
-      recordSolverSuccess(solverId, solveTime);
       log("info", `Solved: ${solverId} (${solveTime}ms) [${currentGame}/${totalGames}]`);
     } catch (e) {
       const errMsg = (e as Error).message;
       log("error", `Solver failed: ${errMsg}`);
-
-      // Try to identify which solver failed for stats
-      const failedSolver = errMsg.includes(":") ? errMsg.split(":")[0].toLowerCase() : undefined;
-      if (failedSolver) {
-        recordSolverAttempt(failedSolver);
-        recordSolverFailure(failedSolver);
-      }
 
       // The game may still be running (wrong answer = HP damage, not game over)
       // Continue the loop; the game will either show the next mini-game or end

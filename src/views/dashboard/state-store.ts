@@ -167,6 +167,18 @@ export function restartShareDaemon(targetPercent?: number): void {
 }
 
 /**
+ * Send a configure command to the infiltration daemon.
+ */
+export function configureInfiltration(rewardMode?: "rep" | "money"): void {
+  if (!commandPort) return;
+  commandPort.write(JSON.stringify({
+    tool: "infiltration",
+    action: "configure-infiltration",
+    infiltrationRewardMode: rewardMode,
+  }));
+}
+
+/**
  * Read and execute all pending commands from the port.
  */
 export function readAndExecuteCommands(ns: NS): void {
@@ -384,7 +396,11 @@ function executeCommand(ns: NS, cmd: Command): void {
           action: "configure",
           target: cmd.infiltrationTarget,
           solvers: cmd.infiltrationSolvers,
+          rewardMode: cmd.infiltrationRewardMode,
         }));
+        if (cmd.infiltrationRewardMode) {
+          saveDashboardSettings(ns);
+        }
         ns.toast("Infiltration config updated", "info", 2000);
       }
       break;
@@ -468,6 +484,9 @@ interface DashboardSettings {
   share: {
     targetPercent: number;
   };
+  infiltration?: {
+    rewardMode: string;
+  };
 }
 
 /**
@@ -482,6 +501,9 @@ export function saveDashboardSettings(ns: NS): void {
     },
     share: {
       targetPercent: (uiState.pluginUIState.share.targetPercent as number) || 0,
+    },
+    infiltration: {
+      rewardMode: (uiState.pluginUIState.infiltration.rewardMode as string) || "rep",
     },
   };
   ns.write(SETTINGS_FILE, JSON.stringify(settings), "w");
@@ -504,6 +526,9 @@ export function loadDashboardSettings(ns: NS): void {
     }
     if (settings.share) {
       if (settings.share.targetPercent !== undefined) uiState.pluginUIState.share.targetPercent = settings.share.targetPercent;
+    }
+    if (settings.infiltration) {
+      if (settings.infiltration.rewardMode) uiState.pluginUIState.infiltration.rewardMode = settings.infiltration.rewardMode;
     }
   } catch {
     // Invalid settings file, ignore

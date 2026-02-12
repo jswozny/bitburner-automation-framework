@@ -83,6 +83,7 @@ export interface Command {
   shareTargetPercent?: number;
   infiltrationTarget?: string;
   infiltrationSolvers?: string[];
+  infiltrationRewardMode?: "rep" | "money";
 }
 
 // === STATUS INTERFACES ===
@@ -636,15 +637,9 @@ export interface InfiltrationStatus {
     failures: number;
   }>;
 
-  solverStats: Record<string, {
-    attempts: number;
-    successes: number;
-    failures: number;
-    avgSolveTimeMs: number;
-  }>;
-
   config: {
     targetCompanyOverride?: string;
+    rewardMode: "rep" | "money";
     enabledSolvers: string[];
   };
 
