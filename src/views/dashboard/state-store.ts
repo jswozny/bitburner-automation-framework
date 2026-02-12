@@ -16,6 +16,7 @@ import {
   KILL_TIERS,
   STATUS_PORTS,
   COMMAND_PORT,
+  INFILTRATION_CONTROL_PORT,
   NukeStatus,
   PservStatus,
   ShareStatus,
@@ -27,6 +28,7 @@ import {
   BitnodeStatus,
   FactionStatus,
   FleetAllocation,
+  InfiltrationStatus,
   Command,
 } from "/types/ports";
 
@@ -356,6 +358,36 @@ function executeCommand(ns: NS, cmd: Command): void {
         saveDashboardSettings(ns);
       }
       break;
+    case "stop-infiltration":
+      {
+        // Send stop signal to infiltration daemon via its control port
+        const ctrlHandle = ns.getPortHandle(INFILTRATION_CONTROL_PORT);
+        ctrlHandle.write(JSON.stringify({ action: "stop" }));
+        ns.toast("Infiltration: stop requested (after current run)", "warning", 3000);
+      }
+      break;
+    case "kill-infiltration":
+      {
+        const infPid = cachedData.pids.infiltration;
+        if (infPid > 0) {
+          ns.kill(infPid);
+          cachedData.pids.infiltration = 0;
+          cachedData.infiltrationStatus = null;
+          ns.toast("Infiltration daemon killed", "warning", 2000);
+        }
+      }
+      break;
+    case "configure-infiltration":
+      {
+        const ctrlHandle = ns.getPortHandle(INFILTRATION_CONTROL_PORT);
+        ctrlHandle.write(JSON.stringify({
+          action: "configure",
+          target: cmd.infiltrationTarget,
+          solvers: cmd.infiltrationSolvers,
+        }));
+        ns.toast("Infiltration config updated", "info", 2000);
+      }
+      break;
   }
 }
 
@@ -399,6 +431,7 @@ const uiState: UIState = {
     darkweb: {},
     work: {},
     faction: {},
+    infiltration: {},
   },
 };
 
@@ -495,10 +528,11 @@ interface CachedData {
   factionStatus: FactionStatus | null;
   factionError: string | null;
   fleetAllocation: FleetAllocation | null;
+  infiltrationStatus: InfiltrationStatus | null;
 }
 
 const cachedData: CachedData = {
-  pids: { nuke: 0, pserv: 0, share: 0, rep: 0, hack: 0, darkweb: 0, work: 0, faction: 0 },
+  pids: { nuke: 0, pserv: 0, share: 0, rep: 0, hack: 0, darkweb: 0, work: 0, faction: 0, infiltration: 0 },
   nukeStatus: null,
   pservStatus: null,
   shareStatus: null,
@@ -513,6 +547,7 @@ const cachedData: CachedData = {
   factionStatus: null,
   factionError: null,
   fleetAllocation: null,
+  infiltrationStatus: null,
 };
 
 // === PORT-BASED STATUS READING ===
@@ -563,6 +598,8 @@ export function readStatusPorts(ns: NS): void {
   if (faction) cachedData.factionError = null;
 
   cachedData.fleetAllocation = peekStatus<FleetAllocation>(ns, STATUS_PORTS.fleet, STALE_THRESHOLD_MS);
+
+  cachedData.infiltrationStatus = peekStatus<InfiltrationStatus>(ns, STATUS_PORTS.infiltration, STALE_THRESHOLD_MS);
 }
 
 // === TOOL CONTROL ===
@@ -578,6 +615,7 @@ function clearToolStatus(tool: ToolName): void {
     case "work":    cachedData.workStatus = null; cachedData.workError = null; break;
     case "darkweb": cachedData.darkwebStatus = null; cachedData.darkwebError = null; break;
     case "faction": cachedData.factionStatus = null; cachedData.factionError = null; break;
+    case "infiltration": cachedData.infiltrationStatus = null; break;
   }
 }
 
@@ -724,5 +762,6 @@ export function getStateSnapshot(): DashboardState {
     factionStatus: cachedData.factionStatus,
     factionError: cachedData.factionError,
     fleetAllocation: cachedData.fleetAllocation,
+    infiltrationStatus: cachedData.infiltrationStatus,
   };
 }

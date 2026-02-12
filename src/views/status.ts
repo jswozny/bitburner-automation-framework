@@ -53,6 +53,7 @@ const DAEMON_DOCS: Record<ToolName, { start: string; stop: string; flags: string
              flags: "--focus <focus> (strength, defense, dexterity, agility, hacking, charisma, balance-combat, balance-all, crime-money, crime-stats)" },
   faction: { start: "run daemons/faction.js", stop: "kill daemons/faction.js",
              flags: "--preferred-city <city> (Sector-12, Aevum, Chongqing, New Tokyo, Ishima, Volhaven)" },
+  infiltration: { start: "run daemons/infiltration.js", stop: "kill daemons/infiltration.js", flags: null },
 };
 
 // === RUNNING STATE ===

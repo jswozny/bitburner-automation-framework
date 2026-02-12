@@ -20,6 +20,7 @@ export const STATUS_PORTS = {
   bitnode: 8,
   faction: 9,
   fleet: 10,
+  infiltration: 11,
 } as const;
 
 export const QUEUE_PORT = 19;
@@ -27,7 +28,7 @@ export const COMMAND_PORT = 20;
 
 // === TOOL NAMES ===
 
-export type ToolName = "nuke" | "pserv" | "share" | "rep" | "hack" | "darkweb" | "work" | "faction";
+export type ToolName = "nuke" | "pserv" | "share" | "rep" | "hack" | "darkweb" | "work" | "faction" | "infiltration";
 
 // === TOOL SCRIPTS (daemon paths) ===
 
@@ -40,6 +41,7 @@ export const TOOL_SCRIPTS: Record<ToolName, string> = {
   darkweb: "daemons/darkweb.js",
   work: "daemons/work.js",
   faction: "daemons/faction.js",
+  infiltration: "daemons/infiltration.js",
 };
 
 // === PRIORITY CONSTANTS ===
@@ -67,7 +69,7 @@ export interface QueueEntry {
 
 export interface Command {
   tool: ToolName;
-  action: "start" | "stop" | "open-tail" | "run-script" | "start-faction-work" | "set-focus" | "start-training" | "install-augments" | "run-backdoors" | "restart-rep-daemon" | "join-faction" | "restart-faction-daemon" | "restart-hack-daemon" | "restart-share-daemon";
+  action: "start" | "stop" | "open-tail" | "run-script" | "start-faction-work" | "set-focus" | "start-training" | "install-augments" | "run-backdoors" | "restart-rep-daemon" | "join-faction" | "restart-faction-daemon" | "restart-hack-daemon" | "restart-share-daemon" | "stop-infiltration" | "kill-infiltration" | "configure-infiltration";
   scriptPath?: string;
   scriptArgs?: string[];
   factionName?: string;
@@ -79,6 +81,8 @@ export interface Command {
   hackMaxBatches?: number;
   hackHomeReserve?: number;
   shareTargetPercent?: number;
+  infiltrationTarget?: string;
+  infiltrationSolvers?: string[];
 }
 
 // === STATUS INTERFACES ===
@@ -570,6 +574,93 @@ export interface FactionStatus {
   lastAction?: string;
 }
 
+// === INFILTRATION STATE ===
+
+export type InfiltrationState =
+  | "IDLE"
+  | "QUERYING"
+  | "NAVIGATING"
+  | "IN_GAME"
+  | "SOLVING"
+  | "REWARD_SELECT"
+  | "COMPLETING"
+  | "ERROR"
+  | "STOPPING";
+
+export interface InfiltrationLogEntry {
+  timestamp: number;
+  level: "info" | "warn" | "error";
+  message: string;
+}
+
+export interface InfiltrationLocationInfo {
+  name: string;
+  city: string;
+  difficulty: number;
+  maxClearanceLevel: number;
+  startingSecurityLevel: number;
+  reward: {
+    tradeRep: number;
+    sellCash: number;
+  };
+}
+
+export interface InfiltrationStatus {
+  state: InfiltrationState;
+  paused: boolean;
+
+  currentTarget?: string;
+  currentCity?: string;
+  currentGame?: number;
+  totalGames?: number;
+  currentSolver?: string;
+  expectedReward?: {
+    tradeRep: number;
+    sellCash: number;
+    faction?: string;
+  };
+
+  runsCompleted: number;
+  runsFailed: number;
+  successRate: number;
+  totalRepEarned: number;
+  totalCashEarned: number;
+  rewardBreakdown: {
+    factionRep: number;
+    money: number;
+  };
+
+  companyStats: Record<string, {
+    attempts: number;
+    successes: number;
+    failures: number;
+  }>;
+
+  solverStats: Record<string, {
+    attempts: number;
+    successes: number;
+    failures: number;
+    avgSolveTimeMs: number;
+  }>;
+
+  config: {
+    targetCompanyOverride?: string;
+    enabledSolvers: string[];
+  };
+
+  log: InfiltrationLogEntry[];
+
+  error?: {
+    message: string;
+    solver?: string;
+    timestamp: number;
+  };
+
+  locations: InfiltrationLocationInfo[];
+}
+
+export const INFILTRATION_CONTROL_PORT = 12;
+
 // === DASHBOARD STATE ===
 
 export interface DashboardState {
@@ -588,6 +679,7 @@ export interface DashboardState {
   factionStatus: FactionStatus | null;
   factionError: string | null;
   fleetAllocation: FleetAllocation | null;
+  infiltrationStatus: InfiltrationStatus | null;
 }
 
 // === PLUGIN INTERFACE (for dashboard) ===

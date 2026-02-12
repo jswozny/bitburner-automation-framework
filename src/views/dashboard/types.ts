@@ -33,6 +33,7 @@ export type { WorkStatus as FormattedWorkStatus } from "/types/ports";
 export type { HackStatus as FormattedHackStatus } from "/types/ports";
 export type { TargetAssignment as FormattedTargetAssignment } from "/types/ports";
 export type { FactionStatus as FormattedFactionStatus } from "/types/ports";
+export type { InfiltrationStatus as FormattedInfiltrationStatus } from "/types/ports";
 
 // Legacy plugin interface (kept for any remaining references)
 import React from "lib/react";
