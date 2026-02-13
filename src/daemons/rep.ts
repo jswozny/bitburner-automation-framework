@@ -23,9 +23,6 @@ import { COLORS, makeBar, formatTime } from "/lib/utils";
 import { calcAvailableAfterKills, freeRamForTarget } from "/lib/ram-utils";
 import {
   getBasicFactionRep,
-  getAvailableAugs,
-  getFilteredAugs,
-  getOrderedAugs,
   analyzeFactions,
   findNextWorkableAugmentation,
   calculatePurchasePriority,
@@ -353,10 +350,10 @@ function computeTier2Status(
   const basicData = getBasicFactionRep(ns, player);
 
   // Find target faction and aug
-  let targetFaction = targetFactionOverride || basicData[0]?.name || "None";
-  let targetAug: string | null = null;
-  let repRequired = 0;
-  let augPrice = 0;
+  const targetFaction = targetFactionOverride || basicData[0]?.name || "None";
+  const targetAug: string | null = null;
+  const repRequired = 0;
+  const augPrice = 0;
 
   // Try to find the lowest rep aug we don't have rep for yet
   // This is a heuristic without full aug list access
@@ -898,7 +895,7 @@ async function runBasicMode(
     if (cyclesSinceUpgradeCheck >= UPGRADE_CHECK_INTERVAL) {
       cyclesSinceUpgradeCheck = 0;
       const potentialRam = calcAvailableAfterKills(ns) + currentTierRam;
-      const sf4Level = ns.getResetInfo().ownedSF.get(4) ?? 0;
+      //const sf4Level = ns.getResetInfo().ownedSF.get(4) ?? 0;
 
       // Check if we can afford a higher tier
       for (let i = REP_TIERS.length - 1; i > tier.tier; i--) {
