@@ -18,6 +18,7 @@ import {
   calculateBatchThreads,
   calculateBatchDelays,
   isTargetPrepped,
+  BATCH_WINDOW,
   type TargetScore,
   type BatchOp,
   type CyclePlan,
@@ -123,8 +124,8 @@ export function getTargets(ns: NS, maxTargets: number): TargetInfo[] {
 
     const hackTime = ns.getHackTime(hostname);
     const moneyMax = server.moneyMax ?? 0;
-    const minDifficulty = server.minDifficulty ?? 1;
-    const value = moneyMax / hackTime / minDifficulty;
+    const hackChance = ns.hackAnalyzeChance(hostname);
+    const value = (moneyMax * hackChance) / hackTime;
 
     targets.push({ hostname, value, moneyMax });
   }
@@ -509,8 +510,12 @@ export function planBatchCycle(
     const weakenTime = ns.getWeakenTime(hostname);
     const bt = calculateBatchThreads(ns, hostname, state.hackPercent, scriptRam);
 
+    // Cap at theoretical max: how many batches fit in one weaken cycle
+    const maxTheoreticalBatches = Math.max(1, Math.floor(weakenTime / BATCH_WINDOW));
+    const batchCap = Math.min(config.maxBatches, maxTheoreticalBatches);
+
     let planned = state.activeBatches;
-    while (planned < config.maxBatches) {
+    while (planned < batchCap) {
       const delays = calculateBatchDelays(hackTime, growTime, weakenTime, planned);
 
       const batchId = batchIdCounter.value++;

@@ -133,11 +133,7 @@ function computeFleetAllocation(
  */
 function computeOptimalBatches(totalFleetRam: number): number {
   if (totalFleetRam < 256) return 0;
-  if (totalFleetRam < 1024) return 1;
-  if (totalFleetRam < 4096) return 3;
-  if (totalFleetRam < 16384) return 5;
-  if (totalFleetRam < 65536) return 8;
-  return 12;
+  return 256; // Arbitrary limit for when it feels like too much for the game perf
 }
 
 /**
