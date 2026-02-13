@@ -157,16 +157,22 @@ function InfiltrationOverviewCard({ status, running, toolId, error, pid }: Overv
               </span>
             </div>
           )}
-          {status?.expectedReward && (
-            <div style={styles.stat}>
-              <span style={styles.statLabel}>Reward</span>
-              <span style={{ color: status.expectedReward.faction ? "#00ffff" : "#ffff00", fontSize: "11px" }}>
-                {status.expectedReward.faction
-                  ? `~${formatNumber(status.expectedReward.tradeRep)} rep (${status.expectedReward.faction})`
-                  : `$${formatNumber(status.expectedReward.sellCash)}`}
-              </span>
-            </div>
-          )}
+          {status?.expectedReward && (() => {
+            const mult = status.repVerification?.observedMultiplier;
+            const hasEff = mult !== null && mult !== undefined && status.expectedReward.faction;
+            const effectiveRep = hasEff ? status.expectedReward.tradeRep * mult : status.expectedReward.tradeRep;
+            const effPct = hasEff ? (mult * 100).toFixed(0) : null;
+            return (
+              <div style={styles.stat}>
+                <span style={styles.statLabel}>Reward</span>
+                <span style={{ color: status.expectedReward.faction ? "#00ffff" : "#ffff00", fontSize: "11px" }}>
+                  {status.expectedReward.faction
+                    ? `~${formatNumber(effectiveRep)} rep${effPct ? ` (${effPct}%)` : ""}`
+                    : `$${formatNumber(status.expectedReward.sellCash)}`}
+                </span>
+              </div>
+            );
+          })()}
         </>
       )}
     </div>
@@ -257,19 +263,74 @@ function InfiltrationDetailPanel({ status, running, toolId, error, pid }: Detail
       )}
 
       {/* Expected Reward */}
-      {status.expectedReward && (
-        <div style={styles.card}>
-          <div style={{ color: "#00ffff", fontSize: "12px", marginBottom: "4px" }}>EXPECTED REWARD</div>
-          <div style={styles.stat}>
-            <span style={styles.statLabel}>
-              {status.expectedReward.faction ? "Faction Rep" : "Cash"}
-            </span>
-            <span style={{ color: status.expectedReward.faction ? "#00ffff" : "#ffff00" }}>
-              {status.expectedReward.faction
-                ? `${formatNumber(status.expectedReward.tradeRep)} (${status.expectedReward.faction})`
-                : `$${formatNumber(status.expectedReward.sellCash)}`}
-            </span>
+      {status.expectedReward && (() => {
+        const mult = status.repVerification?.observedMultiplier;
+        const hasEff = mult !== null && mult !== undefined && status.expectedReward.faction;
+        const effPct = hasEff ? mult * 100 : null;
+        const effectiveRep = hasEff ? status.expectedReward.tradeRep * mult : null;
+        return (
+          <div style={styles.card}>
+            <div style={{ color: "#00ffff", fontSize: "12px", marginBottom: "4px" }}>
+              EXPECTED REWARD
+              {effPct !== null && (
+                <span style={{ color: effPct > 50 ? "#00ff00" : effPct > 10 ? "#ffff00" : "#ff4444", marginLeft: "8px", fontWeight: "normal" }}>
+                  {effPct.toFixed(1)}% eff
+                </span>
+              )}
+            </div>
+            <div style={styles.stat}>
+              <span style={styles.statLabel}>
+                {status.expectedReward.faction ? "Faction Rep" : "Cash"}
+              </span>
+              <span style={{ color: status.expectedReward.faction ? "#00ffff" : "#ffff00" }}>
+                {status.expectedReward.faction
+                  ? effectiveRep !== null
+                    ? `~${formatNumber(effectiveRep)} (${formatNumber(status.expectedReward.tradeRep)} API max) — ${status.expectedReward.faction}`
+                    : `${formatNumber(status.expectedReward.tradeRep)} (${status.expectedReward.faction})`
+                  : `$${formatNumber(status.expectedReward.sellCash)}`}
+              </span>
+            </div>
           </div>
+        );
+      })()}
+
+      {/* Market Demand */}
+      {status.repVerification && status.repVerification.observedMultiplier !== null && (
+        <div style={styles.card}>
+          <div style={{ color: "#00ffff", fontSize: "12px", marginBottom: "4px" }}>MARKET DEMAND</div>
+          {(() => {
+            const rv = status.repVerification;
+            const effPct = (rv.observedMultiplier ?? 0) * 100;
+            const effColor = effPct > 50 ? "#00ff00" : effPct > 10 ? "#ffff00" : "#ff4444";
+            return (
+              <>
+                <div style={styles.stat}>
+                  <span style={styles.statLabel}>Reward Efficiency</span>
+                  <span style={{ color: effColor, fontWeight: "bold", fontSize: "14px" }}>
+                    {effPct.toFixed(1)}%
+                  </span>
+                </div>
+                <div style={styles.stat}>
+                  <span style={styles.statLabel}>Last Actual / Expected</span>
+                  <span style={styles.statValue}>
+                    {formatNumber(rv.lastActualDelta)} / {formatNumber(rv.lastExpectedDelta)}
+                  </span>
+                </div>
+                <div style={styles.stat}>
+                  <span style={styles.statLabel}>Verified Rep Total</span>
+                  <span style={{ color: "#00ffff" }}>{formatNumber(rv.totalVerifiedRep)}</span>
+                </div>
+                {rv.consecutiveLowEfficiency > 0 && (
+                  <div style={styles.stat}>
+                    <span style={styles.statLabel}>Low Efficiency Streak</span>
+                    <span style={{ color: "#ff4444" }}>
+                      {rv.consecutiveLowEfficiency} / {2} (auto-pause)
+                    </span>
+                  </div>
+                )}
+              </>
+            );
+          })()}
         </div>
       )}
 

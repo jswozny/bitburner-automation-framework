@@ -67,6 +67,12 @@ let lastActualDelta = 0;
 let lastExpectedDelta = 0;
 let totalVerifiedRep = 0;
 
+// Market demand tracking
+let observedMultiplier: number | null = null;
+let consecutiveLowEfficiency = 0;
+const LOW_EFFICIENCY_THRESHOLD = 0.05; // 5%
+const LOW_EFFICIENCY_MAX_CONSECUTIVE = 2;
+
 // Error state
 let errorInfo: { message: string; solver?: string; timestamp: number } | undefined;
 
@@ -133,6 +139,8 @@ function publishCurrentStatus(ns: NS): void {
       lastExpectedDelta,
       consecutiveZeroDeltas,
       totalVerifiedRep,
+      observedMultiplier,
+      consecutiveLowEfficiency,
     },
     log: [...logBuffer],
     error: errorInfo,
@@ -329,6 +337,10 @@ function updateOverlay(): void {
 
   if (runsCompleted > 0 || runsFailed > 0) {
     text += `\n✓${runsCompleted} ✗${runsFailed}`;
+  }
+
+  if (observedMultiplier !== null) {
+    text += `\nEff: ${(observedMultiplier * 100).toFixed(1)}%`;
   }
 
   progress.textContent = text;
@@ -586,13 +598,11 @@ async function runSingleInfiltration(ns: NS): Promise<boolean> {
           lastActualDelta = actualDelta;
           lastExpectedDelta = expectedDelta;
 
-          if (actualDelta > 0) {
-            totalVerifiedRep += actualDelta;
-            totalRepEarned += actualDelta;
-            consecutiveZeroDeltas = 0;
-            log("info", `Rep verification: +${actualDelta.toFixed(0)} actual vs ~${expectedDelta.toFixed(0)} expected`);
-          } else {
+          if (actualDelta <= 0) {
+            // Zero delta — anti-cheat path
             consecutiveZeroDeltas++;
+            consecutiveLowEfficiency++;
+            observedMultiplier = 0;
             log("warn", `Rep verification: ZERO delta (expected ~${expectedDelta.toFixed(0)}) — ${consecutiveZeroDeltas} consecutive`);
 
             if (consecutiveZeroDeltas >= 3) {
@@ -604,6 +614,34 @@ async function runSingleInfiltration(ns: NS): Promise<boolean> {
                 timestamp: Date.now(),
               };
             }
+          } else if (expectedDelta > 0 && actualDelta / expectedDelta < LOW_EFFICIENCY_THRESHOLD) {
+            // Positive but low — market saturation path
+            const efficiency = actualDelta / expectedDelta;
+            observedMultiplier = efficiency;
+            totalVerifiedRep += actualDelta;
+            totalRepEarned += actualDelta;
+            consecutiveZeroDeltas = 0;
+            consecutiveLowEfficiency++;
+            log("warn", `Rep verification: +${actualDelta.toFixed(0)} actual vs ~${expectedDelta.toFixed(0)} expected — ${(efficiency * 100).toFixed(1)}% efficiency`);
+
+            if (consecutiveLowEfficiency >= LOW_EFFICIENCY_MAX_CONSECUTIVE) {
+              log("error", `Market demand saturated — ${(efficiency * 100).toFixed(1)}% efficiency. Wait ~10h for recovery.`);
+              stopRequested = true;
+              state = "ERROR";
+              errorInfo = {
+                message: `Market demand saturated — ${(efficiency * 100).toFixed(1)}% efficiency. Wait ~10h for recovery.`,
+                timestamp: Date.now(),
+              };
+            }
+          } else {
+            // Normal — good efficiency
+            const efficiency = expectedDelta > 0 ? actualDelta / expectedDelta : 1;
+            observedMultiplier = efficiency;
+            totalVerifiedRep += actualDelta;
+            totalRepEarned += actualDelta;
+            consecutiveZeroDeltas = 0;
+            consecutiveLowEfficiency = 0;
+            log("info", `Rep verification: +${actualDelta.toFixed(0)} actual vs ~${expectedDelta.toFixed(0)} expected — ${(efficiency * 100).toFixed(1)}% efficiency`);
           }
         } catch {
           // getFactionRep failed after reward — use estimated
@@ -618,6 +656,7 @@ async function runSingleInfiltration(ns: NS): Promise<boolean> {
       } else {
         totalCashEarned += loc?.reward.sellCash ?? 0;
         consecutiveZeroDeltas = 0;
+        consecutiveLowEfficiency = 0;
         rewardBreakdown.money++;
       }
 

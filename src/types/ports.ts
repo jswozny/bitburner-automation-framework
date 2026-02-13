@@ -650,6 +650,8 @@ export interface InfiltrationStatus {
     lastExpectedDelta: number;
     consecutiveZeroDeltas: number;
     totalVerifiedRep: number;
+    observedMultiplier: number | null;
+    consecutiveLowEfficiency: number;
   };
 
   error?: {
