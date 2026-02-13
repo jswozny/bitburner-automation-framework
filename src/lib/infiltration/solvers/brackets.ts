@@ -36,19 +36,23 @@ export const bracketsSolver: MiniGameSolver = {
 
     // The brackets are shown in a large Typography element (typically with fontSize ~5em)
     // Contains the left (open) brackets + any already-typed right brackets
-    const paragraphs = container.querySelectorAll("p");
+    // Poll for bracket text — React may not have rendered <p> elements on the first frame
     let bracketText = "";
-
-    for (const p of paragraphs) {
-      const text = p.textContent?.trim() ?? "";
-      // The bracket display has opening bracket chars
-      if (text && /^[(\[{<)\]}>]+$/.test(text)) {
-        bracketText = text;
-        break;
+    for (let attempt = 0; attempt < 20; attempt++) {
+      const current = dom.getGameContainer() ?? container;
+      const paragraphs = current.querySelectorAll("p");
+      for (const p of paragraphs) {
+        const text = p.textContent?.trim() ?? "";
+        if (text && /^[(\[{<)\]}>]+$/.test(text)) {
+          bracketText = text;
+          break;
+        }
       }
+      if (bracketText) break;
+      await dom.sleep(50);
     }
 
-    if (!bracketText) throw new Error("Brackets: could not find bracket text");
+    if (!bracketText) throw new Error("Brackets: could not find bracket text after 20 retries");
 
     // Extract only the opening brackets (chars that are in BRACKET_MAP keys)
     const openBrackets: string[] = [];

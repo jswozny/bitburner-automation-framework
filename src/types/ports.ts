@@ -645,6 +645,13 @@ export interface InfiltrationStatus {
 
   log: InfiltrationLogEntry[];
 
+  repVerification?: {
+    lastActualDelta: number;
+    lastExpectedDelta: number;
+    consecutiveZeroDeltas: number;
+    totalVerifiedRep: number;
+  };
+
   error?: {
     message: string;
     solver?: string;

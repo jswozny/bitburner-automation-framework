@@ -61,6 +61,12 @@ let locations: InfiltrationLocationInfo[] = [];
 const logBuffer: InfiltrationLogEntry[] = [];
 const LOG_MAX = 100;
 
+// Rep verification
+let consecutiveZeroDeltas = 0;
+let lastActualDelta = 0;
+let lastExpectedDelta = 0;
+let totalVerifiedRep = 0;
+
 // Error state
 let errorInfo: { message: string; solver?: string; timestamp: number } | undefined;
 
@@ -122,12 +128,19 @@ function publishCurrentStatus(ns: NS): void {
       rewardMode: config.rewardMode,
       enabledSolvers: Array.from(config.enabledSolvers),
     },
+    repVerification: {
+      lastActualDelta,
+      lastExpectedDelta,
+      consecutiveZeroDeltas,
+      totalVerifiedRep,
+    },
     log: [...logBuffer],
     error: errorInfo,
     locations: [...locations],
   };
 
   publishStatus(ns, STATUS_PORTS.infiltration, status);
+  updateOverlay();
 }
 
 // === DATA FETCHING ===
@@ -237,6 +250,104 @@ function checkControlPort(ns: NS): void {
       // Invalid control message
     }
   }
+}
+
+// === FLOATING OVERLAY ===
+
+const OVERLAY_ID = "infiltration-overlay";
+
+function createOverlay(): void {
+  const doc = globalThis["document"] as Document;
+  if (doc.getElementById(OVERLAY_ID)) return;
+
+  const overlay = doc.createElement("div");
+  overlay.id = OVERLAY_ID;
+  overlay.style.cssText = [
+    "position: fixed",
+    "bottom: 16px",
+    "right: 16px",
+    "width: 200px",
+    "background: rgba(20, 20, 30, 0.85)",
+    "border: 1px solid rgba(100, 200, 255, 0.3)",
+    "border-radius: 6px",
+    "padding: 10px 12px",
+    "color: #c8e6ff",
+    "font-family: monospace",
+    "font-size: 12px",
+    "z-index: 10000",
+    "pointer-events: auto",
+    "user-select: none",
+  ].join("; ");
+
+  const progressLine = doc.createElement("div");
+  progressLine.id = `${OVERLAY_ID}-progress`;
+  progressLine.style.marginBottom = "8px";
+  progressLine.textContent = "Infiltration starting...";
+
+  const btn = doc.createElement("button");
+  btn.id = `${OVERLAY_ID}-btn`;
+  btn.textContent = "Stop After Run";
+  btn.style.cssText = [
+    "width: 100%",
+    "padding: 4px 8px",
+    "background: rgba(255, 100, 100, 0.2)",
+    "border: 1px solid rgba(255, 100, 100, 0.5)",
+    "border-radius: 4px",
+    "color: #ffa0a0",
+    "font-family: monospace",
+    "font-size: 11px",
+    "cursor: pointer",
+  ].join("; ");
+  btn.addEventListener("click", () => {
+    stopRequested = true;
+    btn.textContent = "Stopping...";
+    btn.style.color = "#ff4444";
+    btn.style.borderColor = "#ff4444";
+    btn.disabled = true;
+  });
+
+  overlay.appendChild(progressLine);
+  overlay.appendChild(btn);
+  doc.body.appendChild(overlay);
+}
+
+function updateOverlay(): void {
+  const doc = globalThis["document"] as Document;
+  const progress = doc.getElementById(`${OVERLAY_ID}-progress`);
+  if (!progress) return;
+
+  let text: string;
+  if (state === "IDLE" || state === "QUERYING") {
+    text = "Preparing...";
+  } else if (currentTarget && totalGames > 0) {
+    text = `${currentGame}/${totalGames} — ${currentTarget}`;
+  } else if (currentTarget) {
+    text = currentTarget;
+  } else {
+    text = state;
+  }
+
+  if (runsCompleted > 0 || runsFailed > 0) {
+    text += `\n✓${runsCompleted} ✗${runsFailed}`;
+  }
+
+  progress.textContent = text;
+  progress.style.whiteSpace = "pre-line";
+
+  // Reset button between runs if not stopping
+  const btn = doc.getElementById(`${OVERLAY_ID}-btn`) as HTMLButtonElement | null;
+  if (btn && !stopRequested) {
+    btn.textContent = "Stop After Run";
+    btn.style.color = "#ffa0a0";
+    btn.style.borderColor = "rgba(255, 100, 100, 0.5)";
+    btn.disabled = false;
+  }
+}
+
+function removeOverlay(): void {
+  const doc = globalThis["document"] as Document;
+  const overlay = doc.getElementById(OVERLAY_ID);
+  if (overlay) overlay.remove();
 }
 
 // === SINGLE INFILTRATION RUN ===
@@ -450,15 +561,63 @@ async function runSingleInfiltration(ns: NS): Promise<boolean> {
     log("info", `Selecting reward: ${reward.type}${reward.faction ? ` (${reward.faction})` : ""}`);
 
     try {
+      const loc = locations.find(l => l.name === target.name);
+
+      // Snapshot rep before reward if doing faction-rep
+      let repBefore: number | null = null;
+      if (reward.type === "faction-rep" && reward.faction) {
+        try {
+          repBefore = ns.singularity.getFactionRep(reward.faction);
+        } catch {
+          // API unavailable — fall back to estimated tracking
+        }
+      }
+
       await selectReward(domUtils, reward.type, reward.faction);
 
-      // Track earnings
-      const loc = locations.find(l => l.name === target.name);
-      if (reward.type === "faction-rep") {
+      // Verify rep after reward
+      if (reward.type === "faction-rep" && reward.faction && repBefore !== null) {
+        await domUtils.sleep(800); // Wait for rep to apply
+        try {
+          const repAfter = ns.singularity.getFactionRep(reward.faction);
+          const actualDelta = repAfter - repBefore;
+          const expectedDelta = loc?.reward.tradeRep ?? 0;
+
+          lastActualDelta = actualDelta;
+          lastExpectedDelta = expectedDelta;
+
+          if (actualDelta > 0) {
+            totalVerifiedRep += actualDelta;
+            totalRepEarned += actualDelta;
+            consecutiveZeroDeltas = 0;
+            log("info", `Rep verification: +${actualDelta.toFixed(0)} actual vs ~${expectedDelta.toFixed(0)} expected`);
+          } else {
+            consecutiveZeroDeltas++;
+            log("warn", `Rep verification: ZERO delta (expected ~${expectedDelta.toFixed(0)}) — ${consecutiveZeroDeltas} consecutive`);
+
+            if (consecutiveZeroDeltas >= 3) {
+              log("error", `3 consecutive zero-delta rep runs — anti-cheat may be blocking rewards. Stopping.`);
+              stopRequested = true;
+              state = "ERROR";
+              errorInfo = {
+                message: "Rep not applying — 3 consecutive zero-delta runs detected. Anti-cheat may be active.",
+                timestamp: Date.now(),
+              };
+            }
+          }
+        } catch {
+          // getFactionRep failed after reward — use estimated
+          totalRepEarned += loc?.reward.tradeRep ?? 0;
+        }
+
+        rewardBreakdown.factionRep++;
+      } else if (reward.type === "faction-rep") {
+        // No verification available — use estimated
         totalRepEarned += loc?.reward.tradeRep ?? 0;
         rewardBreakdown.factionRep++;
       } else {
         totalCashEarned += loc?.reward.sellCash ?? 0;
+        consecutiveZeroDeltas = 0;
         rewardBreakdown.money++;
       }
 
@@ -513,6 +672,10 @@ export async function main(ns: NS): Promise<void> {
   const controlHandle = ns.getPortHandle(INFILTRATION_CONTROL_PORT);
   controlHandle.clear();
 
+  // Create floating overlay and register cleanup
+  createOverlay();
+  ns.atExit(() => removeOverlay());
+
   log("info", "Infiltration daemon started");
   publishCurrentStatus(ns);
 
@@ -533,6 +696,7 @@ export async function main(ns: NS): Promise<void> {
       }
 
       log("info", "Daemon stopped");
+      removeOverlay();
       publishCurrentStatus(ns);
       return;
     }
