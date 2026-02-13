@@ -436,7 +436,21 @@ function computeHighTierStatus(
   const purchasePlan = calculatePurchasePriority(ns, factionData);
 
   // Use workable faction target
-  const target = findNextWorkableAugmentation(factionData);
+  let target = findNextWorkableAugmentation(factionData);
+
+  // Override with specific faction if requested
+  if (targetFactionOverride) {
+    const forcedFaction = factionData.find(f => f.name === targetFactionOverride);
+    if (forcedFaction && forcedFaction.availableAugs.length > 0) {
+      const nextAug = forcedFaction.availableAugs.find(a => a.repReq > forcedFaction.currentRep)
+        ?? forcedFaction.availableAugs[0];
+      target = {
+        aug: nextAug,
+        faction: forcedFaction,
+        repGap: Math.max(0, nextAug.repReq - forcedFaction.currentRep),
+      };
+    }
+  }
 
   // Get non-workable faction progress
   const nonWorkableProgress = getNonWorkableFactionProgress(factionData);

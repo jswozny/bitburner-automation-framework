@@ -698,6 +698,31 @@ export async function main(ns: NS): Promise<void> {
   ns.tail();
   _ns = ns;
 
+  // Reset module-level state (persists across restarts in Bitburner)
+  state = "IDLE";
+  stopRequested = false;
+  currentTarget = undefined;
+  currentCity = undefined;
+  currentGame = 0;
+  totalGames = 0;
+  currentSolver = undefined;
+  runsCompleted = 0;
+  runsFailed = 0;
+  totalRepEarned = 0;
+  totalCashEarned = 0;
+  rewardBreakdown.factionRep = 0;
+  rewardBreakdown.money = 0;
+  for (const key of Object.keys(companyStats)) delete companyStats[key];
+  locations = [];
+  logBuffer.length = 0;
+  consecutiveZeroDeltas = 0;
+  lastActualDelta = 0;
+  lastExpectedDelta = 0;
+  totalVerifiedRep = 0;
+  observedMultiplier = null;
+  consecutiveLowEfficiency = 0;
+  errorInfo = undefined;
+
   // Install the isTrusted bypass before the game registers its keydown handler
   installTrustBypass();
 
