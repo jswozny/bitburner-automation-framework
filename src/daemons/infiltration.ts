@@ -742,9 +742,10 @@ export async function main(ns: NS): Promise<void> {
 
   log("info", "Infiltration daemon started");
   publishCurrentStatus(ns);
+  const stayRunning = true;
 
   // === MAIN LOOP ===
-  while (true) {
+  while (stayRunning) {
     // Check control port
     checkControlPort(ns);
 
