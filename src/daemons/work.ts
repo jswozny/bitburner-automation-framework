@@ -40,6 +40,8 @@ const FOCUS_OPTIONS: { value: WorkFocus; label: string }[] = [
   { value: "balance-all", label: "Balance All" },
   { value: "crime-money", label: "Crime (Money)" },
   { value: "crime-stats", label: "Crime (Stats)" },
+  { value: "crime-karma", label: "Crime (Karma)" },
+  { value: "crime-kills", label: "Crime (Kills)" },
 ];
 
 /**
@@ -147,35 +149,53 @@ function computeWorkStatus(ns: NS): WorkStatus {
           rawStatus.currentCrime.defExpPerMin +
           rawStatus.currentCrime.dexExpPerMin +
           rawStatus.currentCrime.agiExpPerMin,
+        karmaPerMin: rawStatus.currentCrime.karmaPerMin,
+        karmaPerMinFormatted: ns.formatNumber(Math.abs(rawStatus.currentCrime.karmaPerMin)),
+        killsPerMin: rawStatus.currentCrime.killsPerMin,
+        killsPerMinFormatted: ns.formatNumber(rawStatus.currentCrime.killsPerMin),
       }
     : null;
 
   // Detect pending crime switch
   let pendingCrimeSwitch: WorkStatus["pendingCrimeSwitch"] = null;
-  const isCrimeMode = rawStatus.currentFocus === "crime-money" || rawStatus.currentFocus === "crime-stats";
+  const isCrimeMode = rawStatus.currentFocus === "crime-money" || rawStatus.currentFocus === "crime-stats"
+    || rawStatus.currentFocus === "crime-karma" || rawStatus.currentFocus === "crime-kills";
   if (isCrimeMode && rawStatus.currentWork?.type === "crime" && rawStatus.currentCrime) {
     const runningCrimeName = rawStatus.currentWork.stat;
     const bestCrimeName = rawStatus.currentCrime.crime;
     if (runningCrimeName && runningCrimeName !== bestCrimeName) {
-      const isMoney = rawStatus.currentFocus === "crime-money";
-      const metric = isMoney ? "$/min" : "combat exp/min";
       const runningAnalysis = analyzeCrime(ns, runningCrimeName as CrimeName);
-      const currentValue = isMoney
-        ? runningAnalysis.moneyPerMin
-        : runningAnalysis.strExpPerMin + runningAnalysis.defExpPerMin +
-          runningAnalysis.dexExpPerMin + runningAnalysis.agiExpPerMin;
-      const bestValue = isMoney
-        ? rawStatus.currentCrime.moneyPerMin
-        : rawStatus.currentCrime.strExpPerMin + rawStatus.currentCrime.defExpPerMin +
-          rawStatus.currentCrime.dexExpPerMin + rawStatus.currentCrime.agiExpPerMin;
+
+      const getCrimeMetric = (analysis: typeof runningAnalysis): { value: number; metric: string } => {
+        switch (rawStatus.currentFocus) {
+          case "crime-money":
+            return { value: analysis.moneyPerMin, metric: "$/min" };
+          case "crime-stats":
+            return {
+              value: analysis.strExpPerMin + analysis.defExpPerMin +
+                analysis.dexExpPerMin + analysis.agiExpPerMin,
+              metric: "combat exp/min",
+            };
+          case "crime-karma":
+            return { value: Math.abs(analysis.karmaPerMin), metric: "karma/min" };
+          case "crime-kills":
+            return { value: analysis.killsPerMin, metric: "kills/min" };
+          default:
+            return { value: analysis.moneyPerMin, metric: "$/min" };
+        }
+      };
+
+      const current = getCrimeMetric(runningAnalysis);
+      const best = getCrimeMetric(rawStatus.currentCrime);
+
       pendingCrimeSwitch = {
         currentCrime: runningCrimeName,
         bestCrime: bestCrimeName,
-        currentValue,
-        bestValue,
-        currentValueFormatted: ns.formatNumber(currentValue),
-        bestValueFormatted: ns.formatNumber(bestValue),
-        metric,
+        currentValue: current.value,
+        bestValue: best.value,
+        currentValueFormatted: ns.formatNumber(current.value),
+        bestValueFormatted: ns.formatNumber(best.value),
+        metric: current.metric,
       };
     }
   }
@@ -357,6 +377,8 @@ export async function main(ns: NS): Promise<void> {
       "balance-combat",
       "crime-money",
       "crime-stats",
+      "crime-karma",
+      "crime-kills",
     ];
 
     if (validFocuses.includes(flags.focus as WorkFocus)) {

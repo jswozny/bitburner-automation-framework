@@ -51,7 +51,9 @@ export type WorkFocus =
   | "balance-all"
   | "balance-combat"
   | "crime-money"
-  | "crime-stats";
+  | "crime-stats"
+  | "crime-karma"
+  | "crime-kills";
 
 export interface WorkConfig {
   focus: WorkFocus;
@@ -172,6 +174,8 @@ export function getSkillsForFocus(focus: WorkFocus): string[] {
       return ["str", "def", "dex", "agi", "hacking", "charisma"];
     case "crime-money":
     case "crime-stats":
+    case "crime-karma":
+    case "crime-kills":
       return []; // Crimes don't target specific skills
     default:
       return [];
@@ -353,6 +357,22 @@ export function getBestCrimeForMoney(ns: NS): CrimeAnalysis {
 }
 
 /**
+ * Find the best crime for karma loss (most negative karma per minute)
+ */
+export function getBestCrimeForKarma(ns: NS): CrimeAnalysis {
+  const crimes = analyzeAllCrimes(ns, "karmaPerMin");
+  // karmaPerMin is negative, so the most negative (best for grinding) is last in descending sort
+  return crimes[crimes.length - 1];
+}
+
+/**
+ * Find the best crime for kills per minute
+ */
+export function getBestCrimeForKills(ns: NS): CrimeAnalysis {
+  return findBestCrime(ns, "killsPerMin");
+}
+
+/**
  * Find the best crime for combat stats exp
  */
 export function getBestCrimeForStats(ns: NS): CrimeAnalysis {
@@ -476,6 +496,28 @@ export function getWorkStatus(ns: NS): WorkStatus {
       needsTravel: false,
       travelCost: 0,
     };
+  } else if (config.focus === "crime-karma") {
+    currentCrime = getBestCrimeForKarma(ns);
+    recommendedAction = {
+      type: "crime",
+      location: currentCrime.crime,
+      city: player.city,
+      skill: "karma",
+      expMult: Math.abs(currentCrime.karmaPerMin),
+      needsTravel: false,
+      travelCost: 0,
+    };
+  } else if (config.focus === "crime-kills") {
+    currentCrime = getBestCrimeForKills(ns);
+    recommendedAction = {
+      type: "crime",
+      location: currentCrime.crime,
+      city: player.city,
+      skill: "kills",
+      expMult: currentCrime.killsPerMin,
+      needsTravel: false,
+      travelCost: 0,
+    };
   } else {
     // Gym/University training
     const skills = getSkillsForFocus(config.focus);
@@ -565,15 +607,26 @@ export function runWorkCycle(ns: NS): boolean {
   const preserveFocus = ns.singularity.isFocused();
 
   // Handle crime modes
-  if (config.focus === "crime-money" || config.focus === "crime-stats") {
+  const isCrimeMode = config.focus === "crime-money" || config.focus === "crime-stats"
+    || config.focus === "crime-karma" || config.focus === "crime-kills";
+  if (isCrimeMode) {
+    const getBest = () => {
+      switch (config.focus) {
+        case "crime-money": return getBestCrimeForMoney(ns);
+        case "crime-stats": return getBestCrimeForStats(ns);
+        case "crime-karma": return getBestCrimeForKarma(ns);
+        case "crime-kills": return getBestCrimeForKills(ns);
+        default: return getBestCrimeForMoney(ns);
+      }
+    };
+
     const currentWork = ns.singularity.getCurrentWork();
 
     // If already doing crime, check if a better one is available
     if (currentWork?.type === "CRIME") {
       const crimeWork = currentWork as { type: string; crimeType: string };
       const runningCrime = crimeWork.crimeType;
-      const bestCrime =
-        config.focus === "crime-money" ? getBestCrimeForMoney(ns) : getBestCrimeForStats(ns);
+      const bestCrime = getBest();
 
       if (bestCrime.crime !== runningCrime) {
         // Switch to better crime immediately (crimes auto-repeat, so we must interrupt)
@@ -584,9 +637,7 @@ export function runWorkCycle(ns: NS): boolean {
     }
 
     // Start the appropriate crime
-    const crime =
-      config.focus === "crime-money" ? getBestCrimeForMoney(ns) : getBestCrimeForStats(ns);
-
+    const crime = getBest();
     const timeMs = startCrime(ns, crime.crime, preserveFocus);
     return timeMs > 0;
   }

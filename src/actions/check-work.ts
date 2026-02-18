@@ -85,6 +85,8 @@ export async function main(ns: NS): Promise<void> {
     "balance-combat": "BAL-CMB",
     "crime-money": "CRIME $",
     "crime-stats": "CRIME XP",
+    "crime-karma": "CRIME K",
+    "crime-kills": "CRIME KL",
   };
 
   const combatStats = [player.skills.strength, player.skills.defense, player.skills.dexterity, player.skills.agility];

@@ -34,6 +34,8 @@ const FOCUS_OPTIONS: { value: WorkFocus; label: string; description: string }[] 
   { value: "balance-all", label: "Balance All", description: "Rotate all 6 skills" },
   { value: "crime-money", label: "Crime (Money)", description: "Best crime for $/min" },
   { value: "crime-stats", label: "Crime (Stats)", description: "Best crime for combat exp" },
+  { value: "crime-karma", label: "Crime (Karma)", description: "Best crime for karma loss" },
+  { value: "crime-kills", label: "Crime (Kills)", description: "Best crime for kills" },
 ];
 
 // === STATUS FORMATTING ===
@@ -170,6 +172,10 @@ function formatWorkStatus(ns: NS): FormattedWorkStatus | null {
               status.currentCrime.defExpPerMin +
               status.currentCrime.dexExpPerMin +
               status.currentCrime.agiExpPerMin,
+            karmaPerMin: status.currentCrime.karmaPerMin,
+            karmaPerMinFormatted: ns.formatNumber(Math.abs(status.currentCrime.karmaPerMin)),
+            killsPerMin: status.currentCrime.killsPerMin,
+            killsPerMinFormatted: ns.formatNumber(status.currentCrime.killsPerMin),
           }
         : null,
       pendingCrimeSwitch: null,
@@ -413,18 +419,36 @@ function WorkDetailPanel({
                       {status.crimeInfo.chanceFormatted}
                     </span>
                   </div>
-                  <div style={styles.stat}>
-                    <span style={styles.statLabel}>$/min</span>
-                    <span style={styles.statHighlight}>
-                      {status.crimeInfo.moneyPerMinFormatted}
-                    </span>
-                  </div>
-                  <div style={styles.stat}>
-                    <span style={styles.statLabel}>Combat exp/min</span>
-                    <span style={styles.statValue}>
-                      {status.crimeInfo.combatExpPerMin.toFixed(1)}
-                    </span>
-                  </div>
+                  {status.currentFocus === "crime-karma" ? (
+                    <div style={styles.stat}>
+                      <span style={styles.statLabel}>Karma/min</span>
+                      <span style={styles.statHighlight}>
+                        {status.crimeInfo.karmaPerMinFormatted}
+                      </span>
+                    </div>
+                  ) : status.currentFocus === "crime-kills" ? (
+                    <div style={styles.stat}>
+                      <span style={styles.statLabel}>Kills/min</span>
+                      <span style={styles.statHighlight}>
+                        {status.crimeInfo.killsPerMinFormatted}
+                      </span>
+                    </div>
+                  ) : (
+                    <>
+                      <div style={styles.stat}>
+                        <span style={styles.statLabel}>$/min</span>
+                        <span style={styles.statHighlight}>
+                          {status.crimeInfo.moneyPerMinFormatted}
+                        </span>
+                      </div>
+                      <div style={styles.stat}>
+                        <span style={styles.statLabel}>Combat exp/min</span>
+                        <span style={styles.statValue}>
+                          {status.crimeInfo.combatExpPerMin.toFixed(1)}
+                        </span>
+                      </div>
+                    </>
+                  )}
                 </div>
               )}
             </>

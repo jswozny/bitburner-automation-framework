@@ -51,7 +51,7 @@ const DAEMON_DOCS: Record<ToolName, { start: string; stop: string; flags: string
   rep:     { start: "run daemons/rep.js",      stop: "kill daemons/rep.js",     flags: null },
   darkweb: { start: "run daemons/darkweb.js",  stop: "kill daemons/darkweb.js", flags: null },
   work:    { start: "run daemons/work.js",     stop: "kill daemons/work.js",
-             flags: "--focus <focus> (strength, defense, dexterity, agility, hacking, charisma, balance-combat, balance-all, crime-money, crime-stats)" },
+             flags: "--focus <focus> (strength, defense, dexterity, agility, hacking, charisma, balance-combat, balance-all, crime-money, crime-stats, crime-karma, crime-kills)" },
   faction: { start: "run daemons/faction.js", stop: "kill daemons/faction.js",
              flags: "--preferred-city <city> (Sector-12, Aevum, Chongqing, New Tokyo, Ishima, Volhaven)" },
   infiltration: { start: "run daemons/infiltration.js", stop: "kill daemons/infiltration.js", flags: null },

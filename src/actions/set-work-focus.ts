@@ -18,6 +18,7 @@ const VALID_FOCUSES = [
   "hacking", "charisma",
   "balance-all", "balance-combat",
   "crime-money", "crime-stats",
+  "crime-karma", "crime-kills",
 ] as const;
 
 const WORK_CONFIG_PATH = "/data/work-config.json";
