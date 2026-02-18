@@ -488,10 +488,15 @@ function GangDetailPanel({ status, running, toolId, error, pid }: DetailPanelPro
               {status.territoryWarfareEngaged ? "ENGAGED" : "OFF"}
             </span>
           </div>
+          <div style={styles.stat}>
+            <span style={styles.statLabel}>Our Power</span>
+            <span style={styles.statValue}>{formatNumber(status.territoryData.ourPower)}</span>
+          </div>
           <table style={styles.table}>
             <thead>
               <tr>
                 <th style={styles.tableHeader}>Rival</th>
+                <th style={{ ...styles.tableHeader, textAlign: "right" }}>Power</th>
                 <th style={{ ...styles.tableHeader, textAlign: "right" }}>Territory</th>
                 <th style={{ ...styles.tableHeader, textAlign: "right" }}>Clash</th>
               </tr>
@@ -500,6 +505,7 @@ function GangDetailPanel({ status, running, toolId, error, pid }: DetailPanelPro
               {status.territoryData.rivals.map((r, i) => (
                 <tr key={r.name} style={i % 2 === 0 ? styles.tableRow : styles.tableRowAlt}>
                   <td style={styles.tableCell}>{r.name}</td>
+                  <td style={{ ...styles.tableCell, textAlign: "right" }}>{formatNumber(r.power)}</td>
                   <td style={{ ...styles.tableCell, textAlign: "right" }}>{formatPct(r.territory)}</td>
                   <td style={{
                     ...styles.tableCell,
