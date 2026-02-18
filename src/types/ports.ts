@@ -74,7 +74,7 @@ export interface QueueEntry {
 
 export interface Command {
   tool: ToolName;
-  action: "start" | "stop" | "open-tail" | "run-script" | "start-faction-work" | "set-focus" | "start-training" | "install-augments" | "run-backdoors" | "restart-rep-daemon" | "join-faction" | "restart-faction-daemon" | "restart-hack-daemon" | "restart-share-daemon" | "stop-infiltration" | "kill-infiltration" | "configure-infiltration" | "set-gang-strategy" | "pin-gang-member" | "unpin-gang-member" | "ascend-gang-member" | "toggle-gang-purchases" | "toggle-gang-warfare" | "set-gang-wanted-threshold" | "set-gang-ascension-thresholds" | "set-gang-training-threshold" | "set-gang-grow-target" | "set-gang-grow-respect-reserve" | "restart-gang-daemon";
+  action: "start" | "stop" | "open-tail" | "run-script" | "start-faction-work" | "set-focus" | "start-training" | "install-augments" | "run-backdoors" | "restart-rep-daemon" | "join-faction" | "restart-faction-daemon" | "restart-hack-daemon" | "restart-share-daemon" | "stop-infiltration" | "kill-infiltration" | "configure-infiltration" | "set-gang-strategy" | "pin-gang-member" | "unpin-gang-member" | "ascend-gang-member" | "toggle-gang-purchases" | "toggle-gang-warfare" | "set-gang-wanted-threshold" | "set-gang-ascension-thresholds" | "set-gang-training-threshold" | "set-gang-grow-target" | "set-gang-grow-respect-reserve" | "force-buy-equipment" | "restart-gang-daemon";
   scriptPath?: string;
   scriptArgs?: string[];
   factionName?: string;
@@ -390,6 +390,10 @@ export interface WorkStatus {
     moneyPerMin: number;
     moneyPerMinFormatted: string;
     combatExpPerMin: number;
+    karmaPerMin: number;
+    karmaPerMinFormatted: string;
+    killsPerMin: number;
+    killsPerMinFormatted: string;
   } | null;
   pendingCrimeSwitch: {
     currentCrime: string;
@@ -788,6 +792,7 @@ export interface GangStatus {
   // Equipment (Tier 2)
   purchasingEnabled?: boolean;
   availableUpgrades?: number;
+  purchasableEquipment?: { member: string; name: string; cost: number; type: string }[];
 
   // Territory data (read from territory port)
   territoryData?: GangTerritoryStatus;

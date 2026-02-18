@@ -16,6 +16,7 @@ import {
   unpinGangMember,
   ascendGangMember,
   toggleGangPurchases,
+  forceGangEquipmentBuy,
   setGangTrainingThreshold,
   setGangAscensionThresholds,
   setGangWantedThreshold,
@@ -463,6 +464,53 @@ function GangDetailPanel({ status, running, toolId, error, pid }: DetailPanelPro
               {status.purchasingEnabled ? "ON" : "OFF"}
             </button>
           </div>
+          {status.purchasableEquipment && status.purchasableEquipment.length > 0 && (
+            <>
+              <div style={{
+                maxHeight: "150px",
+                overflowY: "auto",
+                marginTop: "6px",
+                border: "1px solid #222",
+                borderRadius: "3px",
+                padding: "4px",
+                backgroundColor: "#0a0a0a",
+              }}>
+                {[...status.purchasableEquipment]
+                  .sort((a, b) => a.cost - b.cost)
+                  .map((item, i) => (
+                    <div key={`${item.member}-${item.name}`} style={{
+                      display: "flex",
+                      justifyContent: "space-between",
+                      padding: "1px 4px",
+                      fontSize: "10px",
+                      fontFamily: "monospace",
+                      backgroundColor: i % 2 === 0 ? "transparent" : "#111",
+                    }}>
+                      <span>
+                        <span style={{ color: "#00ffff" }}>{item.member}</span>
+                        <span style={{ color: "#555" }}> — </span>
+                        <span style={{ color: "#fff" }}>{item.name}</span>
+                        <span style={{ color: "#555", marginLeft: "4px", fontSize: "9px" }}>{item.type}</span>
+                      </span>
+                      <span style={{ color: "#ffff00" }}>${formatNumber(item.cost)}</span>
+                    </div>
+                  ))}
+              </div>
+              <button
+                style={{
+                  ...smallBtnStyle,
+                  marginTop: "6px",
+                  color: "#ffaa00",
+                  borderColor: "#ffaa00",
+                  padding: "3px 10px",
+                  fontSize: "11px",
+                }}
+                onClick={() => { if (running) forceGangEquipmentBuy(); }}
+              >
+                Buy All
+              </button>
+            </>
+          )}
         </div>
       )}
 

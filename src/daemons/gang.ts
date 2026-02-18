@@ -207,6 +207,7 @@ function saveConfig(ns: NS, config: GangConfig): void {
 
 /** Pending ascend requests from dashboard (processed in full mode) */
 const pendingAscends: string[] = [];
+let pendingForceBuy = false;
 
 function readControlCommands(ns: NS, config: GangConfig): GangConfig {
   const handle = ns.getPortHandle(GANG_CONTROL_PORT);
@@ -277,6 +278,9 @@ function readControlCommands(ns: NS, config: GangConfig): GangConfig {
           if (cmd.gangMemberName) {
             pendingAscends.push(cmd.gangMemberName);
           }
+          break;
+        case "force-buy-equipment":
+          pendingForceBuy = true;
           break;
       }
     } catch { /* invalid command */ }
@@ -741,18 +745,26 @@ async function runFullMode(
 
     // 2. EQUIPMENT PURCHASING (after ascension, scaled with income)
     let availableUpgrades = 0;
-    if (config.purchasingEnabled) {
+    const purchasableEquipment: { member: string; name: string; cost: number; type: string }[] = [];
+    const shouldBuy = config.purchasingEnabled || pendingForceBuy;
+    if (shouldBuy) {
       const equipNames = ns.gang.getEquipmentNames();
       const player = ns.getPlayer();
 
-      // Scale spending cap with income
-      const incomePerSec = info.moneyGainRate * 5;
-      const incomeBased = incomePerSec * 60; // 1 minute of income
-      const percentBased = player.money * 0.1;
-      let spendingCap = Math.max(incomeBased, percentBased);
-      // At high income, unlock more aggressive spending
-      if (incomePerSec > 1_000_000) {
-        spendingCap = Math.max(spendingCap, player.money * 0.5);
+      // Scale spending cap with income (or Infinity for force-buy)
+      let spendingCap: number;
+      if (pendingForceBuy) {
+        spendingCap = Infinity;
+        pendingForceBuy = false;
+      } else {
+        const incomePerSec = info.moneyGainRate * 5;
+        const incomeBased = incomePerSec * 60; // 1 minute of income
+        const percentBased = player.money * 0.1;
+        spendingCap = Math.max(incomeBased, percentBased);
+        // At high income, unlock more aggressive spending
+        if (incomePerSec > 1_000_000) {
+          spendingCap = Math.max(spendingCap, player.money * 0.5);
+        }
       }
 
       for (const name of memberNames) {
@@ -770,6 +782,11 @@ async function runFullMode(
         const memberTask = taskStatsArray.find(t => t.name === mi.task) ?? null;
         const ranked = rankEquipment(equipment, memberTask, owned);
         availableUpgrades += ranked.length;
+
+        // Collect purchasable items for status display
+        for (const item of ranked) {
+          purchasableEquipment.push({ member: name, name: item.name, cost: item.cost, type: item.type });
+        }
 
         // Buy best ROI items we can afford
         for (const item of ranked) {
@@ -873,6 +890,7 @@ async function runFullMode(
       ascensionAlerts: ascensionAlerts.length > 0 ? ascensionAlerts : undefined,
       purchasingEnabled: config.purchasingEnabled,
       availableUpgrades,
+      purchasableEquipment: purchasableEquipment.length > 0 ? purchasableEquipment : undefined,
       territoryData: territoryData ?? undefined,
       strategy: config.strategy,
       wantedThreshold: config.wantedThreshold,

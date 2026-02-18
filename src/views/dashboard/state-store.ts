@@ -262,6 +262,14 @@ export function setGangGrowRespectReserve(count: number): void {
 }
 
 /**
+ * Force-buy all affordable gang equipment (ignores spending cap).
+ */
+export function forceGangEquipmentBuy(): void {
+  if (!commandPort) return;
+  commandPort.write(JSON.stringify({ tool: "gang", action: "force-buy-equipment" }));
+}
+
+/**
  * Restart the gang daemon with optional strategy.
  */
 export function restartGangDaemon(strategy?: GangStrategy): void {
@@ -505,6 +513,7 @@ function executeCommand(ns: NS, cmd: Command): void {
     case "set-gang-training-threshold":
     case "set-gang-grow-target":
     case "set-gang-grow-respect-reserve":
+    case "force-buy-equipment":
       {
         // Forward gang commands to the gang control port
         const gangCtrl = ns.getPortHandle(GANG_CONTROL_PORT);

@@ -429,7 +429,7 @@ export function rankEquipment(
   equipment: EquipmentInfo[],
   currentTaskStats: TaskStats | null,
   ownedEquipment: Set<string>,
-): { name: string; cost: number; roi: number }[] {
+): { name: string; cost: number; roi: number; type: string }[] {
   const available = equipment.filter(e => !ownedEquipment.has(e.name));
 
   // Default weights if no current task
@@ -452,7 +452,7 @@ export function rankEquipment(
         (e.stats.cha ?? 0) * weights.cha +
         (e.stats.hack ?? 0) * weights.hack;
       const roi = e.cost > 0 ? statDelta / e.cost : 0;
-      return { name: e.name, cost: e.cost, roi };
+      return { name: e.name, cost: e.cost, roi, type: e.type };
     })
     .sort((a, b) => b.roi - a.roi);
 }
