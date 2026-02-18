@@ -14,6 +14,7 @@ import { COLORS } from "/lib/utils";
 import {
   analyzeFactions,
   calculatePurchasePriority,
+  AUG_COST_MULT,
   getOwnedAugs,
   getInstalledAugs,
   getPendingAugs,
@@ -54,15 +55,21 @@ function computeAugmentsStatus(ns: NS): AugmentsStatus {
     ? calculateNFGDonatePurchasePlan(ns, playerMoney)
     : null;
 
+  // Current multiplier based on pending augs (flat, not rolling)
+  const currentMultiplier = Math.pow(AUG_COST_MULT, pendingAugs.length);
+
   return {
-    available: purchasePlan.map((item) => ({
-      name: item.name,
-      faction: item.faction,
-      baseCost: item.basePrice,
-      adjustedCost: item.adjustedCost,
-      baseCostFormatted: ns.formatNumber(item.basePrice),
-      adjustedCostFormatted: ns.formatNumber(item.adjustedCost),
-    })),
+    available: purchasePlan.map((item) => {
+      const adjustedCost = Math.round(item.basePrice * currentMultiplier);
+      return {
+        name: item.name,
+        faction: item.faction,
+        baseCost: item.basePrice,
+        adjustedCost,
+        baseCostFormatted: ns.formatNumber(item.basePrice),
+        adjustedCostFormatted: ns.formatNumber(adjustedCost),
+      };
+    }),
     sequentialAugs: sequentialAugs.map((item) => ({
       faction: item.faction,
       augName: item.aug.name,

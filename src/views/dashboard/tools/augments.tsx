@@ -13,7 +13,13 @@ import { ToolControl } from "views/dashboard/components/ToolControl";
 import { ProgressBar } from "views/dashboard/components/ProgressBar";
 import { runScript, installAugments, buySelectedAugments, getPluginUIState, setPluginUIState } from "views/dashboard/state-store";
 import { AUG_COST_MULT } from "/controllers/factions";
-import { formatTime } from "lib/utils";
+
+function formatNumber(n: number): string {
+  if (n >= 1_000_000_000) return `${(n / 1_000_000_000).toFixed(1)}b`;
+  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}m`;
+  if (n >= 1_000) return `${(n / 1_000).toFixed(1)}k`;
+  return n.toFixed(0);
+}
 
 // === COMPONENTS ===
 
@@ -263,7 +269,7 @@ function AugmentsDetailPanel({ status, running, toolId, pid }: DetailPanelProps<
           <div style={styles.sectionTitle}>
             PURCHASE PLANNER
             <span style={{ ...styles.dim, marginLeft: "8px", fontWeight: "normal" }}>
-              {plannerItems.length} augs | ${totalPlanCost.toLocaleString()} total
+              {plannerItems.length} augs | ${formatNumber(totalPlanCost)} total
             </span>
           </div>
           <table style={styles.table}>
@@ -290,10 +296,10 @@ function AugmentsDetailPanel({ status, running, toolId, pid }: DetailPanelProps<
                       {item.faction.substring(0, 16)}
                     </td>
                     <td style={{ ...styles.tableCell, textAlign: "right", color: affordable ? "#00ff00" : "#ff4444" }}>
-                      ${item.rollingAdjusted.toLocaleString()}
+                      ${formatNumber(item.rollingAdjusted)}
                     </td>
                     <td style={{ ...styles.tableCell, textAlign: "right", ...styles.runningTotal }}>
-                      ${item.rollingTotal.toLocaleString()}
+                      ${formatNumber(item.rollingTotal)}
                     </td>
                   </tr>
                 );
