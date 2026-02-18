@@ -71,6 +71,19 @@ export interface GangInfo {
   isHacking: boolean;
 }
 
+export interface RivalInfo {
+  name: string;
+  power: number;
+  territory: number;
+  clashChance: number; // Our win chance against them (0-1)
+}
+
+export interface TerritoryContext {
+  ourPower: number;
+  rivals: RivalInfo[];
+  warfareEngaged: boolean;
+}
+
 export interface AscensionResult {
   str: number;
   def: number;
@@ -158,6 +171,74 @@ export function selectWantedCleaners(
 }
 
 /**
+ * Calculate how many members should be on Territory Warfare.
+ *
+ * Logic based on Bitburner source code analysis:
+ * - Territory gain per clash = powerBonus * 0.0001 * random(0.5-1.5)
+ * - powerBonus = max(1, 1 + log(ourPower/theirPower) / log(50))
+ * - powerBonus is logarithmic, so diminishing returns on extra power
+ * - Loser's power drops 1% per loss, creating a snowball effect
+ * - Therefore: only need enough warfare members to maintain dominance
+ *
+ * Returns count of members to assign to Territory Warfare (0 to members.length).
+ */
+export function calculateWarfareCount(
+  members: MemberInfo[],
+  territory: TerritoryContext | null,
+  gangTerritory: number,
+): { count: number; reason: string } {
+  // No territory data available — conservative default
+  if (!territory || territory.rivals.length === 0) {
+    return { count: 2, reason: "no rival data, conservative default" };
+  }
+
+  // Already at 100% territory — no warfare needed
+  if (gangTerritory >= 0.99) {
+    return { count: 0, reason: "territory complete" };
+  }
+
+  // Find worst clash win chance against gangs that still have territory
+  const activeRivals = territory.rivals.filter(r => r.territory > 0.001);
+  if (activeRivals.length === 0) {
+    // All rivals have ~0 territory, just need a token presence
+    return { count: 1, reason: "rivals have no territory" };
+  }
+
+  const worstClashChance = Math.min(...activeRivals.map(r => r.clashChance));
+  const strongestRivalPower = Math.max(...activeRivals.map(r => r.power));
+  const powerRatio = territory.ourPower / Math.max(1, strongestRivalPower);
+
+  // If we're not even winning reliably, commit more to warfare
+  if (worstClashChance < 0.55) {
+    // Losing or barely winning — need significant warfare commitment
+    const count = Math.min(members.length, Math.max(4, Math.ceil(members.length * 0.6)));
+    return { count, reason: `low win chance (${(worstClashChance * 100).toFixed(0)}%), need power` };
+  }
+
+  if (worstClashChance < 0.70) {
+    // Winning but not dominant — moderate commitment
+    const count = Math.min(members.length, Math.max(3, Math.ceil(members.length * 0.4)));
+    return { count, reason: `moderate win chance (${(worstClashChance * 100).toFixed(0)}%), building power` };
+  }
+
+  if (worstClashChance < 0.85) {
+    // Comfortably winning — small crew maintains dominance
+    // Power ratio check: if we're already 3x+ stronger, fewer members needed
+    if (powerRatio > 3) {
+      return { count: 2, reason: `winning (${(worstClashChance * 100).toFixed(0)}%), power ratio ${powerRatio.toFixed(1)}x` };
+    }
+    return { count: 3, reason: `winning (${(worstClashChance * 100).toFixed(0)}%), maintaining power` };
+  }
+
+  // Dominant — minimal warfare presence, maximize money
+  // The 1% power drain on losers means our advantage grows passively
+  if (powerRatio > 5) {
+    return { count: 1, reason: `dominant (${(worstClashChance * 100).toFixed(0)}%), ${powerRatio.toFixed(1)}x power ratio` };
+  }
+  return { count: 2, reason: `dominant (${(worstClashChance * 100).toFixed(0)}%), maintaining lead` };
+}
+
+/**
  * Determine the current phase for balanced mode based on gang state.
  * Phases: grow → respect → territory → money
  */
@@ -193,6 +274,7 @@ export function assignTasks(
   gangInfo: GangInfo,
   taskStats: TaskStats[],
   pinnedMembers: Record<string, string>,
+  territoryContext?: TerritoryContext | null,
 ): TaskAssignment[] {
   const assignments: TaskAssignment[] = [];
   const assigned = new Set<string>();
@@ -236,6 +318,9 @@ export function assignTasks(
   if (effectiveStrategy === "grow") {
     // Grow mode: most members train, reserve some for respect
     assignGrowTasks(remaining, assignments, config, combatTasks, trainingTask);
+  } else if (effectiveStrategy === "territory") {
+    // Territory mode does a smart split instead of all-warfare
+    assignTerritorySplitTasks(remaining, assignments, config, combatTasks, gangInfo, territoryContext ?? null);
   } else {
     // Standard strategies: train weak members, then assign by strategy
     for (const member of remaining) {
@@ -256,6 +341,76 @@ export function assignTasks(
   }
 
   return assignments;
+}
+
+/**
+ * Assign territory split tasks — strongest N on warfare, rest on money.
+ *
+ * This is the key change: instead of putting everyone on Territory Warfare,
+ * we calculate how many are actually needed based on clash win chances and
+ * power ratios, then let the rest earn money.
+ *
+ * From source code analysis:
+ * - Territory gain is 0.0001 * powerBonus * random(0.5-1.5) per clash
+ * - powerBonus is logarithmic (diminishing returns on extra power)
+ * - Losers lose 1% power per clash (passive snowball)
+ * - Therefore: maintain power dominance with minimal members, maximize income
+ */
+function assignTerritorySplitTasks(
+  members: MemberInfo[],
+  assignments: TaskAssignment[],
+  config: GangTaskConfig,
+  combatTasks: TaskStats[],
+  gangInfo: GangInfo,
+  territoryContext: TerritoryContext | null,
+): void {
+  const trainingTask = "Train Combat";
+  const trainingTarget = config.trainingThreshold * 4;
+
+  // Separate trainable from ready members
+  const trainees: MemberInfo[] = [];
+  const ready: MemberInfo[] = [];
+  for (const member of members) {
+    if (totalCombatStats(member) < trainingTarget) {
+      trainees.push(member);
+    } else {
+      ready.push(member);
+    }
+  }
+
+  // Assign trainees to training
+  for (const member of trainees) {
+    assignments.push({
+      memberName: member.name,
+      task: trainingTask,
+      reason: `training (${Math.round(totalCombatStats(member))}/${Math.round(trainingTarget)} combat stats)`,
+    });
+  }
+
+  // Calculate warfare count from ready members only
+  const { count: warfareCount, reason: warfareReason } = calculateWarfareCount(
+    ready, territoryContext, gangInfo.territory,
+  );
+
+  // Sort ready members by total combat stats descending — strongest go to warfare
+  const sorted = [...ready].sort((a, b) => totalCombatStats(b) - totalCombatStats(a));
+
+  const actualWarfare = Math.min(warfareCount, sorted.length);
+
+  for (let i = 0; i < sorted.length; i++) {
+    const member = sorted[i];
+    if (i < actualWarfare) {
+      // Warfare assignment
+      assignments.push({
+        memberName: member.name,
+        task: "Territory Warfare",
+        reason: `warfare (${warfareReason})`,
+      });
+    } else {
+      // Money assignment — best money task for this member
+      assignments.push(selectBestTask(member, combatTasks, "money", `money while territory grows`));
+    }
+  }
 }
 
 /**

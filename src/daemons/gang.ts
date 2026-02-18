@@ -41,6 +41,7 @@ import {
   type GangInfo,
   type EquipmentInfo,
   type AscensionResult,
+  type TerritoryContext,
 } from "/controllers/gang";
 
 // === TIER DEFINITIONS ===
@@ -495,9 +496,26 @@ async function runBasicMode(
       growRespectReserve: config.growRespectReserve,
     };
 
+    // Build territory context for smart warfare splits
+    const territoryData_peek = peekStatus<GangTerritoryStatus>(ns, STATUS_PORTS.gangTerritory);
+    let territoryContext: TerritoryContext | null = null;
+    if (territoryData_peek && territoryData_peek.rivals) {
+      territoryContext = {
+        ourPower: territoryData_peek.ourPower,
+        rivals: territoryData_peek.rivals.map(r => ({
+          name: r.name,
+          power: r.power,
+          territory: r.territory,
+          clashChance: r.clashChance,
+        })),
+        warfareEngaged: info.territoryWarfareEngaged,
+      };
+    }
+
     const assignments = assignTasks(
       memberInfoArray, taskConfig, gangInfo,
       taskStatsArray, config.pinnedMembers,
+      territoryContext,  // NEW: pass territory context
     );
 
     // Build reason lookup for member statuses
