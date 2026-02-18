@@ -123,6 +123,7 @@ export async function main(ns: NS): Promise<void> {
     combatBalance: highestCombat > 0 ? lowestCombat / highestCombat : 1,
     balanceRotation: null,  // Not computed in lightweight action
     crimeInfo: null,  // Not computed in lightweight action
+    pendingCrimeSwitch: null,  // Not computed in lightweight action
   };
 
   publishStatus(ns, STATUS_PORTS.work, status);

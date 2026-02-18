@@ -375,6 +375,15 @@ export interface WorkStatus {
     moneyPerMinFormatted: string;
     combatExpPerMin: number;
   } | null;
+  pendingCrimeSwitch: {
+    currentCrime: string;
+    bestCrime: string;
+    currentValue: number;
+    bestValue: number;
+    currentValueFormatted: string;
+    bestValueFormatted: string;
+    metric: string;
+  } | null;
 }
 
 // === HACK STRATEGY ===

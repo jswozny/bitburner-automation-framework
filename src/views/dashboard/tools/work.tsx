@@ -172,6 +172,7 @@ function formatWorkStatus(ns: NS): FormattedWorkStatus | null {
               status.currentCrime.agiExpPerMin,
           }
         : null,
+      pendingCrimeSwitch: null,
     };
   } catch {
     return null;
@@ -457,6 +458,33 @@ function WorkDetailPanel({
               </div>
             </>
           )}
+        </div>
+      )}
+
+      {/* Pending Crime Switch */}
+      {status?.pendingCrimeSwitch && (
+        <div
+          style={{
+            ...styles.card,
+            backgroundColor: "rgba(255, 170, 0, 0.1)",
+            borderLeft: "3px solid #ffaa00",
+          }}
+        >
+          <div style={{ color: "#ffaa00", fontSize: "12px", marginBottom: "6px" }}>
+            SWITCHING AFTER CURRENT ATTEMPT
+          </div>
+          <div style={styles.stat}>
+            <span style={styles.statLabel}>Current</span>
+            <span style={{ color: "#ff4444" }}>
+              {status.pendingCrimeSwitch.currentCrime} ({status.pendingCrimeSwitch.currentValueFormatted} {status.pendingCrimeSwitch.metric})
+            </span>
+          </div>
+          <div style={styles.stat}>
+            <span style={styles.statLabel}>Best</span>
+            <span style={{ color: "#00ff00" }}>
+              {status.pendingCrimeSwitch.bestCrime} ({status.pendingCrimeSwitch.bestValueFormatted} {status.pendingCrimeSwitch.metric})
+            </span>
+          </div>
         </div>
       )}
 

@@ -7,7 +7,7 @@
  * Import with: import { ... } from '/lib/work';
  */
 import { NS, CityName, GymType, UniversityClassType, CrimeType } from "@ns";
-import { findBestCrime, analyzeAllCrimes, CrimeAnalysis } from "/controllers/crime";
+import { findBestCrime, analyzeAllCrimes, analyzeCrime, CrimeAnalysis, CrimeName } from "/controllers/crime";
 
 // === CONSTANTS ===
 
@@ -568,8 +568,18 @@ export function runWorkCycle(ns: NS): boolean {
   if (config.focus === "crime-money" || config.focus === "crime-stats") {
     const currentWork = ns.singularity.getCurrentWork();
 
-    // If already doing crime, let it continue
+    // If already doing crime, check if a better one is available
     if (currentWork?.type === "CRIME") {
+      const crimeWork = currentWork as { type: string; crimeType: string };
+      const runningCrime = crimeWork.crimeType;
+      const bestCrime =
+        config.focus === "crime-money" ? getBestCrimeForMoney(ns) : getBestCrimeForStats(ns);
+
+      if (bestCrime.crime !== runningCrime) {
+        // Switch to better crime immediately (crimes auto-repeat, so we must interrupt)
+        const timeMs = startCrime(ns, bestCrime.crime, preserveFocus);
+        return timeMs > 0;
+      }
       return true;
     }
 

@@ -23,6 +23,7 @@ import {
   WorkFocus,
   TRAVEL_COST,
 } from "/controllers/work";
+import { analyzeCrime, CrimeName } from "/controllers/crime";
 import { publishStatus } from "/lib/ports";
 import { STATUS_PORTS, WorkStatus } from "/types/ports";
 
@@ -149,6 +150,36 @@ function computeWorkStatus(ns: NS): WorkStatus {
       }
     : null;
 
+  // Detect pending crime switch
+  let pendingCrimeSwitch: WorkStatus["pendingCrimeSwitch"] = null;
+  const isCrimeMode = rawStatus.currentFocus === "crime-money" || rawStatus.currentFocus === "crime-stats";
+  if (isCrimeMode && rawStatus.currentWork?.type === "crime" && rawStatus.currentCrime) {
+    const runningCrimeName = rawStatus.currentWork.stat;
+    const bestCrimeName = rawStatus.currentCrime.crime;
+    if (runningCrimeName && runningCrimeName !== bestCrimeName) {
+      const isMoney = rawStatus.currentFocus === "crime-money";
+      const metric = isMoney ? "$/min" : "combat exp/min";
+      const runningAnalysis = analyzeCrime(ns, runningCrimeName as CrimeName);
+      const currentValue = isMoney
+        ? runningAnalysis.moneyPerMin
+        : runningAnalysis.strExpPerMin + runningAnalysis.defExpPerMin +
+          runningAnalysis.dexExpPerMin + runningAnalysis.agiExpPerMin;
+      const bestValue = isMoney
+        ? rawStatus.currentCrime.moneyPerMin
+        : rawStatus.currentCrime.strExpPerMin + rawStatus.currentCrime.defExpPerMin +
+          rawStatus.currentCrime.dexExpPerMin + rawStatus.currentCrime.agiExpPerMin;
+      pendingCrimeSwitch = {
+        currentCrime: runningCrimeName,
+        bestCrime: bestCrimeName,
+        currentValue,
+        bestValue,
+        currentValueFormatted: ns.formatNumber(currentValue),
+        bestValueFormatted: ns.formatNumber(bestValue),
+        metric,
+      };
+    }
+  }
+
   // Build formatted skill time spent
   const skillTimeSpent = Object.entries(rawStatus.skillTimeSpent).map(([skill, time]) => ({
     skill,
@@ -192,6 +223,7 @@ function computeWorkStatus(ns: NS): WorkStatus {
     combatBalance: highestCombat > 0 ? lowestCombat / highestCombat : 1,
     balanceRotation,
     crimeInfo,
+    pendingCrimeSwitch,
   };
 }
 
@@ -229,6 +261,15 @@ function printStatus(ns: NS, status: WorkStatus): void {
     : status.activityType === "crime" ? C.red
     : C.dim;
   ns.print(`${C.dim}Activity:${C.reset} ${activityColor}${status.activityDisplay}${C.reset}`);
+
+  // Pending crime switch
+  if (status.pendingCrimeSwitch) {
+    const s = status.pendingCrimeSwitch;
+    ns.print(
+      `${C.yellow}Switching: ${s.currentCrime} → ${s.bestCrime}${C.reset}` +
+      `  ${C.dim}(${s.currentValueFormatted} → ${s.bestValueFormatted} ${s.metric})${C.reset}`
+    );
+  }
 
   // Recommendation
   if (status.recommendation) {
