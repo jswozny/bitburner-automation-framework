@@ -454,5 +454,6 @@ export function rankEquipment(
       const roi = e.cost > 0 ? statDelta / e.cost : 0;
       return { name: e.name, cost: e.cost, roi, type: e.type };
     })
+    .filter(e => e.roi > 0)
     .sort((a, b) => b.roi - a.roi);
 }
