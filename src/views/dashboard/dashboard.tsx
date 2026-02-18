@@ -42,8 +42,9 @@ import { workPlugin } from "views/dashboard/tools/work";
 import { factionPlugin } from "views/dashboard/tools/faction";
 import { infiltrationPlugin } from "views/dashboard/tools/infiltration";
 import { gangPlugin } from "views/dashboard/tools/gang";
+import { augmentsPlugin } from "views/dashboard/tools/augments";
 
-const TAB_NAMES = ["Overview", "Nuke", "Hack", "Pserv", "Share", "Faction", "Rep", "Work", "Darkweb", "Infiltrate", "Gang"];
+const TAB_NAMES = ["Overview", "Nuke", "Hack", "Pserv", "Share", "Faction", "Rep", "Augs", "Work", "Darkweb", "Infiltrate", "Gang"];
 
 // === OVERVIEW PANEL ===
 
@@ -94,6 +95,12 @@ function OverviewPanel({ state }: OverviewPanelProps): React.ReactElement {
           toolId="rep"
           error={repError}
           pid={pids.rep}
+        />
+        <augmentsPlugin.OverviewCard
+          status={state.augmentsStatus}
+          running={pids.augments > 0}
+          toolId="augments"
+          pid={pids.augments}
         />
         <workPlugin.OverviewCard
           status={state.workStatus}
@@ -220,6 +227,15 @@ function Dashboard(): React.ReactElement {
         );
       case 7:
         return (
+          <augmentsPlugin.DetailPanel
+            status={state.augmentsStatus}
+            running={state.pids.augments > 0}
+            toolId="augments"
+            pid={state.pids.augments}
+          />
+        );
+      case 8:
+        return (
           <workPlugin.DetailPanel
             status={state.workStatus}
             running={state.pids.work > 0}
@@ -228,7 +244,7 @@ function Dashboard(): React.ReactElement {
             pid={state.pids.work}
           />
         );
-      case 8:
+      case 9:
         return (
           <darkwebPlugin.DetailPanel
             status={state.darkwebStatus}
@@ -238,7 +254,7 @@ function Dashboard(): React.ReactElement {
             pid={state.pids.darkweb}
           />
         );
-      case 9:
+      case 10:
         return (
           <infiltrationPlugin.DetailPanel
             status={state.infiltrationStatus}
@@ -247,7 +263,7 @@ function Dashboard(): React.ReactElement {
             pid={state.pids.infiltration}
           />
         );
-      case 10:
+      case 11:
         return (
           <gangPlugin.DetailPanel
             status={state.gangStatus}

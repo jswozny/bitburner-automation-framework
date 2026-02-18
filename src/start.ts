@@ -29,6 +29,7 @@ const CORE_SCRIPTS: { path: string; args: (string | number | boolean)[] }[] = [
 const OPTIONAL_SCRIPTS: { path: string; args: (string | number | boolean)[] }[] = [
   { path: "daemons/pserv.js", args: [] },
   { path: "daemons/faction.js", args: [] },
+  { path: "daemons/augments.js", args: [] },
   { path: "daemons/gang.js", args: [] },
 ];
 

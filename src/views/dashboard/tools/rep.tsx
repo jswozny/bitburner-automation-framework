@@ -10,9 +10,9 @@ import { ToolPlugin, FormattedRepStatus, OverviewCardProps, DetailPanelProps, Pl
 import { styles } from "views/dashboard/styles";
 import { ToolControl } from "views/dashboard/components/ToolControl";
 import { ProgressBar } from "views/dashboard/components/ProgressBar";
-import { getRepStatus, findNextWorkableAugmentation, getNonWorkableFactionProgress, getFactionWorkStatus, getSequentialPurchaseAugs, getNeuroFluxInfo, calculateNeuroFluxPurchasePlan, canDonateToFaction, calculateNFGDonatePurchasePlan, getGangFaction } from "/controllers/factions";
+import { getRepStatus, findNextWorkableAugmentation, getNonWorkableFactionProgress, getFactionWorkStatus, getGangFaction } from "/controllers/factions";
 import { formatTime } from "lib/utils";
-import { runScript, startFactionWork, installAugments, runBackdoors, restartRepDaemon, getPluginUIState, setPluginUIState } from "views/dashboard/state-store";
+import { startFactionWork, runBackdoors, restartRepDaemon } from "views/dashboard/state-store";
 import { peekStatus } from "lib/ports";
 import { STATUS_PORTS, RepStatus } from "types/ports";
 
@@ -76,33 +76,23 @@ function formatRepStatus(ns: NS, extra?: PluginContext): FormattedRepStatus | nu
     // Get non-workable faction progress (include gang faction)
     const nonWorkableProgress = getNonWorkableFactionProgress(raw.factionData, gangExclude);
 
-    // Get NeuroFlux info early - we may need it as fallback
-    const nfInfo = getNeuroFluxInfo(ns);
-
-    // If no regular aug target, fall back to best NFG faction for favor grinding
     let targetFaction: string;
     let targetFactionData: { currentRep: number; favor: number } | null = null;
 
     if (target) {
       targetFaction = target.faction.name;
       targetFactionData = { currentRep: target.faction.currentRep, favor: target.faction.favor };
-    } else if (nfInfo.bestFaction) {
-      // Fall back to best NFG faction for favor/rep grinding (skip gang faction)
-      let nfgWorkFaction = nfInfo.bestFaction;
-      if (gangFaction && nfgWorkFaction === gangFaction) {
-        const altFaction = raw.factionData
-          .filter(f => f.name !== gangFaction)
-          .sort((a, b) => b.currentRep - a.currentRep)
-          .find(f => {
-            try { return ns.singularity.getAugmentationsFromFaction(f.name).includes("NeuroFlux Governor"); } catch { return false; }
-          });
-        if (altFaction) nfgWorkFaction = altFaction.name;
-      }
-      targetFaction = nfgWorkFaction;
-      const factionData = raw.factionData.find(f => f.name === nfgWorkFaction);
-      targetFactionData = factionData ? { currentRep: factionData.currentRep, favor: factionData.favor } : null;
     } else {
-      targetFaction = "None";
+      // Fall back to highest-rep faction (skip gang faction)
+      const best = raw.factionData
+        .filter(f => !gangExclude || !gangExclude.has(f.name))
+        .sort((a, b) => b.currentRep - a.currentRep)[0];
+      if (best) {
+        targetFaction = best.name;
+        targetFactionData = { currentRep: best.currentRep, favor: best.favor };
+      } else {
+        targetFaction = "None";
+      }
     }
 
     const repRequired = target?.aug?.repReq ?? 0;
@@ -111,7 +101,6 @@ function formatRepStatus(ns: NS, extra?: PluginContext): FormattedRepStatus | nu
     const repProgress = repRequired > 0 ? Math.min(1, currentRep / repRequired) : 0;
 
     const favorToUnlock = extra?.favorToUnlock ?? 150;
-    const playerMoney = extra?.playerMoney ?? player.money;
 
     // Update rep gain rate tracking internally
     const now = Date.now();
@@ -142,32 +131,17 @@ function formatRepStatus(ns: NS, extra?: PluginContext): FormattedRepStatus | nu
     // Get pending backdoors
     const pendingBackdoors = getPendingBackdoors(ns);
 
-    // Check if there are unlocked augs to buy
-    const hasUnlockedAugs = raw.purchasePlan.length > 0;
-
     // Get work status for target faction
     const workStatus = targetFaction !== "None"
       ? getFactionWorkStatus(ns, player, targetFaction)
       : { isWorkingForFaction: false, isOptimalWork: false, bestWorkType: "hacking" as const, currentWorkType: null, isWorkable: false };
 
-    // Get sequential purchase augs (Shadows of Anarchy, etc.)
-    const sequentialAugs = getSequentialPurchaseAugs(ns, raw.factionData, playerMoney);
-
-    // Build full status (tier 6 equivalent)
-    const nfPlan = calculateNeuroFluxPurchasePlan(ns, playerMoney);
-    const nfRepProgress = nfInfo.repRequired > 0 ? Math.min(1, nfInfo.bestFactionRep / nfInfo.repRequired) : 0;
-    const nfRepGap = Math.max(0, nfInfo.repRequired - nfInfo.bestFactionRep);
-    const canDonate = nfInfo.bestFaction ? canDonateToFaction(ns, nfInfo.bestFaction) : false;
-    const donatePlan = canDonate ? calculateNFGDonatePurchasePlan(ns, playerMoney) : null;
-
-    // Note: When running as fallback (daemon not active), RAM usage is estimated.
-    // The daemon calculates actual RAM dynamically based on SF4 level.
     return {
       tier: 6,
       tierName: "auto-work",
       availableFeatures: ["cached-display", "live-rep", "all-factions", "target-tracking", "eta", "aug-cost", "faction-augs", "auto-recommend", "purchase-plan", "owned-filter", "prereq-order", "nfg-tracking", "auto-work", "work-status"],
       unavailableFeatures: [],
-      currentRamUsage: 0, // Actual value comes from daemon when running
+      currentRamUsage: 0,
       nextTierRam: null,
       canUpgrade: false,
       allFactions: raw.factionData.map(f => ({
@@ -186,25 +160,15 @@ function formatRepStatus(ns: NS, extra?: PluginContext): FormattedRepStatus | nu
       repGapFormatted: ns.formatNumber(repGap),
       repGapPositive: repGap > 0,
       repProgress,
-      pendingAugs: raw.pendingAugs.length,
       installedAugs: raw.installedAugs.length,
-      purchasePlan: raw.purchasePlan.map(item => ({
-        name: item.name,
-        faction: item.faction,
-        baseCost: item.basePrice,
-        adjustedCost: item.adjustedCost,
-        costFormatted: ns.formatNumber(item.basePrice),
-        adjustedCostFormatted: ns.formatNumber(item.adjustedCost),
-      })),
       repGainRate,
       eta,
       nextAugCost,
       nextAugCostFormatted: ns.formatNumber(nextAugCost),
-      canAffordNextAug: playerMoney >= nextAugCost,
+      canAffordNextAug: player.money >= nextAugCost,
       favor: targetFactionData?.favor ?? 0,
       favorToUnlock,
       pendingBackdoors,
-      hasUnlockedAugs,
       nonWorkableFactions: nonWorkableProgress.map(item => ({
         factionName: item.faction.name,
         nextAugName: item.nextAug.name,
@@ -212,50 +176,11 @@ function formatRepStatus(ns: NS, extra?: PluginContext): FormattedRepStatus | nu
         currentRep: ns.formatNumber(item.faction.currentRep),
         requiredRep: ns.formatNumber(item.nextAug.repReq),
       })),
-      sequentialAugs: sequentialAugs.map(item => ({
-        faction: item.faction,
-        augName: item.aug.name,
-        cost: item.aug.basePrice,
-        costFormatted: ns.formatNumber(item.aug.basePrice),
-        canAfford: item.canAfford,
-      })),
       isWorkingForFaction: workStatus.isWorkingForFaction,
       isOptimalWork: workStatus.isOptimalWork,
       bestWorkType: workStatus.bestWorkType,
       currentWorkType: workStatus.currentWorkType,
       isWorkable: workStatus.isWorkable,
-      neuroFlux: {
-        currentLevel: nfInfo.currentLevel,
-        bestFaction: nfInfo.bestFaction,
-        hasEnoughRep: nfInfo.hasEnoughRep,
-        canPurchase: nfPlan.purchases > 0,
-        currentRep: nfInfo.bestFactionRep,
-        currentRepFormatted: ns.formatNumber(nfInfo.bestFactionRep),
-        repRequired: nfInfo.repRequired,
-        repRequiredFormatted: ns.formatNumber(nfInfo.repRequired),
-        repProgress: nfRepProgress,
-        repGap: nfRepGap,
-        repGapFormatted: ns.formatNumber(nfRepGap),
-        currentPrice: nfInfo.currentPrice,
-        currentPriceFormatted: ns.formatNumber(nfInfo.currentPrice),
-        purchasePlan: nfPlan.purchases > 0 ? {
-          startLevel: nfPlan.startLevel,
-          endLevel: nfPlan.endLevel,
-          purchases: nfPlan.purchases,
-          totalCost: nfPlan.totalCost,
-          totalCostFormatted: ns.formatNumber(nfPlan.totalCost),
-        } : null,
-        canDonate,
-        donationPlan: donatePlan && donatePlan.canExecute ? {
-          purchases: donatePlan.purchases,
-          totalDonationCost: donatePlan.totalDonationCost,
-          totalDonationCostFormatted: ns.formatNumber(donatePlan.totalDonationCost),
-          totalPurchaseCost: donatePlan.totalPurchaseCost,
-          totalPurchaseCostFormatted: ns.formatNumber(donatePlan.totalPurchaseCost),
-          totalCost: donatePlan.totalCost,
-          totalCostFormatted: ns.formatNumber(donatePlan.totalCost),
-        } : null,
-      },
     };
   } catch {
     return null;
@@ -306,12 +231,8 @@ function RepOverviewCard({ status, running, toolId, error, pid }: OverviewCardPr
             <span style={styles.statHighlight}>{status?.targetFaction ?? "—"}</span>
           </div>
           <div style={styles.stat}>
-            <span style={styles.statLabel}>Pending Augs</span>
-            <span style={styles.statValue}>{status?.pendingAugs ?? "—"}</span>
-          </div>
-          <div style={styles.stat}>
-            <span style={styles.statLabel}>Unlocked</span>
-            <span style={styles.statValue}>{status?.purchasePlan?.length ?? "—"}</span>
+            <span style={styles.statLabel}>Installed</span>
+            <span style={styles.statValue}>{status?.installedAugs ?? "—"}</span>
           </div>
         </>
       )}
@@ -509,18 +430,6 @@ function HighTierDetailPanel({
   tierColor: string;
   tierLabel: string;
 }): React.ReactElement {
-  // Calculate affordable count and total
-  let runningTotal = 0;
-  const purchaseWithTotals = (status.purchasePlan ?? []).map(item => {
-    runningTotal += item.adjustedCost;
-    return { ...item, runningTotal };
-  });
-  const totalCost = runningTotal;
-
-  const handleBuyAugs = () => {
-    runScript("rep", "actions/purchase-augments.js", []);
-  };
-
   const handleBackdoors = () => {
     runBackdoors();
   };
@@ -533,30 +442,6 @@ function HighTierDetailPanel({
 
   // Show work button when: workable faction, not optimal work, and still need rep
   const showWorkButton = status.isWorkable && !status.isOptimalWork && status.repGapPositive;
-
-  // Install augments confirmation state
-  const confirmInstall = getPluginUIState<boolean>("rep", "confirmInstall", false);
-  const handleInstallAugs = () => {
-    if (confirmInstall) {
-      installAugments();
-      setPluginUIState("rep", "confirmInstall", false);
-    } else {
-      setPluginUIState("rep", "confirmInstall", true);
-    }
-  };
-  const handleInstallBlur = () => {
-    setPluginUIState("rep", "confirmInstall", false);
-  };
-
-  // NeuroFlux buy handler
-  const handleBuyNFG = () => {
-    runScript("rep", "actions/purchase-neuroflux.js", []);
-  };
-
-  // NeuroFlux donate & buy handler
-  const handleDonateAndBuyNFG = () => {
-    runScript("rep", "actions/neuroflux-donate.js", ["--confirm"]);
-  };
 
   return (
     <div style={styles.panel}>
@@ -602,7 +487,7 @@ function HighTierDetailPanel({
       </div>
 
       {/* Action Buttons */}
-      {(status.hasUnlockedAugs || (status.pendingBackdoors && status.pendingBackdoors.length > 0) || showWorkButton || (status.pendingAugs ?? 0) > 0 || status.neuroFlux?.purchasePlan || (status.neuroFlux?.canDonate && status.neuroFlux?.donationPlan)) && (
+      {((status.pendingBackdoors && status.pendingBackdoors.length > 0) || showWorkButton) && (
         <div style={{ display: "flex", gap: "8px", marginBottom: "8px", flexWrap: "wrap" }}>
           {showWorkButton && (
             <button
@@ -619,18 +504,6 @@ function HighTierDetailPanel({
               Work: {status.bestWorkType}
             </button>
           )}
-          {status.hasUnlockedAugs && (
-            <button
-              style={{
-                ...styles.buttonPlay,
-                marginLeft: 0,
-                padding: "4px 12px",
-              }}
-              onClick={handleBuyAugs}
-            >
-              Buy Augs ({status.purchasePlan?.length ?? 0})
-            </button>
-          )}
           {status.pendingBackdoors && status.pendingBackdoors.length > 0 && (
             <button
               style={{
@@ -644,50 +517,6 @@ function HighTierDetailPanel({
               title={status.pendingBackdoors.join(", ")}
             >
               Backdoors ({status.pendingBackdoors.length})
-            </button>
-          )}
-          {(status.pendingAugs ?? 0) > 0 && (
-              <button
-                  style={{
-                    ...styles.buttonPlay,
-                    backgroundColor: confirmInstall ? "#aa0000" : "#550055",
-                    color: confirmInstall ? "#fff" : "#ff88ff",
-                    padding: "4px 12px",
-                  }}
-                  onClick={handleInstallAugs}
-                  onBlur={handleInstallBlur}
-              >
-                {confirmInstall ? "Confirm Install?" : `Install Augs (${status.pendingAugs})`}
-              </button>
-          )}
-          {status.neuroFlux?.purchasePlan && (
-            <button
-              style={{
-                ...styles.buttonPlay,
-                marginLeft: 0,
-                padding: "4px 12px",
-                backgroundColor: "#003366",
-                color: "#00aaff",
-              }}
-              onClick={handleBuyNFG}
-              title={`Buy ${status.neuroFlux.purchasePlan.purchases} NFG level(s) for $${status.neuroFlux.purchasePlan.totalCostFormatted}`}
-            >
-              Buy NFG ({status.neuroFlux.purchasePlan.purchases})
-            </button>
-          )}
-          {status.neuroFlux?.canDonate && status.neuroFlux?.donationPlan && (
-            <button
-              style={{
-                ...styles.buttonPlay,
-                marginLeft: 0,
-                padding: "4px 12px",
-                backgroundColor: "#554400",
-                color: "#ffcc00",
-              }}
-              onClick={handleDonateAndBuyNFG}
-              title={`Donate & buy ${status.neuroFlux.donationPlan.purchases} NFG level(s) for $${status.neuroFlux.donationPlan.totalCostFormatted}`}
-            >
-              Donate+NFG ({status.neuroFlux.donationPlan.purchases})
             </button>
           )}
         </div>
@@ -740,26 +569,6 @@ function HighTierDetailPanel({
         </div>
       )}
 
-      {/* Stats Summary */}
-      <div style={styles.grid}>
-        <div style={styles.card}>
-          <div style={styles.stat}>
-            <span style={styles.statLabel}>Pending Augs</span>
-            <span style={styles.statHighlight}>{status.pendingAugs ?? 0}</span>
-          </div>
-          <div style={styles.stat}>
-            <span style={styles.statLabel}>Installed Augs</span>
-            <span style={styles.statValue}>{status.installedAugs ?? 0}</span>
-          </div>
-        </div>
-        <div style={styles.card}>
-          <div style={styles.stat}>
-            <span style={styles.statLabel}>Unlocked to Buy</span>
-            <span style={styles.statHighlight}>{status.purchasePlan?.length ?? 0}</span>
-          </div>
-        </div>
-      </div>
-
       {/* Non-workable Factions Hint Box */}
       {status.nonWorkableFactions && status.nonWorkableFactions.length > 0 && (
         <div style={{
@@ -804,228 +613,6 @@ function HighTierDetailPanel({
         </div>
       )}
 
-      {/* Purchase Order Table */}
-      {status.purchasePlan && status.purchasePlan.length > 0 && (
-        <div style={styles.section}>
-          <div style={styles.sectionTitle}>
-            PURCHASE ORDER
-            <span style={{ ...styles.dim, marginLeft: "8px", fontWeight: "normal" }}>
-              {status.purchasePlan.length} unlocked | ${totalCost.toLocaleString()} total
-            </span>
-          </div>
-          <table style={styles.table}>
-            <thead>
-              <tr>
-                <th style={{ ...styles.tableHeader, width: "24px" }}>#</th>
-                <th style={styles.tableHeader}>Augmentation</th>
-                <th style={styles.tableHeader}>Faction</th>
-                <th style={{ ...styles.tableHeader, textAlign: "right" }}>Adjusted</th>
-                <th style={{ ...styles.tableHeader, textAlign: "right" }}>Total</th>
-              </tr>
-            </thead>
-            <tbody>
-              {purchaseWithTotals.slice(0, 12).map((item, i) => {
-                const rowStyle = i % 2 === 0 ? styles.tableRow : styles.tableRowAlt;
-
-                return (
-                  <tr key={i} style={rowStyle}>
-                    <td style={{ ...styles.tableCell, color: "#888" }}>{i + 1}</td>
-                    <td style={{ ...styles.tableCell, color: "#fff" }}>
-                      {item.name.substring(0, 32)}
-                    </td>
-                    <td style={{ ...styles.tableCell, color: "#fff" }}>
-                      {item.faction.substring(0, 16)}
-                    </td>
-                    <td style={{ ...styles.tableCell, textAlign: "right", color: "#00ff00" }}>
-                      ${item.adjustedCostFormatted}
-                    </td>
-                    <td style={{ ...styles.tableCell, textAlign: "right", ...styles.runningTotal }}>
-                      ${item.runningTotal.toLocaleString()}
-                    </td>
-                  </tr>
-                );
-              })}
-              {status.purchasePlan.length > 12 && (
-                <tr style={styles.tableRowAlt}>
-                  <td style={{ ...styles.tableCell, ...styles.dim }} colSpan={5}>
-                    ... +{status.purchasePlan.length - 12} more
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
-        </div>
-      )}
-
-      {/* Sequential Purchase Augs (Shadows of Anarchy, etc.) */}
-      {status.sequentialAugs && status.sequentialAugs.length > 0 && (
-        <div style={{
-          ...styles.card,
-          backgroundColor: "rgba(255, 170, 0, 0.1)",
-          borderLeft: "3px solid #ffaa00",
-          marginTop: "8px",
-        }}>
-          <div style={{ color: "#ffaa00", fontSize: "11px", marginBottom: "6px" }}>
-            SEQUENTIAL ONLY (one at a time)
-          </div>
-          {status.sequentialAugs.map((item, i) => (
-            <div key={i} style={{ display: "flex", justifyContent: "space-between", marginBottom: "4px" }}>
-              <span style={{ color: "#fff", fontSize: "11px" }}>
-                {item.augName.substring(0, 28)}
-              </span>
-              <span style={{ fontSize: "11px" }}>
-                <span style={{ color: "#888" }}>{item.faction}</span>
-                {" - "}
-                <span style={{ color: item.canAfford ? "#00ff00" : "#ff4444" }}>
-                  {item.canAfford ? "" : ""} ${item.costFormatted}
-                </span>
-              </span>
-            </div>
-          ))}
-          <div style={{ color: "#888", fontSize: "10px", marginTop: "4px" }}>
-            Rep requirement increases after each purchase
-          </div>
-        </div>
-      )}
-
-      {/* NeuroFlux Governor Section */}
-      {status.neuroFlux && status.neuroFlux.bestFaction && (
-        <div style={{
-          ...styles.card,
-          backgroundColor: "rgba(0, 150, 255, 0.1)",
-          borderLeft: "3px solid #0088ff",
-          marginTop: "8px",
-        }}>
-          <div style={{ color: "#0088ff", fontSize: "11px", marginBottom: "6px" }}>
-            NEUROFLUX GOVERNOR
-          </div>
-          <div style={styles.stat}>
-            <span style={styles.statLabel}>Best Faction</span>
-            <span style={styles.statValue}>{status.neuroFlux.bestFaction}</span>
-          </div>
-
-          {/* Rep progress when not enough rep */}
-          {!status.neuroFlux.hasEnoughRep && (
-            <>
-              <div style={{ marginTop: "8px", marginBottom: "4px" }}>
-                <ProgressBar
-                  progress={status.neuroFlux.repProgress}
-                  label={`${(status.neuroFlux.repProgress * 100).toFixed(1)}%`}
-                  fillColor="#0088ff"
-                />
-              </div>
-              <div style={styles.stat}>
-                <span style={styles.statLabel}>Rep Progress</span>
-                <span style={styles.statValue}>
-                  {status.neuroFlux.currentRepFormatted} / {status.neuroFlux.repRequiredFormatted}
-                </span>
-              </div>
-              <div style={styles.stat}>
-                <span style={styles.statLabel}>Need</span>
-                <span style={{ color: "#ffaa00" }}>{status.neuroFlux.repGapFormatted} more</span>
-              </div>
-              {(status.repGainRate ?? 0) > 0 && (
-                <div style={styles.stat}>
-                  <span style={styles.statLabel}>ETA</span>
-                  <span style={styles.etaDisplay}>
-                    {formatTime(status.neuroFlux.repGap / (status.repGainRate ?? 1))}
-                    <span style={styles.dim}> @ {(status.repGainRate ?? 0).toFixed(1)}/s</span>
-                  </span>
-                </div>
-              )}
-            </>
-          )}
-
-          {/* Purchase info when can buy */}
-          {status.neuroFlux.purchasePlan && (
-            <>
-              <div style={styles.stat}>
-                <span style={styles.statLabel}>Can Buy</span>
-                <span style={styles.statHighlight}>
-                  {status.neuroFlux.purchasePlan.purchases} upgrade{status.neuroFlux.purchasePlan.purchases !== 1 ? "s" : ""}
-                </span>
-              </div>
-              <div style={styles.stat}>
-                <span style={styles.statLabel}>Total Cost</span>
-                <span style={{ color: "#00ff00" }}>
-                  ${status.neuroFlux.purchasePlan.totalCostFormatted}
-                </span>
-              </div>
-              <button
-                style={{
-                  ...styles.buttonPlay,
-                  marginTop: "8px",
-                  marginLeft: 0,
-                  padding: "4px 12px",
-                  backgroundColor: "#003366",
-                  color: "#00aaff",
-                }}
-                onClick={handleBuyNFG}
-              >
-                Buy NFG ({status.neuroFlux.purchasePlan.purchases})
-              </button>
-            </>
-          )}
-
-          {/* Donate & Buy section when eligible */}
-          {status.neuroFlux.canDonate && status.neuroFlux.donationPlan && (
-            <div style={{
-              marginTop: "12px",
-              paddingTop: "8px",
-              borderTop: "1px solid rgba(255, 200, 0, 0.3)",
-            }}>
-              <div style={{ color: "#ffcc00", fontSize: "11px", marginBottom: "6px" }}>
-                DONATE & BUY (150+ favor)
-              </div>
-              <div style={styles.stat}>
-                <span style={styles.statLabel}>Can Buy</span>
-                <span style={styles.statHighlight}>
-                  {status.neuroFlux.donationPlan.purchases} upgrade{status.neuroFlux.donationPlan.purchases !== 1 ? "s" : ""}
-                </span>
-              </div>
-              <div style={styles.stat}>
-                <span style={styles.statLabel}>Donations</span>
-                <span style={{ color: "#ffcc00" }}>
-                  ${status.neuroFlux.donationPlan.totalDonationCostFormatted}
-                </span>
-              </div>
-              <div style={styles.stat}>
-                <span style={styles.statLabel}>Purchases</span>
-                <span style={{ color: "#00ff00" }}>
-                  ${status.neuroFlux.donationPlan.totalPurchaseCostFormatted}
-                </span>
-              </div>
-              <div style={styles.stat}>
-                <span style={styles.statLabel}>Total</span>
-                <span style={{ color: "#00ffff" }}>
-                  ${status.neuroFlux.donationPlan.totalCostFormatted}
-                </span>
-              </div>
-              <button
-                style={{
-                  ...styles.buttonPlay,
-                  marginTop: "8px",
-                  marginLeft: 0,
-                  padding: "4px 12px",
-                  backgroundColor: "#554400",
-                  color: "#ffcc00",
-                }}
-                onClick={handleDonateAndBuyNFG}
-              >
-                Donate & Buy ({status.neuroFlux.donationPlan.purchases})
-              </button>
-            </div>
-          )}
-
-          {/* Show next NFG cost when has rep but can't afford */}
-          {status.neuroFlux.hasEnoughRep && !status.neuroFlux.purchasePlan && (
-            <div style={styles.stat}>
-              <span style={styles.statLabel}>Next Cost</span>
-              <span style={{ color: "#ff4444" }}>${status.neuroFlux.currentPriceFormatted}</span>
-            </div>
-          )}
-        </div>
-      )}
     </div>
   );
 }

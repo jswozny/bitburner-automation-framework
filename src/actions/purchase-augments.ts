@@ -19,10 +19,23 @@ export async function main(ns: NS): Promise<void> {
   const flags = ns.flags([
     ["dry-run", false],
     ["max-spend", Infinity],
-  ]) as { "dry-run": boolean; "max-spend": number; _: string[] };
+    ["only", ""],
+  ]) as { "dry-run": boolean; "max-spend": number; only: string; _: string[] };
 
   const dryRun = flags["dry-run"];
   const maxSpend = flags["max-spend"];
+
+  // Parse --only flag: JSON array of aug names to purchase exclusively
+  let onlyAugs: Set<string> | null = null;
+  if (flags.only) {
+    try {
+      const parsed = JSON.parse(flags.only) as string[];
+      onlyAugs = new Set(parsed);
+    } catch {
+      ns.tprint(`ERROR: --only flag must be a JSON array of augment names`);
+      return;
+    }
+  }
 
   // Analyze all factions and get purchase priority
   const player = ns.getPlayer();
@@ -30,7 +43,12 @@ export async function main(ns: NS): Promise<void> {
   const factions = analyzeFactions(ns, player, ownedAugs);
   const plan = calculatePurchasePriority(ns, factions);
 
-  if (plan.length === 0) {
+  // Filter plan if --only was provided
+  const filteredPlan = onlyAugs
+    ? plan.filter((a) => onlyAugs!.has(a.name))
+    : plan;
+
+  if (filteredPlan.length === 0) {
     ns.tprint("No augmentations available for purchase.");
     return;
   }
@@ -42,9 +60,9 @@ export async function main(ns: NS): Promise<void> {
 
   ns.tprint(`\n=== Augmentation Purchase ${dryRun ? "(DRY RUN)" : ""} ===`);
   ns.tprint(`Available money: ${ns.formatNumber(playerMoney, 1)}`);
-  ns.tprint(`Augmentations in plan: ${plan.length}\n`);
+  ns.tprint(`Augmentations in plan: ${filteredPlan.length}${onlyAugs ? ` (filtered from ${plan.length})` : ""}\n`);
 
-  for (const aug of plan) {
+  for (const aug of filteredPlan) {
     if (totalSpent + aug.adjustedCost > maxSpend) {
       ns.tprint(`  SKIP: ${aug.name} (${ns.formatNumber(aug.adjustedCost, 1)}) — exceeds max spend`);
       skipped++;

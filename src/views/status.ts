@@ -56,6 +56,7 @@ const DAEMON_DOCS: Record<ToolName, { start: string; stop: string; flags: string
              flags: "--preferred-city <city> (Sector-12, Aevum, Chongqing, New Tokyo, Ishima, Volhaven)" },
   infiltration: { start: "run daemons/infiltration.js", stop: "kill daemons/infiltration.js", flags: null },
   gang: { start: "run daemons/gang.js", stop: "kill daemons/gang.js", flags: "--strategy respect|money|territory|balanced --no-kill" },
+  augments: { start: "run daemons/augments.js", stop: "kill daemons/augments.js", flags: "--interval <ms> --one-shot" },
 };
 
 // === RUNNING STATE ===
@@ -344,23 +345,7 @@ function printRepDetail(ns: NS, log: Log): void {
   printField(log, "Progress", `${((rep.repProgress ?? 0) * 100).toFixed(1)}%`);
   printField(log, "ETA", rep.eta ?? "—");
   printField(log, "Favor", `${rep.favor ?? 0} / ${rep.favorToUnlock ?? 150}`);
-  printField(log, "Pending Augs", String(rep.pendingAugs ?? 0));
   printField(log, "Installed Augs", String(rep.installedAugs ?? 0));
-
-  if (rep.purchasePlan && rep.purchasePlan.length > 0) {
-    log(`\n  ${C.cyan}Purchase Plan:${C.reset}`);
-    for (const aug of rep.purchasePlan.slice(0, 10)) {
-      log(`    ${aug.name} (${aug.faction}) — ${aug.adjustedCostFormatted}`);
-    }
-  }
-
-  if (rep.neuroFlux) {
-    log(`\n  ${C.magenta}NeuroFlux Governor:${C.reset}`);
-    printField(log, "  Level", String(rep.neuroFlux.currentLevel));
-    printField(log, "  Best Faction", rep.neuroFlux.bestFaction || "None");
-    printField(log, "  Price", rep.neuroFlux.currentPriceFormatted);
-    printField(log, "  Can Purchase", rep.neuroFlux.canPurchase ? "Yes" : "No");
-  }
   printCliDocs(log, "rep");
   log("");
 }

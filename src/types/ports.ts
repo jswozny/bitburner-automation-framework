@@ -23,6 +23,7 @@ export const STATUS_PORTS = {
   infiltration: 11,
   gang: 13,
   gangTerritory: 14,
+  augments: 16,
 } as const;
 
 export const GANG_CONTROL_PORT = 15;
@@ -32,7 +33,7 @@ export const COMMAND_PORT = 20;
 
 // === TOOL NAMES ===
 
-export type ToolName = "nuke" | "pserv" | "share" | "rep" | "hack" | "darkweb" | "work" | "faction" | "infiltration" | "gang";
+export type ToolName = "nuke" | "pserv" | "share" | "rep" | "hack" | "darkweb" | "work" | "faction" | "infiltration" | "gang" | "augments";
 
 // === TOOL SCRIPTS (daemon paths) ===
 
@@ -47,6 +48,7 @@ export const TOOL_SCRIPTS: Record<ToolName, string> = {
   faction: "daemons/faction.js",
   infiltration: "daemons/infiltration.js",
   gang: "daemons/gang.js",
+  augments: "daemons/augments.js",
 };
 
 // === PRIORITY CONSTANTS ===
@@ -74,7 +76,7 @@ export interface QueueEntry {
 
 export interface Command {
   tool: ToolName;
-  action: "start" | "stop" | "open-tail" | "run-script" | "start-faction-work" | "set-focus" | "start-training" | "install-augments" | "run-backdoors" | "restart-rep-daemon" | "join-faction" | "restart-faction-daemon" | "restart-hack-daemon" | "restart-share-daemon" | "stop-infiltration" | "kill-infiltration" | "configure-infiltration" | "set-gang-strategy" | "pin-gang-member" | "unpin-gang-member" | "ascend-gang-member" | "toggle-gang-purchases" | "toggle-gang-warfare" | "set-gang-wanted-threshold" | "set-gang-ascension-thresholds" | "set-gang-training-threshold" | "set-gang-grow-target" | "set-gang-grow-respect-reserve" | "force-buy-equipment" | "restart-gang-daemon";
+  action: "start" | "stop" | "open-tail" | "run-script" | "start-faction-work" | "set-focus" | "start-training" | "install-augments" | "run-backdoors" | "restart-rep-daemon" | "join-faction" | "restart-faction-daemon" | "restart-hack-daemon" | "restart-share-daemon" | "stop-infiltration" | "kill-infiltration" | "configure-infiltration" | "set-gang-strategy" | "pin-gang-member" | "unpin-gang-member" | "ascend-gang-member" | "toggle-gang-purchases" | "toggle-gang-warfare" | "set-gang-wanted-threshold" | "set-gang-ascension-thresholds" | "set-gang-training-threshold" | "set-gang-grow-target" | "set-gang-grow-respect-reserve" | "force-buy-equipment" | "restart-gang-daemon" | "buy-selected-augments";
   scriptPath?: string;
   scriptArgs?: string[];
   factionName?: string;
@@ -100,6 +102,7 @@ export interface Command {
   gangTrainingThreshold?: number;
   gangGrowTargetMultiplier?: number;
   gangGrowRespectReserve?: number;
+  selectedAugs?: string[];
 }
 
 // === STATUS INTERFACES ===
@@ -244,28 +247,43 @@ export interface RepStatus {
   }[];
 
   // === TIER 4+: FULL PLANNING (optional) ===
-  pendingAugs?: number;
   installedAugs?: number;
-  purchasePlan?: {
-    name: string;
-    faction: string;
-    baseCost: number;
-    adjustedCost: number;
-    costFormatted: string;
-    adjustedCostFormatted: string;
-  }[];
-  hasUnlockedAugs?: boolean;
 
   // === TIER 5+: PREREQUISITE AWARENESS (optional) ===
   nonWorkableFactions?: NonWorkableFactionProgress[];
-  sequentialAugs?: {
+
+  // === TIER 6: AUTO-WORK (optional) ===
+  isWorkingForFaction?: boolean;
+  isOptimalWork?: boolean;
+  bestWorkType?: "hacking" | "field" | "security";
+  currentWorkType?: string | null;
+  isWorkable?: boolean;
+  pendingBackdoors?: string[];
+  repGainRate?: number;
+  eta?: string;
+}
+
+// === AUGMENTS STATUS ===
+
+export interface AugmentPurchaseEntry {
+  name: string;
+  faction: string;
+  baseCost: number;
+  adjustedCost: number;
+  baseCostFormatted: string;
+  adjustedCostFormatted: string;
+}
+
+export interface AugmentsStatus {
+  available: AugmentPurchaseEntry[];
+  sequentialAugs: {
     faction: string;
     augName: string;
     cost: number;
     costFormatted: string;
     canAfford: boolean;
   }[];
-  neuroFlux?: {
+  neuroFlux: {
     currentLevel: number;
     bestFaction: string | null;
     hasEnoughRep: boolean;
@@ -297,16 +315,10 @@ export interface RepStatus {
       totalCostFormatted: string;
     } | null;
   } | null;
-
-  // === TIER 6: AUTO-WORK (optional) ===
-  isWorkingForFaction?: boolean;
-  isOptimalWork?: boolean;
-  bestWorkType?: "hacking" | "field" | "security";
-  currentWorkType?: string | null;
-  isWorkable?: boolean;
-  pendingBackdoors?: string[];
-  repGainRate?: number;
-  eta?: string;
+  pendingAugs: number;
+  installedAugs: number;
+  playerMoney: number;
+  playerMoneyFormatted: string;
 }
 
 export interface DarkwebStatus {
@@ -830,6 +842,7 @@ export interface DashboardState {
   fleetAllocation: FleetAllocation | null;
   infiltrationStatus: InfiltrationStatus | null;
   gangStatus: GangStatus | null;
+  augmentsStatus: AugmentsStatus | null;
 }
 
 // === PLUGIN INTERFACE (for dashboard) ===

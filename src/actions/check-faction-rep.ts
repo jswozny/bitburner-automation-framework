@@ -65,9 +65,7 @@ export async function main(ns: NS): Promise<void> {
     repGapFormatted: "-",
     repGapPositive: false,
     repProgress: 0,
-    pendingAugs: 0,
-    installedAugs: player.totalPlaytime > 0 ? 0 : 0,  // Can't determine without getOwnedAugmentations
-    purchasePlan: [],
+    installedAugs: 0,
     repGainRate: 0,
     eta: "-",
     nextAugCost: 0,
@@ -76,15 +74,12 @@ export async function main(ns: NS): Promise<void> {
     favor: bestFavor,
     favorToUnlock: 150,
     pendingBackdoors: [],
-    hasUnlockedAugs: false,
     nonWorkableFactions: [],
-    sequentialAugs: [],
     isWorkingForFaction: false,
     isOptimalWork: false,
     bestWorkType: "hacking",
     currentWorkType: null,
     isWorkable: true,
-    neuroFlux: null,
   };
 
   publishStatus(ns, STATUS_PORTS.rep, status as RepStatus);

@@ -32,6 +32,7 @@ import {
   InfiltrationStatus,
   GangStatus,
   GangStrategy,
+  AugmentsStatus,
   Command,
 } from "/types/ports";
 
@@ -103,7 +104,15 @@ export function writeStartTrainingCommand(): void {
  */
 export function installAugments(): void {
   if (!commandPort) return;
-  commandPort.write(JSON.stringify({ tool: "rep", action: "install-augments" }));
+  commandPort.write(JSON.stringify({ tool: "augments", action: "install-augments" }));
+}
+
+/**
+ * Buy only selected augmentations by name.
+ */
+export function buySelectedAugments(augNames: string[]): void {
+  if (!commandPort) return;
+  commandPort.write(JSON.stringify({ tool: "augments", action: "buy-selected-augments", selectedAugs: augNames }));
 }
 
 /**
@@ -521,6 +530,19 @@ function executeCommand(ns: NS, cmd: Command): void {
         ns.toast(`Gang: ${cmd.action.replace("gang-", "").replace(/-/g, " ")}`, "info", 2000);
       }
       break;
+    case "buy-selected-augments":
+      {
+        if (cmd.selectedAugs && cmd.selectedAugs.length > 0) {
+          const onlyArg = JSON.stringify(cmd.selectedAugs);
+          const pid = ns.exec("actions/purchase-augments.js", "home", 1, "--only", onlyArg);
+          if (pid > 0) {
+            ns.toast(`Buying ${cmd.selectedAugs.length} selected augments...`, "success", 2000);
+          } else {
+            ns.toast("Failed to launch purchase-augments (not enough RAM)", "error", 3000);
+          }
+        }
+      }
+      break;
     case "restart-gang-daemon":
       {
         const currentGangPid = cachedData.pids.gang;
@@ -584,6 +606,7 @@ const uiState: UIState = {
     faction: {},
     infiltration: {},
     gang: {},
+    augments: {},
   },
 };
 
@@ -691,10 +714,11 @@ interface CachedData {
   fleetAllocation: FleetAllocation | null;
   infiltrationStatus: InfiltrationStatus | null;
   gangStatus: GangStatus | null;
+  augmentsStatus: AugmentsStatus | null;
 }
 
 const cachedData: CachedData = {
-  pids: { nuke: 0, pserv: 0, share: 0, rep: 0, hack: 0, darkweb: 0, work: 0, faction: 0, infiltration: 0, gang: 0 },
+  pids: { nuke: 0, pserv: 0, share: 0, rep: 0, hack: 0, darkweb: 0, work: 0, faction: 0, infiltration: 0, gang: 0, augments: 0 },
   nukeStatus: null,
   pservStatus: null,
   shareStatus: null,
@@ -711,6 +735,7 @@ const cachedData: CachedData = {
   fleetAllocation: null,
   infiltrationStatus: null,
   gangStatus: null,
+  augmentsStatus: null,
 };
 
 // === PORT-BASED STATUS READING ===
@@ -765,6 +790,8 @@ export function readStatusPorts(ns: NS): void {
   cachedData.infiltrationStatus = peekStatus<InfiltrationStatus>(ns, STATUS_PORTS.infiltration, STALE_THRESHOLD_MS);
 
   cachedData.gangStatus = peekStatus<GangStatus>(ns, STATUS_PORTS.gang, STALE_THRESHOLD_MS);
+
+  cachedData.augmentsStatus = peekStatus<AugmentsStatus>(ns, STATUS_PORTS.augments, STALE_THRESHOLD_MS);
 }
 
 // === TOOL CONTROL ===
@@ -782,6 +809,7 @@ function clearToolStatus(tool: ToolName): void {
     case "faction": cachedData.factionStatus = null; cachedData.factionError = null; break;
     case "infiltration": cachedData.infiltrationStatus = null; break;
     case "gang": cachedData.gangStatus = null; break;
+    case "augments": cachedData.augmentsStatus = null; break;
   }
 }
 
@@ -936,5 +964,6 @@ export function getStateSnapshot(): DashboardState {
     fleetAllocation: cachedData.fleetAllocation,
     infiltrationStatus: cachedData.infiltrationStatus,
     gangStatus: cachedData.gangStatus,
+    augmentsStatus: cachedData.augmentsStatus,
   };
 }

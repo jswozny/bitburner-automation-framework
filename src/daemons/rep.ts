@@ -25,18 +25,11 @@ import {
   getBasicFactionRep,
   analyzeFactions,
   findNextWorkableAugmentation,
-  calculatePurchasePriority,
   selectBestWorkType,
   getOwnedAugs,
   getInstalledAugs,
-  getPendingAugs,
-  getNeuroFluxInfo,
-  calculateNeuroFluxPurchasePlan,
   getNonWorkableFactionProgress,
   getFactionWorkStatus,
-  getSequentialPurchaseAugs,
-  canDonateToFaction,
-  calculateNFGDonatePurchasePlan,
   getGangFaction,
 } from "/controllers/factions";
 import { publishStatus, peekStatus } from "/lib/ports";
@@ -309,7 +302,6 @@ function computeTier0Status(ns: NS, currentRam: number, nextTierRam?: number): R
     ...(cached && {
       allFactions: cached.allFactions,
       targetFaction: cached.targetFaction,
-      pendingAugs: cached.pendingAugs,
       installedAugs: cached.installedAugs,
     }),
   };
@@ -437,10 +429,8 @@ function computeHighTierStatus(
   const player = ns.getPlayer();
   const ownedAugs = getOwnedAugs(ns);
   const installedAugs = getInstalledAugs(ns);
-  const pendingAugs = getPendingAugs(ns);
 
   const factionData = analyzeFactions(ns, player, ownedAugs);
-  const purchasePlan = calculatePurchasePriority(ns, factionData);
 
   // Detect gang faction to exclude from auto-targeting
   const gangFaction = getGangFaction(ns);
@@ -466,10 +456,7 @@ function computeHighTierStatus(
   // Get non-workable faction progress (include gang faction)
   const nonWorkableProgress = getNonWorkableFactionProgress(factionData, gangExclude);
 
-  // Get NeuroFlux info
-  const nfInfo = getNeuroFluxInfo(ns);
-
-  // Determine target faction
+  // Determine target faction (for work targeting / NFG fallback)
   let targetFaction: string;
   let targetFactionRep = 0;
   let targetFactionFavor = 0;
@@ -478,25 +465,18 @@ function computeHighTierStatus(
     targetFaction = target.faction.name;
     targetFactionRep = target.faction.currentRep;
     targetFactionFavor = target.faction.favor;
-  } else if (nfInfo.bestFaction) {
-    // For NFG work target, skip gang faction (rep is earned passively via gang)
-    let nfgWorkFaction = nfInfo.bestFaction;
-    if (gangFaction && nfgWorkFaction === gangFaction) {
-      // Find next best NFG faction that isn't the gang
-      const altFaction = factionData
-        .filter(f => f.name !== gangFaction)
-        .sort((a, b) => b.currentRep - a.currentRep)
-        .find(f => {
-          try { return ns.singularity.getAugmentationsFromFaction(f.name).includes("NeuroFlux Governor"); } catch { return false; }
-        });
-      if (altFaction) nfgWorkFaction = altFaction.name;
-    }
-    targetFaction = nfgWorkFaction;
-    const fd = factionData.find((f) => f.name === nfgWorkFaction);
-    targetFactionRep = fd?.currentRep ?? 0;
-    targetFactionFavor = fd?.favor ?? 0;
   } else {
-    targetFaction = "None";
+    // Fall back to highest-rep faction for rep grinding
+    const best = factionData
+      .filter(f => !gangExclude || !gangExclude.has(f.name))
+      .sort((a, b) => b.currentRep - a.currentRep)[0];
+    if (best) {
+      targetFaction = best.name;
+      targetFactionRep = best.currentRep;
+      targetFactionFavor = best.favor;
+    } else {
+      targetFaction = "None";
+    }
   }
 
   const repRequired = target?.aug?.repReq ?? 0;
@@ -505,7 +485,6 @@ function computeHighTierStatus(
   const repProgress = repRequired > 0 ? Math.min(1, currentRep / repRequired) : 0;
 
   const favorToUnlock = ns.getFavorToDonate();
-  const playerMoney = player.money;
 
   let eta = "???";
   if (repGap > 0 && repGainRate > 0) {
@@ -516,7 +495,6 @@ function computeHighTierStatus(
 
   const nextAugCost = target?.aug?.basePrice ?? 0;
   const pendingBackdoors = getPendingBackdoors(ns);
-  const hasUnlockedAugs = purchasePlan.length > 0;
 
   // Work status (Tier 6 only)
   const defaultWorkStatus = {
@@ -530,23 +508,6 @@ function computeHighTierStatus(
   const workStatus = tier.tier >= 6 && targetFaction !== "None"
     ? getFactionWorkStatus(ns, player, targetFaction)
     : defaultWorkStatus;
-
-  // Sequential purchase augs
-  const sequentialAugs = getSequentialPurchaseAugs(ns, factionData, playerMoney);
-
-  // NeuroFlux plan
-  const nfPlan = calculateNeuroFluxPurchasePlan(ns, playerMoney);
-  const nfRepProgress =
-    nfInfo.repRequired > 0
-      ? Math.min(1, nfInfo.bestFactionRep / nfInfo.repRequired)
-      : 0;
-  const nfRepGap = Math.max(0, nfInfo.repRequired - nfInfo.bestFactionRep);
-  const canDonate = nfInfo.bestFaction
-    ? canDonateToFaction(ns, nfInfo.bestFaction)
-    : false;
-  const donatePlan = canDonate
-    ? calculateNFGDonatePurchasePlan(ns, playerMoney)
-    : null;
 
   return {
     tier: tier.tier,
@@ -573,25 +534,15 @@ function computeHighTierStatus(
     repGapFormatted: ns.formatNumber(repGap),
     repGapPositive: repGap > 0,
     repProgress,
-    pendingAugs: pendingAugs.length,
     installedAugs: installedAugs.length,
-    purchasePlan: purchasePlan.map((item) => ({
-      name: item.name,
-      faction: item.faction,
-      baseCost: item.basePrice,
-      adjustedCost: item.adjustedCost,
-      costFormatted: ns.formatNumber(item.basePrice),
-      adjustedCostFormatted: ns.formatNumber(item.adjustedCost),
-    })),
     repGainRate,
     eta,
     nextAugCost,
     nextAugCostFormatted: ns.formatNumber(nextAugCost),
-    canAffordNextAug: playerMoney >= nextAugCost,
+    canAffordNextAug: player.money >= nextAugCost,
     favor: targetFactionFavor,
     favorToUnlock,
     pendingBackdoors,
-    hasUnlockedAugs,
     nonWorkableFactions: nonWorkableProgress.map((item) => ({
       factionName: item.faction.name,
       nextAugName: item.nextAug.name,
@@ -599,62 +550,11 @@ function computeHighTierStatus(
       currentRep: ns.formatNumber(item.faction.currentRep),
       requiredRep: ns.formatNumber(item.nextAug.repReq),
     })),
-    sequentialAugs: sequentialAugs.map((item) => ({
-      faction: item.faction,
-      augName: item.aug.name,
-      cost: item.aug.basePrice,
-      costFormatted: ns.formatNumber(item.aug.basePrice),
-      canAfford: item.canAfford,
-    })),
     isWorkingForFaction: workStatus.isWorkingForFaction,
     isOptimalWork: workStatus.isOptimalWork,
     bestWorkType: workStatus.bestWorkType,
     currentWorkType: workStatus.currentWorkType,
     isWorkable: workStatus.isWorkable,
-    neuroFlux: nfInfo.bestFaction
-      ? {
-          currentLevel: nfInfo.currentLevel,
-          bestFaction: nfInfo.bestFaction,
-          hasEnoughRep: nfInfo.hasEnoughRep,
-          canPurchase: nfPlan.purchases > 0,
-          currentRep: nfInfo.bestFactionRep,
-          currentRepFormatted: ns.formatNumber(nfInfo.bestFactionRep),
-          repRequired: nfInfo.repRequired,
-          repRequiredFormatted: ns.formatNumber(nfInfo.repRequired),
-          repProgress: nfRepProgress,
-          repGap: nfRepGap,
-          repGapFormatted: ns.formatNumber(nfRepGap),
-          currentPrice: nfInfo.currentPrice,
-          currentPriceFormatted: ns.formatNumber(nfInfo.currentPrice),
-          purchasePlan:
-            nfPlan.purchases > 0
-              ? {
-                  startLevel: nfPlan.startLevel,
-                  endLevel: nfPlan.endLevel,
-                  purchases: nfPlan.purchases,
-                  totalCost: nfPlan.totalCost,
-                  totalCostFormatted: ns.formatNumber(nfPlan.totalCost),
-                }
-              : null,
-          canDonate,
-          donationPlan:
-            donatePlan && donatePlan.canExecute
-              ? {
-                  purchases: donatePlan.purchases,
-                  totalDonationCost: donatePlan.totalDonationCost,
-                  totalDonationCostFormatted: ns.formatNumber(
-                    donatePlan.totalDonationCost
-                  ),
-                  totalPurchaseCost: donatePlan.totalPurchaseCost,
-                  totalPurchaseCostFormatted: ns.formatNumber(
-                    donatePlan.totalPurchaseCost
-                  ),
-                  totalCost: donatePlan.totalCost,
-                  totalCostFormatted: ns.formatNumber(donatePlan.totalCost),
-                }
-              : null,
-        }
-      : null,
   };
 }
 
@@ -712,8 +612,7 @@ function printHighTierStatus(
   ns.print(`${C.cyan}=== Rep Daemon (${status.tierName}) ===${C.reset}`);
   ns.print(
     `${C.dim}Target: ${C.reset}${C.white}${status.targetFaction}${C.reset}` +
-      `  ${C.dim}|${C.reset}  ${C.yellow}${status.pendingAugs}${C.reset} ${C.dim}pending${C.reset}` +
-      `  ${C.dim}|${C.reset}  ${C.green}${status.purchasePlan?.length ?? 0}${C.reset} ${C.dim}unlocked${C.reset}`
+      `  ${C.dim}|${C.reset}  ${C.dim}Installed: ${C.reset}${C.green}${status.installedAugs ?? 0}${C.reset}`
   );
 
   // Next aug progress
@@ -741,21 +640,6 @@ function printHighTierStatus(
           ? `${C.green}$${status.nextAugCostFormatted}${C.reset}`
           : `${C.red}$${status.nextAugCostFormatted}${C.reset}`)
     );
-  } else if (status.neuroFlux?.bestFaction) {
-    ns.print("");
-    ns.print(`${C.cyan}NEUROFLUX GRINDING MODE${C.reset}`);
-    ns.print(
-      `${C.dim}Faction: ${C.reset}${C.white}${status.neuroFlux.bestFaction}${C.reset}`
-    );
-    if (!status.neuroFlux.hasEnoughRep) {
-      ns.print(
-        `${C.dim}NFG rep: ${status.neuroFlux.currentRepFormatted} / ${status.neuroFlux.repRequiredFormatted}${C.reset}`
-      );
-    } else {
-      ns.print(
-        `${C.green}Can purchase NFG${C.reset} ${C.dim}($${status.neuroFlux.currentPriceFormatted})${C.reset}`
-      );
-    }
   } else {
     ns.print("");
     ns.print(`${C.yellow}No faction with available augmentations found.${C.reset}`);
@@ -774,27 +658,6 @@ function printHighTierStatus(
         ? `${status.currentWorkType} (not optimal, best: ${status.bestWorkType})`
         : `not working (best: ${status.bestWorkType})`;
     ns.print(`${C.dim}Work:${C.reset} ${workColor}${workLabel}${C.reset}`);
-  }
-
-  // Purchase plan summary
-  if (status.purchasePlan && status.purchasePlan.length > 0) {
-    const totalCost = status.purchasePlan.reduce(
-      (sum, a) => sum + a.adjustedCost,
-      0
-    );
-    ns.print("");
-    ns.print(
-      `${C.cyan}PURCHASE ORDER${C.reset} ${C.dim}(${status.purchasePlan.length} augs, $${ns.formatNumber(totalCost)} total)${C.reset}`
-    );
-    for (let i = 0; i < Math.min(status.purchasePlan.length, 8); i++) {
-      const item = status.purchasePlan[i];
-      ns.print(
-        `  ${C.dim}${(i + 1).toString().padStart(2)}.${C.reset} ${C.white}${item.name.substring(0, 30).padEnd(30)}${C.reset} ${C.dim}$${item.adjustedCostFormatted}${C.reset}`
-      );
-    }
-    if (status.purchasePlan.length > 8) {
-      ns.print(`  ${C.dim}... +${status.purchasePlan.length - 8} more${C.reset}`);
-    }
   }
 
   // Bitnode status
@@ -1002,22 +865,13 @@ async function runFullMode(
       workTargetFaction = workTarget.faction.name;
       workTargetRep = workTarget.faction.currentRep;
     } else {
-      const nfInfo = getNeuroFluxInfo(ns);
-      if (nfInfo.bestFaction) {
-        // For NFG work target, skip gang faction
-        let nfgWorkFaction = nfInfo.bestFaction;
-        if (gangFaction && nfgWorkFaction === gangFaction) {
-          const altFaction = factionData
-            .filter(f => f.name !== gangFaction)
-            .sort((a, b) => b.currentRep - a.currentRep)
-            .find(f => {
-              try { return ns.singularity.getAugmentationsFromFaction(f.name).includes("NeuroFlux Governor"); } catch { return false; }
-            });
-          if (altFaction) nfgWorkFaction = altFaction.name;
-        }
-        workTargetFaction = nfgWorkFaction;
-        const fd = factionData.find((f) => f.name === nfgWorkFaction);
-        workTargetRep = fd?.currentRep ?? 0;
+      // Fall back to highest-rep faction (skip gang faction)
+      const best = factionData
+        .filter(f => !gangExclude || !gangExclude.has(f.name))
+        .sort((a, b) => b.currentRep - a.currentRep)[0];
+      if (best) {
+        workTargetFaction = best.name;
+        workTargetRep = best.currentRep;
       }
     }
 
