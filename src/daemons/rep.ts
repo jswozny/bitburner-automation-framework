@@ -442,14 +442,13 @@ function computeHighTierStatus(
   // Override with specific faction if requested
   if (targetFactionOverride) {
     const forcedFaction = factionData.find(f => f.name === targetFactionOverride);
-    if (forcedFaction && forcedFaction.availableAugs.length > 0) {
+    if (forcedFaction) {
       const nextAug = forcedFaction.availableAugs.find(a => a.repReq > forcedFaction.currentRep)
-        ?? forcedFaction.availableAugs[0];
-      target = {
-        aug: nextAug,
-        faction: forcedFaction,
-        repGap: Math.max(0, nextAug.repReq - forcedFaction.currentRep),
-      };
+        ?? forcedFaction.availableAugs[0]
+        ?? null;
+      target = nextAug
+        ? { aug: nextAug, faction: forcedFaction, repGap: Math.max(0, nextAug.repReq - forcedFaction.currentRep) }
+        : null;
     }
   }
 
@@ -465,6 +464,16 @@ function computeHighTierStatus(
     targetFaction = target.faction.name;
     targetFactionRep = target.faction.currentRep;
     targetFactionFavor = target.faction.favor;
+  } else if (targetFactionOverride) {
+    // Forced faction with no augs left — still show it as target
+    const forcedFaction = factionData.find(f => f.name === targetFactionOverride);
+    if (forcedFaction) {
+      targetFaction = forcedFaction.name;
+      targetFactionRep = forcedFaction.currentRep;
+      targetFactionFavor = forcedFaction.favor;
+    } else {
+      targetFaction = targetFactionOverride;
+    }
   } else {
     // Fall back to highest-rep faction for rep grinding
     const best = factionData
@@ -848,12 +857,13 @@ async function runFullMode(
       const forcedFaction = factionData.find(
         (f) => f.name === targetFactionOverride
       );
-      if (forcedFaction && forcedFaction.availableAugs.length > 0) {
-        workTarget = {
-          aug: forcedFaction.availableAugs[0],
-          faction: forcedFaction,
-          repGap: forcedFaction.availableAugs[0].repReq - forcedFaction.currentRep,
-        };
+      if (forcedFaction) {
+        const nextAug = forcedFaction.availableAugs.find(a => a.repReq > forcedFaction.currentRep)
+          ?? forcedFaction.availableAugs[0]
+          ?? null;
+        workTarget = nextAug
+          ? { aug: nextAug, faction: forcedFaction, repGap: nextAug.repReq - forcedFaction.currentRep }
+          : null;
       }
     }
 
@@ -864,6 +874,13 @@ async function runFullMode(
     if (workTarget) {
       workTargetFaction = workTarget.faction.name;
       workTargetRep = workTarget.faction.currentRep;
+    } else if (targetFactionOverride) {
+      // Forced faction with no augs left — still grind rep there
+      const forcedFaction = factionData.find(f => f.name === targetFactionOverride);
+      if (forcedFaction) {
+        workTargetFaction = forcedFaction.name;
+        workTargetRep = forcedFaction.currentRep;
+      }
     } else {
       // Fall back to highest-rep faction (skip gang faction)
       const best = factionData
