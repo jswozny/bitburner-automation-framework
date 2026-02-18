@@ -32,6 +32,7 @@ import {
   DarkwebStatus,
   BitnodeStatus,
   FactionStatus,
+  GangStatus,
 } from "/types/ports";
 
 const C = COLORS;
@@ -54,6 +55,7 @@ const DAEMON_DOCS: Record<ToolName, { start: string; stop: string; flags: string
   faction: { start: "run daemons/faction.js", stop: "kill daemons/faction.js",
              flags: "--preferred-city <city> (Sector-12, Aevum, Chongqing, New Tokyo, Ishima, Volhaven)" },
   infiltration: { start: "run daemons/infiltration.js", stop: "kill daemons/infiltration.js", flags: null },
+  gang: { start: "run daemons/gang.js", stop: "kill daemons/gang.js", flags: "--strategy respect|money|territory|balanced --no-kill" },
 };
 
 // === RUNNING STATE ===
@@ -191,6 +193,21 @@ function printOverview(ns: NS, log: Log): void {
     log(`    Joined: ${faction.joinedCount}/${faction.factions.length}  Invited: ${faction.invitedCount}${cityPart}`);
   } else {
     printOffline(log, "faction");
+  }
+
+  // Gang
+  const gang = peekStatus<GangStatus>(ns, STATUS_PORTS.gang);
+  log(`  ${C.green}GANG${C.reset}  ${formatRunState(runState.gang)}`);
+  if (gang) {
+    if (!gang.inGang) {
+      log(`    ${C.dim}Not in a gang${C.reset}`);
+    } else {
+      const income = gang.moneyGainRateFormatted ?? "0";
+      const territory = gang.territory !== undefined ? `${(gang.territory * 100).toFixed(1)}%` : "?";
+      log(`    ${gang.faction} | ${gang.memberCount} members | ${income}/s | Territory: ${territory} | Strategy: ${gang.strategy ?? "—"}`);
+    }
+  } else {
+    printOffline(log, "gang");
   }
 
   log("");
@@ -512,6 +529,48 @@ function printFactionDetail(ns: NS, log: Log): void {
   log("");
 }
 
+function printGangDetail(ns: NS, log: Log): void {
+  const processes = ns.ps("home");
+  const runState = getDaemonRunState(processes);
+  const gang = peekStatus<GangStatus>(ns, STATUS_PORTS.gang);
+  printHeader(log, "GANG DETAIL");
+  log(`  ${formatRunState(runState.gang)}`);
+  if (!gang) { printOffline(log, "gang"); printCliDocs(log, "gang"); return; }
+
+  if (!gang.inGang) {
+    log(`  ${C.dim}Not in a gang${C.reset}`);
+    printCliDocs(log, "gang");
+    return;
+  }
+
+  printField(log, "Faction", gang.faction ?? "—");
+  printField(log, "Tier", `${gang.tier} (${gang.tierName})`);
+  printField(log, "Strategy", gang.strategy ?? "—");
+  printField(log, "Members", `${gang.memberCount ?? 0}/${gang.maxMembers ?? 12}`);
+  printField(log, "Respect", `${gang.respectFormatted ?? "0"} (+${gang.respectGainRateFormatted ?? "0"}/s)`);
+  printField(log, "Income", `${gang.moneyGainRateFormatted ?? "0"}/s`);
+  printField(log, "Wanted", `${((gang.wantedPenalty ?? 1) * 100).toFixed(1)}%`);
+  printField(log, "Territory", `${((gang.territory ?? 0) * 100).toFixed(1)}%`);
+
+  if (gang.members && gang.members.length > 0) {
+    log(`\n  ${C.cyan}Members:${C.reset}`);
+    for (const m of gang.members) {
+      const pin = m.isPinned ? ` ${C.yellow}[PINNED]${C.reset}` : "";
+      log(`    ${m.name.padEnd(10)} ${m.task.padEnd(20)} str:${m.str.toFixed(0)} def:${m.def.toFixed(0)} dex:${m.dex.toFixed(0)} agi:${m.agi.toFixed(0)}${pin}`);
+    }
+  }
+
+  if (gang.ascensionAlerts && gang.ascensionAlerts.length > 0) {
+    log(`\n  ${C.yellow}Ascension Alerts:${C.reset}`);
+    for (const a of gang.ascensionAlerts) {
+      log(`    ${a.memberName}: ${a.bestStat} x${a.bestGain.toFixed(2)}`);
+    }
+  }
+
+  printCliDocs(log, "gang");
+  log("");
+}
+
 // === RENDER DISPATCHER ===
 
 function renderStatus(ns: NS, tool: string, log: Log): void {
@@ -524,6 +583,7 @@ function renderStatus(ns: NS, tool: string, log: Log): void {
     case "work":    printWorkDetail(ns, log); break;
     case "darkweb": printDarkwebDetail(ns, log); break;
     case "faction": printFactionDetail(ns, log); break;
+    case "gang":    printGangDetail(ns, log); break;
     default:        printOverview(ns, log); break;
   }
 }

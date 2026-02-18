@@ -10,7 +10,7 @@ import { ToolPlugin, FormattedRepStatus, OverviewCardProps, DetailPanelProps, Pl
 import { styles } from "views/dashboard/styles";
 import { ToolControl } from "views/dashboard/components/ToolControl";
 import { ProgressBar } from "views/dashboard/components/ProgressBar";
-import { getRepStatus, findNextWorkableAugmentation, getNonWorkableFactionProgress, getFactionWorkStatus, getSequentialPurchaseAugs, getNeuroFluxInfo, calculateNeuroFluxPurchasePlan, canDonateToFaction, calculateNFGDonatePurchasePlan } from "/controllers/factions";
+import { getRepStatus, findNextWorkableAugmentation, getNonWorkableFactionProgress, getFactionWorkStatus, getSequentialPurchaseAugs, getNeuroFluxInfo, calculateNeuroFluxPurchasePlan, canDonateToFaction, calculateNFGDonatePurchasePlan, getGangFaction } from "/controllers/factions";
 import { formatTime } from "lib/utils";
 import { runScript, startFactionWork, installAugments, runBackdoors, restartRepDaemon, getPluginUIState, setPluginUIState } from "views/dashboard/state-store";
 import { peekStatus } from "lib/ports";
@@ -66,11 +66,15 @@ function formatRepStatus(ns: NS, extra?: PluginContext): FormattedRepStatus | nu
     const player = ns.getPlayer();
     const raw = getRepStatus(ns, player);
 
-    // Use workable faction target instead of any faction
-    const target = findNextWorkableAugmentation(raw.factionData);
+    // Detect gang faction to exclude from auto-targeting
+    const gangFaction = getGangFaction(ns);
+    const gangExclude = gangFaction ? new Set([gangFaction]) : undefined;
 
-    // Get non-workable faction progress
-    const nonWorkableProgress = getNonWorkableFactionProgress(raw.factionData);
+    // Use workable faction target instead of any faction (excluding gang)
+    const target = findNextWorkableAugmentation(raw.factionData, gangExclude);
+
+    // Get non-workable faction progress (include gang faction)
+    const nonWorkableProgress = getNonWorkableFactionProgress(raw.factionData, gangExclude);
 
     // Get NeuroFlux info early - we may need it as fallback
     const nfInfo = getNeuroFluxInfo(ns);
@@ -83,9 +87,19 @@ function formatRepStatus(ns: NS, extra?: PluginContext): FormattedRepStatus | nu
       targetFaction = target.faction.name;
       targetFactionData = { currentRep: target.faction.currentRep, favor: target.faction.favor };
     } else if (nfInfo.bestFaction) {
-      // Fall back to best NFG faction for favor/rep grinding
-      targetFaction = nfInfo.bestFaction;
-      const factionData = raw.factionData.find(f => f.name === nfInfo.bestFaction);
+      // Fall back to best NFG faction for favor/rep grinding (skip gang faction)
+      let nfgWorkFaction = nfInfo.bestFaction;
+      if (gangFaction && nfgWorkFaction === gangFaction) {
+        const altFaction = raw.factionData
+          .filter(f => f.name !== gangFaction)
+          .sort((a, b) => b.currentRep - a.currentRep)
+          .find(f => {
+            try { return ns.singularity.getAugmentationsFromFaction(f.name).includes("NeuroFlux Governor"); } catch { return false; }
+          });
+        if (altFaction) nfgWorkFaction = altFaction.name;
+      }
+      targetFaction = nfgWorkFaction;
+      const factionData = raw.factionData.find(f => f.name === nfgWorkFaction);
       targetFactionData = factionData ? { currentRep: factionData.currentRep, favor: factionData.favor } : null;
     } else {
       targetFaction = "None";

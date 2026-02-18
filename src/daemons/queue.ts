@@ -41,6 +41,14 @@ const STATUS_CHECKS: QueueEntry[] = [
     timestamp: 0,
     requester: "queue-runner",
   },
+  {
+    script: "actions/check-territory.js",
+    args: ["--all"],
+    priority: PRIORITY.STATUS_CHECK,
+    mode: "queue",
+    timestamp: 0,
+    requester: "queue-runner",
+  },
 ];
 
 /**

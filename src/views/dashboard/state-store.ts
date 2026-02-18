@@ -17,6 +17,7 @@ import {
   STATUS_PORTS,
   COMMAND_PORT,
   INFILTRATION_CONTROL_PORT,
+  GANG_CONTROL_PORT,
   NukeStatus,
   PservStatus,
   ShareStatus,
@@ -29,6 +30,8 @@ import {
   FactionStatus,
   FleetAllocation,
   InfiltrationStatus,
+  GangStatus,
+  GangStrategy,
   Command,
 } from "/types/ports";
 
@@ -176,6 +179,78 @@ export function configureInfiltration(rewardMode?: "rep" | "money"): void {
     action: "configure-infiltration",
     infiltrationRewardMode: rewardMode,
   }));
+}
+
+/**
+ * Set gang strategy via command port.
+ */
+export function setGangStrategy(strategy: GangStrategy): void {
+  if (!commandPort) return;
+  commandPort.write(JSON.stringify({ tool: "gang", action: "set-gang-strategy", gangStrategy: strategy }));
+}
+
+/**
+ * Pin a gang member to a specific task.
+ */
+export function pinGangMember(memberName: string, task: string): void {
+  if (!commandPort) return;
+  commandPort.write(JSON.stringify({ tool: "gang", action: "pin-gang-member", gangMemberName: memberName, gangMemberTask: task }));
+}
+
+/**
+ * Unpin a gang member.
+ */
+export function unpinGangMember(memberName: string): void {
+  if (!commandPort) return;
+  commandPort.write(JSON.stringify({ tool: "gang", action: "unpin-gang-member", gangMemberName: memberName }));
+}
+
+/**
+ * Request ascension for a gang member.
+ */
+export function ascendGangMember(memberName: string): void {
+  if (!commandPort) return;
+  commandPort.write(JSON.stringify({ tool: "gang", action: "ascend-gang-member", gangMemberName: memberName }));
+}
+
+/**
+ * Toggle gang equipment purchases.
+ */
+export function toggleGangPurchases(enabled: boolean): void {
+  if (!commandPort) return;
+  commandPort.write(JSON.stringify({ tool: "gang", action: "toggle-gang-purchases", gangPurchasesEnabled: enabled }));
+}
+
+/**
+ * Set gang wanted threshold.
+ */
+export function setGangWantedThreshold(threshold: number): void {
+  if (!commandPort) return;
+  commandPort.write(JSON.stringify({ tool: "gang", action: "set-gang-wanted-threshold", gangWantedThreshold: threshold }));
+}
+
+/**
+ * Set gang training threshold (min avg combat stat before strategy kicks in).
+ */
+export function setGangTrainingThreshold(threshold: number): void {
+  if (!commandPort) return;
+  commandPort.write(JSON.stringify({ tool: "gang", action: "set-gang-training-threshold", gangTrainingThreshold: threshold }));
+}
+
+/**
+ * Set gang ascension thresholds.
+ */
+export function setGangAscensionThresholds(autoThreshold: number, reviewThreshold: number): void {
+  if (!commandPort) return;
+  commandPort.write(JSON.stringify({ tool: "gang", action: "set-gang-ascension-thresholds", gangAscendAutoThreshold: autoThreshold, gangAscendReviewThreshold: reviewThreshold }));
+}
+
+/**
+ * Restart the gang daemon with optional strategy.
+ */
+export function restartGangDaemon(strategy?: GangStrategy): void {
+  if (!commandPort) return;
+  commandPort.write(JSON.stringify({ tool: "gang", action: "restart-gang-daemon", gangStrategy: strategy }));
 }
 
 /**
@@ -404,6 +479,39 @@ function executeCommand(ns: NS, cmd: Command): void {
         ns.toast("Infiltration config updated", "info", 2000);
       }
       break;
+    case "set-gang-strategy":
+    case "pin-gang-member":
+    case "unpin-gang-member":
+    case "ascend-gang-member":
+    case "toggle-gang-purchases":
+    case "set-gang-wanted-threshold":
+    case "set-gang-ascension-thresholds":
+    case "set-gang-training-threshold":
+      {
+        // Forward gang commands to the gang control port
+        const gangCtrl = ns.getPortHandle(GANG_CONTROL_PORT);
+        gangCtrl.write(JSON.stringify(cmd));
+        ns.toast(`Gang: ${cmd.action.replace("gang-", "").replace(/-/g, " ")}`, "info", 2000);
+      }
+      break;
+    case "restart-gang-daemon":
+      {
+        const currentGangPid = cachedData.pids.gang;
+        if (currentGangPid > 0) {
+          ns.kill(currentGangPid);
+          cachedData.pids.gang = 0;
+        }
+        const gangArgs: string[] = [];
+        if (cmd.gangStrategy) gangArgs.push("--strategy", cmd.gangStrategy);
+        const gangPid = ns.exec("daemons/gang.js", "home", 1, ...gangArgs);
+        if (gangPid > 0) {
+          cachedData.pids.gang = gangPid;
+          ns.toast(cmd.gangStrategy ? `Gang daemon: ${cmd.gangStrategy} strategy` : "Gang daemon restarted", "success", 2000);
+        } else {
+          ns.toast("Failed to restart gang daemon (not enough RAM)", "error", 3000);
+        }
+      }
+      break;
   }
 }
 
@@ -448,6 +556,7 @@ const uiState: UIState = {
     work: {},
     faction: {},
     infiltration: {},
+    gang: {},
   },
 };
 
@@ -554,10 +663,11 @@ interface CachedData {
   factionError: string | null;
   fleetAllocation: FleetAllocation | null;
   infiltrationStatus: InfiltrationStatus | null;
+  gangStatus: GangStatus | null;
 }
 
 const cachedData: CachedData = {
-  pids: { nuke: 0, pserv: 0, share: 0, rep: 0, hack: 0, darkweb: 0, work: 0, faction: 0, infiltration: 0 },
+  pids: { nuke: 0, pserv: 0, share: 0, rep: 0, hack: 0, darkweb: 0, work: 0, faction: 0, infiltration: 0, gang: 0 },
   nukeStatus: null,
   pservStatus: null,
   shareStatus: null,
@@ -573,6 +683,7 @@ const cachedData: CachedData = {
   factionError: null,
   fleetAllocation: null,
   infiltrationStatus: null,
+  gangStatus: null,
 };
 
 // === PORT-BASED STATUS READING ===
@@ -625,6 +736,8 @@ export function readStatusPorts(ns: NS): void {
   cachedData.fleetAllocation = peekStatus<FleetAllocation>(ns, STATUS_PORTS.fleet, STALE_THRESHOLD_MS);
 
   cachedData.infiltrationStatus = peekStatus<InfiltrationStatus>(ns, STATUS_PORTS.infiltration, STALE_THRESHOLD_MS);
+
+  cachedData.gangStatus = peekStatus<GangStatus>(ns, STATUS_PORTS.gang, STALE_THRESHOLD_MS);
 }
 
 // === TOOL CONTROL ===
@@ -641,6 +754,7 @@ function clearToolStatus(tool: ToolName): void {
     case "darkweb": cachedData.darkwebStatus = null; cachedData.darkwebError = null; break;
     case "faction": cachedData.factionStatus = null; cachedData.factionError = null; break;
     case "infiltration": cachedData.infiltrationStatus = null; break;
+    case "gang": cachedData.gangStatus = null; break;
   }
 }
 
@@ -705,6 +819,12 @@ function startTool(ns: NS, tool: ToolName): void {
     if (targetPercent > 0) {
       args.push("--target-percent", String(targetPercent));
     }
+    pid = ns.exec(script, "home", 1, ...args);
+  } else if (tool === "gang") {
+    const gangState = uiState.pluginUIState.gang;
+    const strategy = (gangState.strategy as string) || "";
+    const args: string[] = [];
+    if (strategy) args.push("--strategy", strategy);
     pid = ns.exec(script, "home", 1, ...args);
   } else {
     pid = ns.exec(script, "home");
@@ -788,5 +908,6 @@ export function getStateSnapshot(): DashboardState {
     factionError: cachedData.factionError,
     fleetAllocation: cachedData.fleetAllocation,
     infiltrationStatus: cachedData.infiltrationStatus,
+    gangStatus: cachedData.gangStatus,
   };
 }

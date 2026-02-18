@@ -1,0 +1,509 @@
+/**
+ * Gang Tool Plugin
+ *
+ * Dashboard OverviewCard and DetailPanel for the gang daemon.
+ * Reads status from the gang status port.
+ */
+import React from "lib/react";
+import { NS } from "@ns";
+import { ToolPlugin, OverviewCardProps, DetailPanelProps } from "views/dashboard/types";
+import { styles } from "views/dashboard/styles";
+import { ToolControl } from "views/dashboard/components/ToolControl";
+import { GangStatus, GangStrategy, GangMemberStatus } from "/types/ports";
+import {
+  setGangStrategy,
+  pinGangMember,
+  unpinGangMember,
+  ascendGangMember,
+  toggleGangPurchases,
+  setGangTrainingThreshold,
+} from "views/dashboard/state-store";
+
+// === HELPERS ===
+
+function formatNumber(n: number): string {
+  if (n >= 1_000_000_000) return `${(n / 1_000_000_000).toFixed(1)}b`;
+  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}m`;
+  if (n >= 1_000) return `${(n / 1_000).toFixed(1)}k`;
+  return n.toFixed(0);
+}
+
+function formatPct(n: number): string {
+  return `${(n * 100).toFixed(1)}%`;
+}
+
+function formatInactive(_ns: NS): GangStatus | null {
+  return null;
+}
+
+// === CONTROL STYLES ===
+
+const controlSelectStyle: React.CSSProperties = {
+  backgroundColor: "#1a1a1a",
+  color: "#00ff00",
+  border: "1px solid #333",
+  borderRadius: "3px",
+  padding: "1px 4px",
+  fontSize: "12px",
+  fontFamily: "inherit",
+  cursor: "pointer",
+};
+
+const smallBtnStyle: React.CSSProperties = {
+  backgroundColor: "#1a1a1a",
+  color: "#888",
+  border: "1px solid #333",
+  borderRadius: "3px",
+  padding: "1px 6px",
+  fontSize: "10px",
+  fontFamily: "inherit",
+  cursor: "pointer",
+};
+
+// === STRATEGY SELECTOR ===
+
+function StrategySelector({ current, running }: { current: GangStrategy; running: boolean }): React.ReactElement {
+  return (
+    <span style={{ display: "flex", alignItems: "center", gap: "4px" }}>
+      <span style={{ ...styles.statLabel, fontSize: "11px" }}>Strategy</span>
+      <select
+        style={controlSelectStyle}
+        value={current}
+        onChange={(e) => {
+          const val = (e.target as HTMLSelectElement).value as GangStrategy;
+          if (running) setGangStrategy(val);
+        }}
+      >
+        <option value="balanced">Balanced</option>
+        <option value="respect">Respect</option>
+        <option value="money">Money</option>
+        <option value="territory">Territory</option>
+      </select>
+    </span>
+  );
+}
+
+// === MEMBER CARD ===
+
+function MemberCard({ member, taskNames, running }: {
+  member: GangMemberStatus;
+  taskNames: string[];
+  running: boolean;
+}): React.ReactElement {
+  const asc = member.ascensionResult;
+  const isFlagged = asc?.action === "flag";
+
+  return (
+    <div style={{
+      ...styles.card,
+      borderColor: isFlagged ? "#ffff00" : "#222",
+      padding: "6px",
+    }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "4px" }}>
+        <span style={{ color: "#00ffff", fontSize: "12px", fontWeight: "bold" }}>
+          {member.name}
+          {member.isPinned && <span style={{ color: "#ffaa00", marginLeft: "4px", fontSize: "10px" }} title="Pinned">P</span>}
+        </span>
+        <span style={{ display: "flex", gap: "4px" }}>
+          {isFlagged && (
+            <button
+              style={{ ...smallBtnStyle, color: "#ffff00", borderColor: "#ffff00" }}
+              title={`Ascend: ${asc.bestStat} x${asc.bestGain.toFixed(2)}`}
+              onClick={() => { if (running) ascendGangMember(member.name); }}
+            >
+              ASC
+            </button>
+          )}
+          <button
+            style={smallBtnStyle}
+            onClick={() => {
+              if (!running) return;
+              if (member.isPinned) unpinGangMember(member.name);
+              else pinGangMember(member.name, member.task);
+            }}
+          >
+            {member.isPinned ? "Unpin" : "Pin"}
+          </button>
+        </span>
+      </div>
+
+      {/* Task */}
+      <div style={{ marginBottom: "3px" }}>
+        <select
+          style={{ ...controlSelectStyle, width: "100%", fontSize: "10px" }}
+          value={member.task}
+          onChange={(e) => {
+            const val = (e.target as HTMLSelectElement).value;
+            if (running) pinGangMember(member.name, val);
+          }}
+        >
+          {taskNames.length > 0
+            ? taskNames.map(t => <option key={t} value={t}>{t}</option>)
+            : <option value={member.task}>{member.task}</option>}
+        </select>
+      </div>
+
+      {/* Task reason */}
+      {member.taskReason && (
+        <div style={{ fontSize: "9px", color: "#666", marginBottom: "2px" }}>
+          {member.taskReason}
+        </div>
+      )}
+
+      {/* Stats compact */}
+      <div style={{ fontSize: "10px", color: "#888", display: "grid", gridTemplateColumns: "1fr 1fr", gap: "1px 8px" }}>
+        <span>STR: <span style={{ color: "#fff" }}>{formatNumber(member.str)}</span></span>
+        <span>DEF: <span style={{ color: "#fff" }}>{formatNumber(member.def)}</span></span>
+        <span>DEX: <span style={{ color: "#fff" }}>{formatNumber(member.dex)}</span></span>
+        <span>AGI: <span style={{ color: "#fff" }}>{formatNumber(member.agi)}</span></span>
+      </div>
+
+      {/* Gains */}
+      <div style={{ fontSize: "10px", color: "#888", marginTop: "3px" }}>
+        <span style={{ color: "#00ff00" }}>${formatNumber(member.moneyGain * 5)}/s</span>
+        <span style={{ marginLeft: "8px", color: "#00ffff" }}>{formatNumber(member.respectGain * 5)} rep/s</span>
+      </div>
+
+      {/* Ascension info */}
+      {asc && asc.action !== "skip" && (
+        <div style={{
+          fontSize: "10px",
+          color: asc.action === "auto" ? "#00ff00" : "#ffff00",
+          marginTop: "2px",
+        }}>
+          Asc: {asc.bestStat} x{asc.bestGain.toFixed(2)}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// === OVERVIEW CARD ===
+
+function GangOverviewCard({ status, running, toolId, error, pid }: OverviewCardProps<GangStatus>): React.ReactElement {
+  return (
+    <div style={styles.card}>
+      <div style={styles.cardTitle}>
+        <span>GANG</span>
+        <ToolControl tool={toolId} running={running} error={!!error} pid={pid} />
+      </div>
+      {error ? (
+        <div style={{ color: "#ffaa00", fontSize: "11px" }}>{error}</div>
+      ) : !status || !running ? (
+        <div style={{ color: "#888", fontSize: "11px" }}>Offline</div>
+      ) : !status.inGang ? (
+        <div style={{ color: "#888", fontSize: "11px" }}>Not in a gang</div>
+      ) : (
+        <>
+          <div style={styles.stat}>
+            <span style={styles.statLabel}>Income</span>
+            <span style={styles.statHighlight}>{status.moneyGainRateFormatted ?? "0"}/s</span>
+          </div>
+          <div style={styles.stat}>
+            <span style={styles.statLabel}>Territory</span>
+            <span style={styles.statValue}>{status.territory !== undefined ? formatPct(status.territory) : "?"}</span>
+          </div>
+          <div style={styles.stat}>
+            <span style={styles.statLabel}>Members</span>
+            <span style={styles.statValue}>{status.memberCount ?? 0}/{status.maxMembers ?? 12}</span>
+          </div>
+          {status.wantedPenalty !== undefined && status.wantedPenalty < 0.99 && (
+            <div style={styles.stat}>
+              <span style={styles.statLabel}>Wanted</span>
+              <span style={{ color: status.wantedPenalty < 0.9 ? "#ff4444" : "#ffff00", fontSize: "11px" }}>
+                {formatPct(status.wantedPenalty)}
+              </span>
+            </div>
+          )}
+        </>
+      )}
+    </div>
+  );
+}
+
+// === DETAIL PANEL ===
+
+/** Known combat gang tasks (subset - populated from status if available) */
+const FALLBACK_TASK_NAMES = [
+  "Unassigned", "Mug People", "Deal Drugs", "Strongarm Civilians",
+  "Run a Con", "Armed Robbery", "Traffick Illegal Arms",
+  "Threaten & Blackmail", "Human Trafficking", "Terrorism",
+  "Vigilante Justice", "Train Combat", "Train Hacking", "Train Charisma",
+  "Territory Warfare",
+];
+
+function GangDetailPanel({ status, running, toolId, error, pid }: DetailPanelProps<GangStatus>): React.ReactElement {
+  if (!status && !running) {
+    return (
+      <div style={styles.panel}>
+        <div style={styles.row}>
+          <div style={styles.rowLeft}><span style={styles.statLabel}>Gang Daemon</span></div>
+          <ToolControl tool={toolId} running={running} pid={pid} />
+        </div>
+        <div style={styles.card}>
+          <div style={{ color: "#888" }}>Daemon not running. Start it to manage your gang.</div>
+        </div>
+      </div>
+    );
+  }
+
+  if (!status) {
+    return (
+      <div style={styles.panel}>
+        <div style={styles.row}>
+          <div style={styles.rowLeft}><span style={styles.statLabel}>Gang Daemon</span></div>
+          <ToolControl tool={toolId} running={running} pid={pid} />
+        </div>
+        <div style={styles.card}><div style={{ color: "#ffaa00" }}>Waiting for status...</div></div>
+      </div>
+    );
+  }
+
+  if (!status.inGang) {
+    return (
+      <div style={styles.panel}>
+        <div style={styles.row}>
+          <div style={styles.rowLeft}><span style={styles.statLabel}>Gang Daemon</span></div>
+          <ToolControl tool={toolId} running={running} pid={pid} />
+        </div>
+        <div style={styles.card}><div style={{ color: "#888" }}>Not in a gang. Join a combat gang to use this tool.</div></div>
+      </div>
+    );
+  }
+
+  // Gather task names from member status or fallback
+  const taskNames = status.members && status.members.length > 0
+    ? FALLBACK_TASK_NAMES
+    : FALLBACK_TASK_NAMES;
+
+  return (
+    <div style={styles.panel}>
+      {/* Header */}
+      <div style={styles.row}>
+        <div style={styles.rowLeft}>
+          <span>
+            <span style={styles.statLabel}>Faction: </span>
+            <span style={styles.statValue}>{status.faction}</span>
+          </span>
+          <span style={styles.dim}>|</span>
+          <span>
+            <span style={styles.statLabel}>Tier: </span>
+            <span style={styles.statValue}>{status.tierName}</span>
+          </span>
+          <span style={styles.dim}>|</span>
+          <StrategySelector current={status.strategy ?? "balanced"} running={running} />
+        </div>
+        <ToolControl tool={toolId} running={running} pid={pid} />
+      </div>
+
+      {/* Metrics Bar */}
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: "8px", marginTop: "8px" }}>
+        <div style={styles.card}>
+          <div style={{ color: "#ffff00", fontSize: "14px", fontWeight: "bold" }}>{status.moneyGainRateFormatted ?? "0"}/s</div>
+          <div style={{ color: "#888", fontSize: "10px" }}>Income</div>
+        </div>
+        <div style={styles.card}>
+          <div style={{ color: "#00ffff", fontSize: "14px", fontWeight: "bold" }}>{status.respectGainRateFormatted ?? "0"}/s</div>
+          <div style={{ color: "#888", fontSize: "10px" }}>Respect ({status.respectFormatted ?? "0"})</div>
+        </div>
+        <div style={styles.card}>
+          <div style={{ color: "#00ff00", fontSize: "14px", fontWeight: "bold" }}>{status.territory !== undefined ? formatPct(status.territory) : "?"}</div>
+          <div style={{ color: "#888", fontSize: "10px" }}>Territory</div>
+        </div>
+      </div>
+
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: "8px", marginTop: "4px" }}>
+        <div style={styles.stat}>
+          <span style={styles.statLabel}>Wanted</span>
+          <span style={{ color: (status.wantedPenalty ?? 1) < 0.95 ? "#ff4444" : "#00ff00", fontSize: "11px" }}>
+            {status.wantedPenalty !== undefined ? formatPct(status.wantedPenalty) : "?"}
+          </span>
+        </div>
+        <div style={styles.stat}>
+          <span style={styles.statLabel}>Members</span>
+          <span style={styles.statValue}>{status.memberCount ?? 0}/{status.maxMembers ?? 12}</span>
+        </div>
+        <div style={styles.stat}>
+          <span style={styles.statLabel}>Bonus</span>
+          <span style={{ color: (status.bonusTime ?? 0) > 5000 ? "#00ff00" : "#888", fontSize: "11px" }}>
+            {status.bonusTime !== undefined ? `${(status.bonusTime / 1000).toFixed(0)}s` : "—"}
+          </span>
+        </div>
+      </div>
+
+      {/* Recruitment */}
+      {status.canRecruit && (
+        <div style={{ ...styles.card, borderColor: "#00ff00", marginTop: "8px" }}>
+          <span style={{ color: "#00ff00", fontSize: "11px" }}>
+            Can recruit! ({status.recruitsAvailable ?? 0} available)
+          </span>
+        </div>
+      )}
+      {!status.canRecruit && status.respectForNextRecruit !== undefined && status.respectForNextRecruit > 0 && (
+        <div style={{ ...styles.stat, marginTop: "4px" }}>
+          <span style={styles.statLabel}>Next Recruit</span>
+          <span style={{ color: "#888", fontSize: "11px" }}>{status.respectForNextRecruitFormatted} respect needed</span>
+        </div>
+      )}
+
+      {/* Ascension Alerts */}
+      {status.ascensionAlerts && status.ascensionAlerts.length > 0 && (
+        <div style={{ ...styles.card, borderColor: "#ffff00", marginTop: "8px" }}>
+          <div style={{ color: "#ffff00", fontSize: "12px", marginBottom: "4px" }}>ASCENSION ALERTS</div>
+          {status.ascensionAlerts.map(a => (
+            <div key={a.memberName} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "2px 0" }}>
+              <span style={{ color: "#fff", fontSize: "11px" }}>
+                {a.memberName}: {a.bestStat} x{a.bestGain.toFixed(2)}
+              </span>
+              <button
+                style={{ ...smallBtnStyle, color: "#ffff00", borderColor: "#ffff00" }}
+                onClick={() => { if (running) ascendGangMember(a.memberName); }}
+              >
+                Ascend
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Members Grid */}
+      {status.members && status.members.length > 0 && (
+        <div style={styles.section}>
+          <div style={styles.sectionTitle}>MEMBERS</div>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(180px, 1fr))", gap: "8px" }}>
+            {status.members.map(m => (
+              <MemberCard key={m.name} member={m} taskNames={taskNames} running={running} />
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Equipment Section */}
+      {status.tier >= 2 && (
+        <div style={styles.section}>
+          <div style={styles.sectionTitle}>
+            EQUIPMENT
+            <span style={{ ...styles.dim, marginLeft: "8px", fontWeight: "normal" }}>
+              {status.availableUpgrades ?? 0} upgrades available
+            </span>
+          </div>
+          <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+            <span style={styles.statLabel}>Auto-Purchase</span>
+            <button
+              style={{
+                ...smallBtnStyle,
+                color: status.purchasingEnabled ? "#00ff00" : "#ff4444",
+                borderColor: status.purchasingEnabled ? "#00ff00" : "#ff4444",
+              }}
+              onClick={() => { if (running) toggleGangPurchases(!status.purchasingEnabled); }}
+            >
+              {status.purchasingEnabled ? "ON" : "OFF"}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Territory Section */}
+      {status.territoryData && (
+        <div style={styles.section}>
+          <div style={styles.sectionTitle}>
+            TERRITORY
+            <span style={{
+              marginLeft: "8px",
+              fontWeight: "normal",
+              fontSize: "11px",
+              color: status.territoryData.recommendedAction === "enable" ? "#00ff00"
+                : status.territoryData.recommendedAction === "disable" ? "#ff4444"
+                : "#888",
+            }}>
+              {status.territoryData.recommendedAction.toUpperCase()}
+            </span>
+          </div>
+          <div style={styles.stat}>
+            <span style={styles.statLabel}>Warfare</span>
+            <span style={{ color: status.territoryWarfareEngaged ? "#00ff00" : "#888" }}>
+              {status.territoryWarfareEngaged ? "ENGAGED" : "OFF"}
+            </span>
+          </div>
+          <table style={styles.table}>
+            <thead>
+              <tr>
+                <th style={styles.tableHeader}>Rival</th>
+                <th style={{ ...styles.tableHeader, textAlign: "right" }}>Territory</th>
+                <th style={{ ...styles.tableHeader, textAlign: "right" }}>Clash</th>
+              </tr>
+            </thead>
+            <tbody>
+              {status.territoryData.rivals.map((r, i) => (
+                <tr key={r.name} style={i % 2 === 0 ? styles.tableRow : styles.tableRowAlt}>
+                  <td style={styles.tableCell}>{r.name}</td>
+                  <td style={{ ...styles.tableCell, textAlign: "right" }}>{formatPct(r.territory)}</td>
+                  <td style={{
+                    ...styles.tableCell,
+                    textAlign: "right",
+                    color: r.clashChance < 0 ? "#555"
+                      : r.clashChance > 0.55 ? "#00ff00"
+                      : r.clashChance < 0.40 ? "#ff4444"
+                      : "#ffff00",
+                  }}>
+                    {r.clashChance >= 0 ? formatPct(r.clashChance) : "?"}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {/* Settings */}
+      <div style={styles.section}>
+        <div style={styles.sectionTitle}>SETTINGS</div>
+        <div style={{ ...styles.stat, display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+          <span style={styles.statLabel}>Training Threshold</span>
+          <span style={{ display: "flex", alignItems: "center", gap: "4px" }}>
+            <button
+              style={smallBtnStyle}
+              onClick={() => {
+                if (!running) return;
+                const cur = status.trainingThreshold ?? 200;
+                if (cur > 50) setGangTrainingThreshold(cur - 50);
+              }}
+            >-</button>
+            <span style={styles.statValue}>{status.trainingThreshold ?? 200}</span>
+            <button
+              style={smallBtnStyle}
+              onClick={() => {
+                if (!running) return;
+                const cur = status.trainingThreshold ?? 200;
+                setGangTrainingThreshold(cur + 50);
+              }}
+            >+</button>
+          </span>
+        </div>
+        <div style={styles.stat}>
+          <span style={styles.statLabel}>Wanted Threshold</span>
+          <span style={styles.statValue}>{status.wantedThreshold !== undefined ? formatPct(status.wantedThreshold) : "95%"}</span>
+        </div>
+        <div style={styles.stat}>
+          <span style={styles.statLabel}>Ascend Auto</span>
+          <span style={styles.statValue}>{status.ascendAutoThreshold !== undefined ? `x${status.ascendAutoThreshold.toFixed(1)}` : "x2.0"}</span>
+        </div>
+        <div style={styles.stat}>
+          <span style={styles.statLabel}>Ascend Review</span>
+          <span style={styles.statValue}>{status.ascendReviewThreshold !== undefined ? `x${status.ascendReviewThreshold.toFixed(1)}` : "x1.5"}</span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// === PLUGIN EXPORT ===
+
+export const gangPlugin: ToolPlugin<GangStatus> = {
+  name: "GANG",
+  id: "gang",
+  script: "daemons/gang.js",
+  getFormattedStatus: formatInactive,
+  OverviewCard: GangOverviewCard,
+  DetailPanel: GangDetailPanel,
+};

@@ -41,8 +41,9 @@ import { darkwebPlugin } from "views/dashboard/tools/darkweb";
 import { workPlugin } from "views/dashboard/tools/work";
 import { factionPlugin } from "views/dashboard/tools/faction";
 import { infiltrationPlugin } from "views/dashboard/tools/infiltration";
+import { gangPlugin } from "views/dashboard/tools/gang";
 
-const TAB_NAMES = ["Overview", "Nuke", "Hack", "Pserv", "Share", "Faction", "Rep", "Work", "Darkweb", "Infiltrate"];
+const TAB_NAMES = ["Overview", "Nuke", "Hack", "Pserv", "Share", "Faction", "Rep", "Work", "Darkweb", "Infiltrate", "Gang"];
 
 // === OVERVIEW PANEL ===
 
@@ -113,6 +114,12 @@ function OverviewPanel({ state }: OverviewPanelProps): React.ReactElement {
           running={pids.infiltration > 0}
           toolId="infiltration"
           pid={pids.infiltration}
+        />
+        <gangPlugin.OverviewCard
+          status={state.gangStatus}
+          running={pids.gang > 0}
+          toolId="gang"
+          pid={pids.gang}
         />
       </div>
     </div>
@@ -238,6 +245,15 @@ function Dashboard(): React.ReactElement {
             running={state.pids.infiltration > 0}
             toolId="infiltration"
             pid={state.pids.infiltration}
+          />
+        );
+      case 10:
+        return (
+          <gangPlugin.DetailPanel
+            status={state.gangStatus}
+            running={state.pids.gang > 0}
+            toolId="gang"
+            pid={state.pids.gang}
           />
         );
       default:

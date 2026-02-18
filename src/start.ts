@@ -30,6 +30,7 @@ const OPTIONAL_SCRIPTS: { path: string; args: (string | number | boolean)[] }[] 
   { path: "daemons/pserv.js", args: [] },
   { path: "daemons/share.js", args: [] },
   { path: "daemons/faction.js", args: [] },
+  { path: "daemons/gang.js", args: [] },
 ];
 
 export async function main(ns: NS): Promise<void> {

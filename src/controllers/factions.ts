@@ -56,6 +56,21 @@ export interface NextTarget {
   repGap: number;
 }
 
+// === GANG DETECTION ===
+
+/**
+ * Get the player's gang faction, if any.
+ * Returns null if not in a gang or Gang API is unavailable.
+ */
+export function getGangFaction(ns: NS): string | null {
+  try {
+    if (ns.gang.inGang()) {
+      return ns.gang.getGangInformation().faction;
+    }
+  } catch { /* Gang API unavailable */ }
+  return null;
+}
+
 // === CORE LOGIC ===
 
 /**
@@ -139,7 +154,10 @@ export function findNextAugmentation(factionData: FactionData[]): NextTarget | n
  * Find the next augmentation to target from WORKABLE factions only
  * Excludes factions like Shadows of Anarchy that can't be worked for
  */
-export function findNextWorkableAugmentation(factionData: FactionData[]): NextTarget | null {
+export function findNextWorkableAugmentation(
+  factionData: FactionData[],
+  excludeFactions?: Set<string>
+): NextTarget | null {
   let bestAug: AugmentationInfo | null = null;
   let bestFaction: FactionData | null = null;
   let smallestGap = Infinity;
@@ -147,6 +165,7 @@ export function findNextWorkableAugmentation(factionData: FactionData[]): NextTa
   for (const faction of factionData) {
     // Skip non-workable factions
     if (NON_WORKABLE_FACTIONS.has(faction.name)) continue;
+    if (excludeFactions?.has(faction.name)) continue;
 
     for (const aug of faction.availableAugs) {
       const gap = aug.repReq - faction.currentRep;
@@ -171,7 +190,10 @@ export function findNextWorkableAugmentation(factionData: FactionData[]): NextTa
 /**
  * Get progress info for non-workable factions that have available augs
  */
-export function getNonWorkableFactionProgress(factionData: FactionData[]): {
+export function getNonWorkableFactionProgress(
+  factionData: FactionData[],
+  extraNonWorkable?: Set<string>
+): {
   faction: FactionData;
   nextAug: AugmentationInfo;
   progress: number;
@@ -179,7 +201,7 @@ export function getNonWorkableFactionProgress(factionData: FactionData[]): {
   const results: { faction: FactionData; nextAug: AugmentationInfo; progress: number }[] = [];
 
   for (const faction of factionData) {
-    if (!NON_WORKABLE_FACTIONS.has(faction.name)) continue;
+    if (!NON_WORKABLE_FACTIONS.has(faction.name) && !extraNonWorkable?.has(faction.name)) continue;
 
     // Find the next aug they need rep for
     const nextAug = faction.availableAugs.find(aug => aug.repReq > faction.currentRep);

@@ -37,6 +37,7 @@ import {
   getSequentialPurchaseAugs,
   canDonateToFaction,
   calculateNFGDonatePurchasePlan,
+  getGangFaction,
 } from "/controllers/factions";
 import { publishStatus, peekStatus } from "/lib/ports";
 import {
@@ -87,6 +88,8 @@ const REP_TIERS: RepTierConfig[] = [
       "singularity.getAugmentationRepReq",
       "singularity.getAugmentationPrice",
       "getFavorToDonate", // Used in status computation
+      "gang.inGang",
+      "gang.getGangInformation",
     ],
     features: ["target-tracking", "eta", "aug-cost"],
     description: "Rep progress toward target augmentation",
@@ -349,8 +352,15 @@ function computeTier2Status(
   const player = ns.getPlayer();
   const basicData = getBasicFactionRep(ns, player);
 
-  // Find target faction and aug
-  const targetFaction = targetFactionOverride || basicData[0]?.name || "None";
+  // Detect gang faction to exclude from auto-targeting
+  const gangFaction = getGangFaction(ns);
+
+  // Find target faction and aug (skip gang faction in auto mode)
+  let autoFallback = basicData[0]?.name || "None";
+  if (gangFaction && autoFallback === gangFaction) {
+    autoFallback = basicData.find(f => f.name !== gangFaction)?.name || "None";
+  }
+  const targetFaction = targetFactionOverride || autoFallback;
   const targetAug: string | null = null;
   const repRequired = 0;
   const augPrice = 0;
@@ -432,8 +442,12 @@ function computeHighTierStatus(
   const factionData = analyzeFactions(ns, player, ownedAugs);
   const purchasePlan = calculatePurchasePriority(ns, factionData);
 
-  // Use workable faction target
-  let target = findNextWorkableAugmentation(factionData);
+  // Detect gang faction to exclude from auto-targeting
+  const gangFaction = getGangFaction(ns);
+  const gangExclude = gangFaction ? new Set([gangFaction]) : undefined;
+
+  // Use workable faction target (excluding gang faction)
+  let target = findNextWorkableAugmentation(factionData, gangExclude);
 
   // Override with specific faction if requested
   if (targetFactionOverride) {
@@ -449,8 +463,8 @@ function computeHighTierStatus(
     }
   }
 
-  // Get non-workable faction progress
-  const nonWorkableProgress = getNonWorkableFactionProgress(factionData);
+  // Get non-workable faction progress (include gang faction)
+  const nonWorkableProgress = getNonWorkableFactionProgress(factionData, gangExclude);
 
   // Get NeuroFlux info
   const nfInfo = getNeuroFluxInfo(ns);
@@ -465,8 +479,20 @@ function computeHighTierStatus(
     targetFactionRep = target.faction.currentRep;
     targetFactionFavor = target.faction.favor;
   } else if (nfInfo.bestFaction) {
-    targetFaction = nfInfo.bestFaction;
-    const fd = factionData.find((f) => f.name === nfInfo.bestFaction);
+    // For NFG work target, skip gang faction (rep is earned passively via gang)
+    let nfgWorkFaction = nfInfo.bestFaction;
+    if (gangFaction && nfgWorkFaction === gangFaction) {
+      // Find next best NFG faction that isn't the gang
+      const altFaction = factionData
+        .filter(f => f.name !== gangFaction)
+        .sort((a, b) => b.currentRep - a.currentRep)
+        .find(f => {
+          try { return ns.singularity.getAugmentationsFromFaction(f.name).includes("NeuroFlux Governor"); } catch { return false; }
+        });
+      if (altFaction) nfgWorkFaction = altFaction.name;
+    }
+    targetFaction = nfgWorkFaction;
+    const fd = factionData.find((f) => f.name === nfgWorkFaction);
     targetFactionRep = fd?.currentRep ?? 0;
     targetFactionFavor = fd?.favor ?? 0;
   } else {
@@ -947,8 +973,12 @@ async function runFullMode(
     const ownedAugs = getOwnedAugs(ns);
     const factionData = analyzeFactions(ns, player, ownedAugs);
 
-    // Find next workable augmentation target
-    let workTarget = findNextWorkableAugmentation(factionData);
+    // Detect gang faction to exclude from auto-targeting
+    const gangFaction = getGangFaction(ns);
+    const gangExclude = gangFaction ? new Set([gangFaction]) : undefined;
+
+    // Find next workable augmentation target (excluding gang faction)
+    let workTarget = findNextWorkableAugmentation(factionData, gangExclude);
 
     // Override with specific faction if requested
     if (targetFactionOverride) {
@@ -974,8 +1004,19 @@ async function runFullMode(
     } else {
       const nfInfo = getNeuroFluxInfo(ns);
       if (nfInfo.bestFaction) {
-        workTargetFaction = nfInfo.bestFaction;
-        const fd = factionData.find((f) => f.name === nfInfo.bestFaction);
+        // For NFG work target, skip gang faction
+        let nfgWorkFaction = nfInfo.bestFaction;
+        if (gangFaction && nfgWorkFaction === gangFaction) {
+          const altFaction = factionData
+            .filter(f => f.name !== gangFaction)
+            .sort((a, b) => b.currentRep - a.currentRep)
+            .find(f => {
+              try { return ns.singularity.getAugmentationsFromFaction(f.name).includes("NeuroFlux Governor"); } catch { return false; }
+            });
+          if (altFaction) nfgWorkFaction = altFaction.name;
+        }
+        workTargetFaction = nfgWorkFaction;
+        const fd = factionData.find((f) => f.name === nfgWorkFaction);
         workTargetRep = fd?.currentRep ?? 0;
       }
     }

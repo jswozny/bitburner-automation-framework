@@ -21,14 +21,18 @@ export const STATUS_PORTS = {
   faction: 9,
   fleet: 10,
   infiltration: 11,
+  gang: 13,
+  gangTerritory: 14,
 } as const;
+
+export const GANG_CONTROL_PORT = 15;
 
 export const QUEUE_PORT = 19;
 export const COMMAND_PORT = 20;
 
 // === TOOL NAMES ===
 
-export type ToolName = "nuke" | "pserv" | "share" | "rep" | "hack" | "darkweb" | "work" | "faction" | "infiltration";
+export type ToolName = "nuke" | "pserv" | "share" | "rep" | "hack" | "darkweb" | "work" | "faction" | "infiltration" | "gang";
 
 // === TOOL SCRIPTS (daemon paths) ===
 
@@ -42,6 +46,7 @@ export const TOOL_SCRIPTS: Record<ToolName, string> = {
   work: "daemons/work.js",
   faction: "daemons/faction.js",
   infiltration: "daemons/infiltration.js",
+  gang: "daemons/gang.js",
 };
 
 // === PRIORITY CONSTANTS ===
@@ -69,7 +74,7 @@ export interface QueueEntry {
 
 export interface Command {
   tool: ToolName;
-  action: "start" | "stop" | "open-tail" | "run-script" | "start-faction-work" | "set-focus" | "start-training" | "install-augments" | "run-backdoors" | "restart-rep-daemon" | "join-faction" | "restart-faction-daemon" | "restart-hack-daemon" | "restart-share-daemon" | "stop-infiltration" | "kill-infiltration" | "configure-infiltration";
+  action: "start" | "stop" | "open-tail" | "run-script" | "start-faction-work" | "set-focus" | "start-training" | "install-augments" | "run-backdoors" | "restart-rep-daemon" | "join-faction" | "restart-faction-daemon" | "restart-hack-daemon" | "restart-share-daemon" | "stop-infiltration" | "kill-infiltration" | "configure-infiltration" | "set-gang-strategy" | "pin-gang-member" | "unpin-gang-member" | "ascend-gang-member" | "toggle-gang-purchases" | "toggle-gang-warfare" | "set-gang-wanted-threshold" | "set-gang-ascension-thresholds" | "set-gang-training-threshold" | "restart-gang-daemon";
   scriptPath?: string;
   scriptArgs?: string[];
   factionName?: string;
@@ -84,6 +89,15 @@ export interface Command {
   infiltrationTarget?: string;
   infiltrationSolvers?: string[];
   infiltrationRewardMode?: "rep" | "money";
+  gangStrategy?: GangStrategy;
+  gangMemberName?: string;
+  gangMemberTask?: string;
+  gangPurchasesEnabled?: boolean;
+  gangWarfareEnabled?: boolean;
+  gangWantedThreshold?: number;
+  gangAscendAutoThreshold?: number;
+  gangAscendReviewThreshold?: number;
+  gangTrainingThreshold?: number;
 }
 
 // === STATUS INTERFACES ===
@@ -674,6 +688,115 @@ export interface InfiltrationStatus {
 
 export const INFILTRATION_CONTROL_PORT = 12;
 
+// === GANG TYPES ===
+
+export type GangStrategy = "respect" | "money" | "territory" | "balanced";
+
+export type GangTierName = "lite" | "basic" | "full";
+
+export interface GangMemberStatus {
+  name: string;
+  task: string;
+  taskReason?: string;
+  str: number;
+  def: number;
+  dex: number;
+  agi: number;
+  cha: number;
+  hack: number;
+  strMultiplier: number;
+  defMultiplier: number;
+  dexMultiplier: number;
+  agiMultiplier: number;
+  earnedRespect: number;
+  respectGain: number;
+  moneyGain: number;
+  isPinned: boolean;
+  equipmentCount: number;
+  ascensionResult?: {
+    str: number;
+    def: number;
+    dex: number;
+    agi: number;
+    cha: number;
+    hack: number;
+    bestStat: string;
+    bestGain: number;
+    action: "auto" | "flag" | "skip";
+  };
+}
+
+export interface GangTerritoryRival {
+  name: string;
+  power: number;
+  territory: number;
+  clashChance: number;
+}
+
+export interface GangTerritoryStatus {
+  rivals: GangTerritoryRival[];
+  ourPower: number;
+  ourTerritory: number;
+  territoryWarfareEngaged: boolean;
+  recommendedAction: "enable" | "disable" | "hold";
+  lastChecked: number;
+}
+
+export interface GangStatus {
+  // Tier metadata
+  tier: number;
+  tierName: GangTierName;
+  availableFeatures: string[];
+  unavailableFeatures: string[];
+  currentRamUsage: number;
+  nextTierRam: number | null;
+  canUpgrade: boolean;
+
+  // Core info (always present)
+  inGang: boolean;
+  faction?: string;
+  isHacking?: boolean;
+
+  // Gang aggregates
+  respect?: number;
+  respectFormatted?: string;
+  respectGainRate?: number;
+  respectGainRateFormatted?: string;
+  wantedLevel?: number;
+  wantedPenalty?: number;
+  moneyGainRate?: number;
+  moneyGainRateFormatted?: string;
+  territory?: number;
+  territoryWarfareEngaged?: boolean;
+  bonusTime?: number;
+
+  // Members
+  memberCount?: number;
+  maxMembers?: number;
+  members?: GangMemberStatus[];
+  canRecruit?: boolean;
+  recruitsAvailable?: number;
+  respectForNextRecruit?: number;
+  respectForNextRecruitFormatted?: string;
+
+  // Ascension alerts (Tier 2)
+  ascensionAlerts?: { memberName: string; bestStat: string; bestGain: number }[];
+
+  // Equipment (Tier 2)
+  purchasingEnabled?: boolean;
+  availableUpgrades?: number;
+
+  // Territory data (read from territory port)
+  territoryData?: GangTerritoryStatus;
+
+  // Config values
+  strategy?: GangStrategy;
+  wantedThreshold?: number;
+  ascendAutoThreshold?: number;
+  ascendReviewThreshold?: number;
+  trainingThreshold?: number;
+}
+
 // === DASHBOARD STATE ===
 
 export interface DashboardState {
@@ -693,6 +816,7 @@ export interface DashboardState {
   factionError: string | null;
   fleetAllocation: FleetAllocation | null;
   infiltrationStatus: InfiltrationStatus | null;
+  gangStatus: GangStatus | null;
 }
 
 // === PLUGIN INTERFACE (for dashboard) ===
