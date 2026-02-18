@@ -135,5 +135,4 @@ export async function main(ns: NS): Promise<void> {
     const r = existingRivals.get(n);
     return `${n}: ${r ? (r.clashChance * 100).toFixed(1) + "%" : "?"}`;
   }).join(", ");
-  ns.tprint(`INFO: Territory: ${checkedStr} | Rec: ${recommendedAction}`);
 }

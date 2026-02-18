@@ -28,7 +28,6 @@ const CORE_SCRIPTS: { path: string; args: (string | number | boolean)[] }[] = [
 /** Optional daemons launched if RAM permits. */
 const OPTIONAL_SCRIPTS: { path: string; args: (string | number | boolean)[] }[] = [
   { path: "daemons/pserv.js", args: [] },
-  { path: "daemons/share.js", args: [] },
   { path: "daemons/faction.js", args: [] },
   { path: "daemons/gang.js", args: [] },
 ];
