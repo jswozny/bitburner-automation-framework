@@ -410,14 +410,23 @@ export function startTraining(
     if (!traveled) {
       return false;
     }
+    ns.tprint(`INFO: Work: traveled to ${option.city} (-$${ns.formatNumber(TRAVEL_COST)})`);
   }
 
   // Start the appropriate training
   if (option.type === "gym") {
-    return ns.singularity.gymWorkout(option.location, option.skill as GymType, preserveFocus);
+    const started = ns.singularity.gymWorkout(option.location, option.skill as GymType, preserveFocus);
+    if (started) {
+      ns.tprint(`INFO: Work: started ${option.skill} training at ${option.location}`);
+    }
+    return started;
   } else if (option.type === "university") {
     const course = option.skill === "hacking" ? HACKING_COURSES[0] : CHARISMA_COURSES[0];
-    return ns.singularity.universityCourse(option.location, course as UniversityClassType, preserveFocus);
+    const started = ns.singularity.universityCourse(option.location, course as UniversityClassType, preserveFocus);
+    if (started) {
+      ns.tprint(`INFO: Work: started ${course} at ${option.location}`);
+    }
+    return started;
   }
 
   return false;

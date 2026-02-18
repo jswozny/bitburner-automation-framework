@@ -792,7 +792,7 @@ async function runFullMode(
         for (const item of ranked) {
           if (item.cost <= spendingCap) {
             if (ns.gang.purchaseEquipment(name, item.name)) {
-              // Money is deducted, continue
+              ns.tprint(`INFO: Gang: bought ${item.name} for ${name} (-$${ns.formatNumber(item.cost)})`);
             }
           }
         }
