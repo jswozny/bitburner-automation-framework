@@ -695,7 +695,7 @@ async function runSingleInfiltration(ns: NS): Promise<boolean> {
 
 export async function main(ns: NS): Promise<void> {
   ns.disableLog("ALL");
-  ns.tail();
+  ns.ui.openTail();
   _ns = ns;
 
   // Reset module-level state (persists across restarts in Bitburner)
