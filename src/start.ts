@@ -12,6 +12,11 @@
 import { NS } from "@ns";
 import { ensureRamAndExec } from "/lib/launcher";
 
+/** Check if any instance of a script is running, regardless of arguments. */
+function isScriptRunning(ns: NS, path: string, host: string): boolean {
+  return ns.ps(host).some(p => p.filename === path);
+}
+
 /** Core daemons to launch after the dashboard, in priority order. */
 const CORE_SCRIPTS: { path: string; args: (string | number | boolean)[] }[] = [
   { path: "daemons/nuke.js", args: [] },
@@ -32,7 +37,7 @@ export async function main(ns: NS): Promise<void> {
 
   // 1. Launch dashboard
   const dashPath = "views/dashboard/dashboard.js";
-  if (ns.isRunning(dashPath, "home")) {
+  if (isScriptRunning(ns, dashPath, "home")) {
     ns.tprint(`INFO: ${dashPath} already running`);
   } else {
     const dashPid = ensureRamAndExec(ns, dashPath, "home");
@@ -48,7 +53,7 @@ export async function main(ns: NS): Promise<void> {
 
   // 2. Launch core daemons
   for (const { path, args } of CORE_SCRIPTS) {
-    if (ns.isRunning(path, "home", ...args)) {
+    if (isScriptRunning(ns, path, "home")) {
       ns.tprint(`INFO: ${path} already running`);
       continue;
     }
@@ -62,7 +67,7 @@ export async function main(ns: NS): Promise<void> {
 
   // 3. Launch optional daemons if RAM available
   for (const { path, args } of OPTIONAL_SCRIPTS) {
-    if (ns.isRunning(path, "home", ...args)) {
+    if (isScriptRunning(ns, path, "home")) {
       ns.tprint(`INFO: ${path} already running`);
       continue;
     }
