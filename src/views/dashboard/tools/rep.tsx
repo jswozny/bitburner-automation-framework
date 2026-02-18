@@ -602,7 +602,7 @@ function HighTierDetailPanel({
       </div>
 
       {/* Action Buttons */}
-      {(status.hasUnlockedAugs || (status.pendingBackdoors && status.pendingBackdoors.length > 0) || showWorkButton || (status.pendingAugs ?? 0) > 0) && (
+      {(status.hasUnlockedAugs || (status.pendingBackdoors && status.pendingBackdoors.length > 0) || showWorkButton || (status.pendingAugs ?? 0) > 0 || status.neuroFlux?.purchasePlan || (status.neuroFlux?.canDonate && status.neuroFlux?.donationPlan)) && (
         <div style={{ display: "flex", gap: "8px", marginBottom: "8px", flexWrap: "wrap" }}>
           {showWorkButton && (
             <button
@@ -659,6 +659,36 @@ function HighTierDetailPanel({
               >
                 {confirmInstall ? "Confirm Install?" : `Install Augs (${status.pendingAugs})`}
               </button>
+          )}
+          {status.neuroFlux?.purchasePlan && (
+            <button
+              style={{
+                ...styles.buttonPlay,
+                marginLeft: 0,
+                padding: "4px 12px",
+                backgroundColor: "#003366",
+                color: "#00aaff",
+              }}
+              onClick={handleBuyNFG}
+              title={`Buy ${status.neuroFlux.purchasePlan.purchases} NFG level(s) for $${status.neuroFlux.purchasePlan.totalCostFormatted}`}
+            >
+              Buy NFG ({status.neuroFlux.purchasePlan.purchases})
+            </button>
+          )}
+          {status.neuroFlux?.canDonate && status.neuroFlux?.donationPlan && (
+            <button
+              style={{
+                ...styles.buttonPlay,
+                marginLeft: 0,
+                padding: "4px 12px",
+                backgroundColor: "#554400",
+                color: "#ffcc00",
+              }}
+              onClick={handleDonateAndBuyNFG}
+              title={`Donate & buy ${status.neuroFlux.donationPlan.purchases} NFG level(s) for $${status.neuroFlux.donationPlan.totalCostFormatted}`}
+            >
+              Donate+NFG ({status.neuroFlux.donationPlan.purchases})
+            </button>
           )}
         </div>
       )}

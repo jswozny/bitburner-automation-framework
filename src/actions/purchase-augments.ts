@@ -2,8 +2,7 @@
  * Purchase Augmentations Action
  *
  * Analyzes all factions and purchases affordable augmentations in priority order.
- * Uses the full factions controller — very high RAM cost.
- * Target RAM: ~430 GB at SF4.1 (full factions controller + purchaseAugmentation)
+ * Uses ramOverride to calculate actual RAM needed at runtime, supporting any SF4 level.
  *
  * Usage: run actions/purchase-augments.js
  *        run actions/purchase-augments.js --dry-run
