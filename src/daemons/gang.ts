@@ -31,12 +31,16 @@ import {
   getNextRecruitName,
   assignTasks,
   scoreAscension,
+  selectAscensionCandidate,
   rankEquipment,
+  determineBalancedPhase,
   NATO_NAMES,
   type MemberInfo,
+  type GangTaskConfig,
   type TaskStats,
   type GangInfo,
   type EquipmentInfo,
+  type AscensionResult,
 } from "/controllers/gang";
 
 // === TIER DEFINITIONS ===
@@ -168,6 +172,8 @@ interface GangConfig {
   ascendAutoThreshold: number;
   ascendReviewThreshold: number;
   trainingThreshold: number;
+  growTargetMultiplier: number;
+  growRespectReserve: number;
 }
 
 const DEFAULT_CONFIG: GangConfig = {
@@ -175,9 +181,11 @@ const DEFAULT_CONFIG: GangConfig = {
   pinnedMembers: {},
   purchasingEnabled: true,
   wantedThreshold: 0.95,
-  ascendAutoThreshold: 2.0,
-  ascendReviewThreshold: 1.5,
-  trainingThreshold: 200,
+  ascendAutoThreshold: 1.5,
+  ascendReviewThreshold: 1.15,
+  trainingThreshold: 500,
+  growTargetMultiplier: 30,
+  growRespectReserve: 2,
 };
 
 function loadConfig(ns: NS): GangConfig {
@@ -252,6 +260,18 @@ function readControlCommands(ns: NS, config: GangConfig): GangConfig {
             changed = true;
           }
           break;
+        case "set-gang-grow-target":
+          if (cmd.gangGrowTargetMultiplier !== undefined) {
+            config.growTargetMultiplier = cmd.gangGrowTargetMultiplier;
+            changed = true;
+          }
+          break;
+        case "set-gang-grow-respect-reserve":
+          if (cmd.gangGrowRespectReserve !== undefined) {
+            config.growRespectReserve = cmd.gangGrowRespectReserve;
+            changed = true;
+          }
+          break;
         case "ascend-gang-member":
           // Store the ascend request to be handled in the main loop
           if (cmd.gangMemberName) {
@@ -299,6 +319,10 @@ function getMemberInfoArray(ns: NS, names: string[]): MemberInfo[] {
       cha: info.cha,
       hack: info.hack,
       earnedRespect: info.earnedRespect,
+      strMult: info.str_asc_mult,
+      defMult: info.def_asc_mult,
+      dexMult: info.dex_asc_mult,
+      agiMult: info.agi_asc_mult,
     };
   });
 }
@@ -459,10 +483,17 @@ async function runBasicMode(
     };
 
     // Assign tasks
+    const taskConfig: GangTaskConfig = {
+      strategy: config.strategy,
+      trainingThreshold: config.trainingThreshold,
+      wantedThreshold: config.wantedThreshold,
+      growTargetMultiplier: config.growTargetMultiplier,
+      growRespectReserve: config.growRespectReserve,
+    };
+
     const assignments = assignTasks(
-      memberInfoArray, config.strategy, gangInfo,
-      taskStatsArray, config.pinnedMembers, config.wantedThreshold,
-      config.trainingThreshold,
+      memberInfoArray, taskConfig, gangInfo,
+      taskStatsArray, config.pinnedMembers,
     );
 
     // Build reason lookup for member statuses
@@ -492,6 +523,7 @@ async function runBasicMode(
         defMultiplier: mi.def_asc_mult,
         dexMultiplier: mi.dex_asc_mult,
         agiMultiplier: mi.agi_asc_mult,
+        avgCombatMultiplier: (mi.str_asc_mult + mi.def_asc_mult + mi.dex_asc_mult + mi.agi_asc_mult) / 4,
         earnedRespect: mi.earnedRespect,
         respectGain: mi.respectGain,
         moneyGain: mi.moneyGain,
@@ -505,6 +537,11 @@ async function runBasicMode(
     const canRecruit = ns.gang.canRecruitMember();
     const recruitsAvailable = ns.gang.getRecruitsAvailable();
     const respectForNext = ns.gang.respectForNextRecruit();
+
+    // Compute balanced phase for status
+    const balancedPhase = config.strategy === "balanced"
+      ? determineBalancedPhase(memberInfoArray, gangInfo, config.growTargetMultiplier)
+      : undefined;
 
     const status: GangStatus = {
       tier: 1, tierName: "basic",
@@ -540,6 +577,9 @@ async function runBasicMode(
       ascendAutoThreshold: config.ascendAutoThreshold,
       ascendReviewThreshold: config.ascendReviewThreshold,
       trainingThreshold: config.trainingThreshold,
+      growTargetMultiplier: config.growTargetMultiplier,
+      growRespectReserve: config.growRespectReserve,
+      balancedPhase,
     };
 
     publishStatus(ns, STATUS_PORTS.gang, status);
@@ -621,25 +661,36 @@ async function runFullMode(
       }
     }
 
-    // 1. ASCENSION FIRST (before equipment, since ascending resets equipment)
+    // 1. ASCENSION (staggered — one per tick to preserve respect)
     const ascensionAlerts: { memberName: string; bestStat: string; bestGain: number }[] = [];
 
+    // In grow mode, use a more aggressive threshold
+    const isGrowMode = config.strategy === "grow";
+    const effectiveAutoThreshold = isGrowMode
+      ? Math.min(config.ascendAutoThreshold, 1.25)
+      : config.ascendAutoThreshold;
+
+    // Collect candidates and flags
+    const ascCandidates: { name: string; result: AscensionResult }[] = [];
     for (const name of memberNames) {
       const result = ns.gang.getAscensionResult(name);
       if (!result) continue;
 
-      const score = scoreAscension(
-        { str: result.str, def: result.def, dex: result.dex, agi: result.agi, cha: result.cha, hack: result.hack },
-        config.ascendAutoThreshold,
-        config.ascendReviewThreshold,
-      );
+      const ascResult: AscensionResult = { str: result.str, def: result.def, dex: result.dex, agi: result.agi, cha: result.cha, hack: result.hack };
+      const score = scoreAscension(ascResult, effectiveAutoThreshold, config.ascendReviewThreshold);
 
       if (score.action === "auto") {
-        ns.gang.ascendMember(name);
-        ns.tprint(`INFO: Gang: auto-ascended ${name} (${score.bestStat} x${score.bestGain.toFixed(2)})`);
+        ascCandidates.push({ name, result: ascResult });
       } else if (score.action === "flag") {
         ascensionAlerts.push({ memberName: name, bestStat: score.bestStat, bestGain: score.bestGain });
       }
+    }
+
+    // Ascend at most one per tick (stagger to preserve respect)
+    const bestCandidate = selectAscensionCandidate(ascCandidates, effectiveAutoThreshold);
+    if (bestCandidate) {
+      ns.gang.ascendMember(bestCandidate.name);
+      ns.tprint(`INFO: Gang: auto-ascended ${bestCandidate.name} (${bestCandidate.bestStat} x${bestCandidate.bestGain.toFixed(2)})`);
     }
 
     // Handle pending ascend requests from dashboard
@@ -665,10 +716,17 @@ async function runFullMode(
     };
 
     // Assign tasks
+    const taskConfig: GangTaskConfig = {
+      strategy: config.strategy,
+      trainingThreshold: config.trainingThreshold,
+      wantedThreshold: config.wantedThreshold,
+      growTargetMultiplier: config.growTargetMultiplier,
+      growRespectReserve: config.growRespectReserve,
+    };
+
     const assignments = assignTasks(
-      memberInfoArray, config.strategy, gangInfo,
-      taskStatsArray, config.pinnedMembers, config.wantedThreshold,
-      config.trainingThreshold,
+      memberInfoArray, taskConfig, gangInfo,
+      taskStatsArray, config.pinnedMembers,
     );
 
     // Build reason lookup for member statuses
@@ -681,11 +739,21 @@ async function runFullMode(
       }
     }
 
-    // 2. EQUIPMENT PURCHASING (after ascension)
+    // 2. EQUIPMENT PURCHASING (after ascension, scaled with income)
     let availableUpgrades = 0;
     if (config.purchasingEnabled) {
       const equipNames = ns.gang.getEquipmentNames();
       const player = ns.getPlayer();
+
+      // Scale spending cap with income
+      const incomePerSec = info.moneyGainRate * 5;
+      const incomeBased = incomePerSec * 60; // 1 minute of income
+      const percentBased = player.money * 0.1;
+      let spendingCap = Math.max(incomeBased, percentBased);
+      // At high income, unlock more aggressive spending
+      if (incomePerSec > 1_000_000) {
+        spendingCap = Math.max(spendingCap, player.money * 0.5);
+      }
 
       for (const name of memberNames) {
         const mi = ns.gang.getMemberInformation(name);
@@ -705,7 +773,7 @@ async function runFullMode(
 
         // Buy best ROI items we can afford
         for (const item of ranked) {
-          if (item.cost <= player.money * 0.1) { // Don't spend more than 10% of money per item
+          if (item.cost <= spendingCap) {
             if (ns.gang.purchaseEquipment(name, item.name)) {
               // Money is deducted, continue
             }
@@ -723,7 +791,7 @@ async function runFullMode(
       if (ascResult) {
         const score = scoreAscension(
           { str: ascResult.str, def: ascResult.def, dex: ascResult.dex, agi: ascResult.agi, cha: ascResult.cha, hack: ascResult.hack },
-          config.ascendAutoThreshold,
+          effectiveAutoThreshold,
           config.ascendReviewThreshold,
         );
         ascensionData = {
@@ -753,6 +821,7 @@ async function runFullMode(
         defMultiplier: mi.def_asc_mult,
         dexMultiplier: mi.dex_asc_mult,
         agiMultiplier: mi.agi_asc_mult,
+        avgCombatMultiplier: (mi.str_asc_mult + mi.def_asc_mult + mi.dex_asc_mult + mi.agi_asc_mult) / 4,
         earnedRespect: mi.earnedRespect,
         respectGain: mi.respectGain,
         moneyGain: mi.moneyGain,
@@ -767,6 +836,11 @@ async function runFullMode(
     const canRecruit = ns.gang.canRecruitMember();
     const recruitsAvailable = ns.gang.getRecruitsAvailable();
     const respectForNext = ns.gang.respectForNextRecruit();
+
+    // Compute balanced phase for status
+    const balancedPhase = config.strategy === "balanced"
+      ? determineBalancedPhase(memberInfoArray, gangInfo, config.growTargetMultiplier)
+      : undefined;
 
     const status: GangStatus = {
       tier: 2, tierName: "full",
@@ -805,13 +879,17 @@ async function runFullMode(
       ascendAutoThreshold: config.ascendAutoThreshold,
       ascendReviewThreshold: config.ascendReviewThreshold,
       trainingThreshold: config.trainingThreshold,
+      growTargetMultiplier: config.growTargetMultiplier,
+      growRespectReserve: config.growRespectReserve,
+      balancedPhase,
     };
 
     publishStatus(ns, STATUS_PORTS.gang, status);
 
     // Print status
+    const phaseLabel = balancedPhase ? ` (${balancedPhase})` : "";
     ns.print(`${C.cyan}=== Gang Daemon (full) ===${C.reset}`);
-    ns.print(`${C.dim}${info.faction} | ${memberNames.length} members | Strategy: ${config.strategy}${C.reset}`);
+    ns.print(`${C.dim}${info.faction} | ${memberNames.length} members | Strategy: ${config.strategy}${phaseLabel}${C.reset}`);
     ns.print(`${C.dim}Respect: ${ns.formatNumber(info.respect)} (+${ns.formatNumber(info.respectGainRate * 5)}/s)${C.reset}`);
     ns.print(`${C.dim}Wanted: ${(info.wantedPenalty * 100).toFixed(1)}% | Territory: ${(info.territory * 100).toFixed(1)}% | Income: ${ns.formatNumber(info.moneyGainRate * 5)}/s${C.reset}`);
     if (ascensionAlerts.length > 0) {
@@ -858,7 +936,7 @@ export async function main(ns: NS): Promise<void> {
 
   // Load config and apply CLI overrides
   const config = loadConfig(ns);
-  if (flags.strategy && ["respect", "money", "territory", "balanced"].includes(flags.strategy)) {
+  if (flags.strategy && ["respect", "money", "territory", "balanced", "grow"].includes(flags.strategy)) {
     config.strategy = flags.strategy as GangStrategy;
     saveConfig(ns, config);
   }

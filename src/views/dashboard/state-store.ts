@@ -246,6 +246,22 @@ export function setGangAscensionThresholds(autoThreshold: number, reviewThreshol
 }
 
 /**
+ * Set gang grow target multiplier.
+ */
+export function setGangGrowTarget(multiplier: number): void {
+  if (!commandPort) return;
+  commandPort.write(JSON.stringify({ tool: "gang", action: "set-gang-grow-target", gangGrowTargetMultiplier: multiplier }));
+}
+
+/**
+ * Set gang grow respect reserve count.
+ */
+export function setGangGrowRespectReserve(count: number): void {
+  if (!commandPort) return;
+  commandPort.write(JSON.stringify({ tool: "gang", action: "set-gang-grow-respect-reserve", gangGrowRespectReserve: count }));
+}
+
+/**
  * Restart the gang daemon with optional strategy.
  */
 export function restartGangDaemon(strategy?: GangStrategy): void {
@@ -487,6 +503,8 @@ function executeCommand(ns: NS, cmd: Command): void {
     case "set-gang-wanted-threshold":
     case "set-gang-ascension-thresholds":
     case "set-gang-training-threshold":
+    case "set-gang-grow-target":
+    case "set-gang-grow-respect-reserve":
       {
         // Forward gang commands to the gang control port
         const gangCtrl = ns.getPortHandle(GANG_CONTROL_PORT);

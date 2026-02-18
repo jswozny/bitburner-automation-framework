@@ -74,7 +74,7 @@ export interface QueueEntry {
 
 export interface Command {
   tool: ToolName;
-  action: "start" | "stop" | "open-tail" | "run-script" | "start-faction-work" | "set-focus" | "start-training" | "install-augments" | "run-backdoors" | "restart-rep-daemon" | "join-faction" | "restart-faction-daemon" | "restart-hack-daemon" | "restart-share-daemon" | "stop-infiltration" | "kill-infiltration" | "configure-infiltration" | "set-gang-strategy" | "pin-gang-member" | "unpin-gang-member" | "ascend-gang-member" | "toggle-gang-purchases" | "toggle-gang-warfare" | "set-gang-wanted-threshold" | "set-gang-ascension-thresholds" | "set-gang-training-threshold" | "restart-gang-daemon";
+  action: "start" | "stop" | "open-tail" | "run-script" | "start-faction-work" | "set-focus" | "start-training" | "install-augments" | "run-backdoors" | "restart-rep-daemon" | "join-faction" | "restart-faction-daemon" | "restart-hack-daemon" | "restart-share-daemon" | "stop-infiltration" | "kill-infiltration" | "configure-infiltration" | "set-gang-strategy" | "pin-gang-member" | "unpin-gang-member" | "ascend-gang-member" | "toggle-gang-purchases" | "toggle-gang-warfare" | "set-gang-wanted-threshold" | "set-gang-ascension-thresholds" | "set-gang-training-threshold" | "set-gang-grow-target" | "set-gang-grow-respect-reserve" | "restart-gang-daemon";
   scriptPath?: string;
   scriptArgs?: string[];
   factionName?: string;
@@ -98,6 +98,8 @@ export interface Command {
   gangAscendAutoThreshold?: number;
   gangAscendReviewThreshold?: number;
   gangTrainingThreshold?: number;
+  gangGrowTargetMultiplier?: number;
+  gangGrowRespectReserve?: number;
 }
 
 // === STATUS INTERFACES ===
@@ -690,7 +692,7 @@ export const INFILTRATION_CONTROL_PORT = 12;
 
 // === GANG TYPES ===
 
-export type GangStrategy = "respect" | "money" | "territory" | "balanced";
+export type GangStrategy = "respect" | "money" | "territory" | "balanced" | "grow";
 
 export type GangTierName = "lite" | "basic" | "full";
 
@@ -708,6 +710,7 @@ export interface GangMemberStatus {
   defMultiplier: number;
   dexMultiplier: number;
   agiMultiplier: number;
+  avgCombatMultiplier: number;
   earnedRespect: number;
   respectGain: number;
   moneyGain: number;
@@ -795,6 +798,11 @@ export interface GangStatus {
   ascendAutoThreshold?: number;
   ascendReviewThreshold?: number;
   trainingThreshold?: number;
+
+  // Grow mode
+  growTargetMultiplier?: number;
+  growRespectReserve?: number;
+  balancedPhase?: "grow" | "respect" | "territory" | "money";
 }
 
 // === DASHBOARD STATE ===

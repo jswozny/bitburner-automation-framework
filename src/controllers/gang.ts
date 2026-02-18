@@ -16,9 +16,6 @@ export const NATO_NAMES = [
   "Golf", "Hotel", "India", "Juliet", "Kilo", "Lima",
 ];
 
-/** Respect threshold for switching from respect to money in balanced mode */
-const BALANCED_RESPECT_THRESHOLD = 1_000_000;
-
 // === TYPES ===
 
 export interface TaskAssignment {
@@ -37,6 +34,18 @@ export interface MemberInfo {
   cha: number;
   hack: number;
   earnedRespect: number;
+  strMult: number;
+  defMult: number;
+  dexMult: number;
+  agiMult: number;
+}
+
+export interface GangTaskConfig {
+  strategy: GangStrategy;
+  trainingThreshold: number;
+  wantedThreshold: number;
+  growTargetMultiplier: number;
+  growRespectReserve: number;
 }
 
 export interface TaskStats {
@@ -106,6 +115,13 @@ function totalCombatStats(m: MemberInfo): number {
 }
 
 /**
+ * Average ascension multiplier across combat stats.
+ */
+export function avgCombatMultiplier(m: MemberInfo): number {
+  return (m.strMult + m.defMult + m.dexMult + m.agiMult) / 4;
+}
+
+/**
  * Calculate member-task stat alignment score.
  * Higher score = member's stats better match task's stat weights.
  */
@@ -142,17 +158,41 @@ export function selectWantedCleaners(
 }
 
 /**
+ * Determine the current phase for balanced mode based on gang state.
+ * Phases: grow → respect → territory → money
+ */
+export function determineBalancedPhase(
+  members: MemberInfo[],
+  gangInfo: GangInfo,
+  growTargetMultiplier: number,
+): "grow" | "respect" | "territory" | "money" {
+  if (members.length === 0) return "grow";
+
+  const avgMult = members.reduce((sum, m) => sum + avgCombatMultiplier(m), 0) / members.length;
+
+  // Phase 1: Grow - if average multiplier is below half the target, keep growing
+  if (avgMult < growTargetMultiplier * 0.5) return "grow";
+
+  // Phase 2: Respect - if we don't have max members yet, build respect
+  if (members.length < NATO_NAMES.length) return "respect";
+
+  // Phase 3: Territory - if territory < 100% and members are strong
+  if (gangInfo.territory < 0.99) return "territory";
+
+  // Phase 4: Money - everything maxed, make money
+  return "money";
+}
+
+/**
  * Assign tasks to all members based on strategy.
  * Respects pinned members and handles wanted cleanup.
  */
 export function assignTasks(
   members: MemberInfo[],
-  strategy: GangStrategy,
+  config: GangTaskConfig,
   gangInfo: GangInfo,
   taskStats: TaskStats[],
   pinnedMembers: Record<string, string>,
-  wantedThreshold: number,
-  trainingThreshold = 200,
 ): TaskAssignment[] {
   const assignments: TaskAssignment[] = [];
   const assigned = new Set<string>();
@@ -171,13 +211,13 @@ export function assignTasks(
 
   // 2. Wanted cleanup - assign weakest unpinned members to Vigilante Justice
   const unpinned = members.filter(m => !assigned.has(m.name));
-  if (gangInfo.wantedPenalty < wantedThreshold && gangInfo.wantedLevel > 1) {
-    const cleaners = selectWantedCleaners(unpinned, wantedThreshold, gangInfo.wantedPenalty);
+  if (gangInfo.wantedPenalty < config.wantedThreshold && gangInfo.wantedLevel > 1) {
+    const cleaners = selectWantedCleaners(unpinned, config.wantedThreshold, gangInfo.wantedPenalty);
     for (const name of cleaners) {
       assignments.push({
         memberName: name,
         task: "Vigilante Justice",
-        reason: `wanted cleanup (${(gangInfo.wantedPenalty * 100).toFixed(1)}% < ${(wantedThreshold * 100).toFixed(0)}%)`,
+        reason: `wanted cleanup (${(gangInfo.wantedPenalty * 100).toFixed(1)}% < ${(config.wantedThreshold * 100).toFixed(0)}%)`,
       });
       assigned.add(name);
     }
@@ -188,35 +228,93 @@ export function assignTasks(
   const combatTasks = taskStats.filter(t => t.isCombat && t.name !== "Vigilante Justice" && t.name !== "Territory Warfare");
   const trainingTask = taskStats.find(t => t.name === "Train Combat");
 
-  for (const member of remaining) {
-    // New/weak members always train first
-    const combatTotal = totalCombatStats(member);
-    const trainingTarget = trainingThreshold * 4;
-    if (combatTotal < trainingTarget && trainingTask) {
-      assignments.push({
-        memberName: member.name,
-        task: trainingTask.name,
-        reason: `training (${Math.round(combatTotal)}/${Math.round(trainingTarget)} combat stats)`,
-      });
-      continue;
-    }
+  // Determine effective strategy (balanced resolves to a phase)
+  const effectiveStrategy = config.strategy === "balanced"
+    ? determineBalancedPhase(remaining, gangInfo, config.growTargetMultiplier)
+    : config.strategy;
 
-    const task = selectTaskForStrategy(member, strategy, gangInfo, combatTasks, taskStats);
-    assignments.push(task);
+  if (effectiveStrategy === "grow") {
+    // Grow mode: most members train, reserve some for respect
+    assignGrowTasks(remaining, assignments, config, combatTasks, trainingTask);
+  } else {
+    // Standard strategies: train weak members, then assign by strategy
+    for (const member of remaining) {
+      const combatTotal = totalCombatStats(member);
+      const trainingTarget = config.trainingThreshold * 4;
+      if (combatTotal < trainingTarget && trainingTask) {
+        assignments.push({
+          memberName: member.name,
+          task: trainingTask.name,
+          reason: `training (${Math.round(combatTotal)}/${Math.round(trainingTarget)} combat stats)`,
+        });
+        continue;
+      }
+
+      const task = selectTaskForStrategy(member, effectiveStrategy, combatTasks);
+      assignments.push(task);
+    }
   }
 
   return assignments;
 }
 
 /**
- * Select the best task for a member based on strategy.
+ * Assign tasks in grow mode: train everyone except a respect reserve.
+ * Graduated members (multiplier >= target) do respect/money tasks.
+ */
+function assignGrowTasks(
+  members: MemberInfo[],
+  assignments: TaskAssignment[],
+  config: GangTaskConfig,
+  combatTasks: TaskStats[],
+  trainingTask: TaskStats | undefined,
+): void {
+  // Sort by multiplier descending — strongest members are candidates for respect reserve
+  const sorted = [...members].sort((a, b) => avgCombatMultiplier(b) - avgCombatMultiplier(a));
+
+  let respectReserveUsed = 0;
+
+  for (const member of sorted) {
+    const mult = avgCombatMultiplier(member);
+    const graduated = mult >= config.growTargetMultiplier;
+
+    // Graduated members do money tasks (they're strong enough)
+    if (graduated) {
+      assignments.push(selectBestTask(member, combatTasks, "money", "graduated"));
+      continue;
+    }
+
+    // Reserve some strong members for respect (maintain recruitment)
+    if (respectReserveUsed < config.growRespectReserve) {
+      respectReserveUsed++;
+      assignments.push(selectBestTask(member, combatTasks, "respect", "respect reserve"));
+      continue;
+    }
+
+    // Everyone else trains
+    if (trainingTask) {
+      assignments.push({
+        memberName: member.name,
+        task: trainingTask.name,
+        reason: `grow (x${mult.toFixed(1)} → x${config.growTargetMultiplier} target)`,
+      });
+    } else {
+      assignments.push({
+        memberName: member.name,
+        task: "Train Combat",
+        reason: "grow (training)",
+      });
+    }
+  }
+}
+
+/**
+ * Select the best task for a member based on a resolved strategy.
  */
 function selectTaskForStrategy(
   member: MemberInfo,
-  strategy: GangStrategy,
-  gangInfo: GangInfo,
+  strategy: string,
   combatTasks: TaskStats[],
-  allTasks: TaskStats[],
 ): TaskAssignment {
   switch (strategy) {
     case "respect":
@@ -229,10 +327,9 @@ function selectTaskForStrategy(
         task: "Territory Warfare",
         reason: "territory strategy",
       };
-    case "balanced": {
-      const mode = gangInfo.respect < BALANCED_RESPECT_THRESHOLD ? "respect" : "money";
-      return selectBestTask(member, combatTasks, mode);
-    }
+    case "grow":
+      // Shouldn't reach here (handled by assignGrowTasks), but fallback
+      return selectBestTask(member, combatTasks, "respect");
     default:
       return selectBestTask(member, combatTasks, "respect");
   }
@@ -245,6 +342,7 @@ function selectBestTask(
   member: MemberInfo,
   tasks: TaskStats[],
   optimize: "respect" | "money",
+  reasonOverride?: string,
 ): TaskAssignment {
   if (tasks.length === 0) {
     return { memberName: member.name, task: "Train Combat", reason: "no tasks available" };
@@ -266,7 +364,7 @@ function selectBestTask(
   return {
     memberName: member.name,
     task: bestTask.name,
-    reason: `best ${optimize} (${bestTask.name})`,
+    reason: reasonOverride ?? `best ${optimize} (${bestTask.name})`,
   };
 }
 
@@ -298,6 +396,29 @@ export function scoreAscension(
     return { action: "flag", bestGain, bestStat };
   }
   return { action: "skip", bestGain, bestStat };
+}
+
+/**
+ * From a list of auto-eligible ascension candidates, pick the single best one.
+ * Staggering ascensions (1 per tick) prevents tanking all respect at once.
+ */
+export function selectAscensionCandidate(
+  candidates: { name: string; result: AscensionResult }[],
+  autoThreshold: number,
+): { name: string; bestGain: number; bestStat: string } | null {
+  const scored = candidates
+    .map(c => {
+      const gains: [string, number][] = [
+        ["str", c.result.str], ["def", c.result.def],
+        ["dex", c.result.dex], ["agi", c.result.agi],
+      ];
+      const [bestStat, bestGain] = gains.reduce((best, curr) => curr[1] > best[1] ? curr : best, gains[0]);
+      return { name: c.name, bestGain, bestStat };
+    })
+    .filter(c => c.bestGain >= autoThreshold)
+    .sort((a, b) => b.bestGain - a.bestGain);
+
+  return scored.length > 0 ? scored[0] : null;
 }
 
 /**

@@ -17,6 +17,10 @@ import {
   ascendGangMember,
   toggleGangPurchases,
   setGangTrainingThreshold,
+  setGangAscensionThresholds,
+  setGangWantedThreshold,
+  setGangGrowTarget,
+  setGangGrowRespectReserve,
 } from "views/dashboard/state-store";
 
 // === HELPERS ===
@@ -60,9 +64,58 @@ const smallBtnStyle: React.CSSProperties = {
   cursor: "pointer",
 };
 
+const settingInputStyle: React.CSSProperties = {
+  backgroundColor: "#1a1a1a",
+  color: "#00ff00",
+  border: "1px solid #333",
+  borderRadius: "3px",
+  padding: "1px 4px",
+  fontSize: "11px",
+  fontFamily: "inherit",
+  width: "60px",
+  textAlign: "right",
+};
+
+/** Editable number input. Commits on blur or Enter. */
+function EditableNumber({ value, onCommit, prefix, min, max, step }: {
+  value: number;
+  onCommit: (v: number) => void;
+  prefix?: string;
+  min?: number;
+  max?: number;
+  step?: number;
+}): React.ReactElement {
+  const display = prefix ? `${value}` : `${value}`;
+  return (
+    <span style={{ display: "flex", alignItems: "center", gap: "2px" }}>
+      {prefix && <span style={{ color: "#888", fontSize: "11px" }}>{prefix}</span>}
+      <input
+        type="number"
+        style={settingInputStyle}
+        defaultValue={display}
+        key={value}
+        min={min}
+        max={max}
+        step={step ?? 1}
+        onBlur={(e) => {
+          const v = parseFloat((e.target as HTMLInputElement).value);
+          if (!isNaN(v) && v !== value) onCommit(v);
+        }}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") {
+            const v = parseFloat((e.target as HTMLInputElement).value);
+            if (!isNaN(v) && v !== value) onCommit(v);
+            (e.target as HTMLInputElement).blur();
+          }
+        }}
+      />
+    </span>
+  );
+}
+
 // === STRATEGY SELECTOR ===
 
-function StrategySelector({ current, running }: { current: GangStrategy; running: boolean }): React.ReactElement {
+function StrategySelector({ current, running, balancedPhase }: { current: GangStrategy; running: boolean; balancedPhase?: string }): React.ReactElement {
   return (
     <span style={{ display: "flex", alignItems: "center", gap: "4px" }}>
       <span style={{ ...styles.statLabel, fontSize: "11px" }}>Strategy</span>
@@ -75,23 +128,30 @@ function StrategySelector({ current, running }: { current: GangStrategy; running
         }}
       >
         <option value="balanced">Balanced</option>
+        <option value="grow">Grow</option>
         <option value="respect">Respect</option>
         <option value="money">Money</option>
         <option value="territory">Territory</option>
       </select>
+      {current === "balanced" && balancedPhase && (
+        <span style={{ color: "#00ffff", fontSize: "10px" }}>({balancedPhase})</span>
+      )}
     </span>
   );
 }
 
 // === MEMBER CARD ===
 
-function MemberCard({ member, taskNames, running }: {
+function MemberCard({ member, taskNames, running, growTarget }: {
   member: GangMemberStatus;
   taskNames: string[];
   running: boolean;
+  growTarget?: number;
 }): React.ReactElement {
   const asc = member.ascensionResult;
   const isFlagged = asc?.action === "flag";
+  const mult = member.avgCombatMultiplier ?? 1;
+  const graduated = growTarget ? mult >= growTarget : false;
 
   return (
     <div style={{
@@ -104,7 +164,10 @@ function MemberCard({ member, taskNames, running }: {
           {member.name}
           {member.isPinned && <span style={{ color: "#ffaa00", marginLeft: "4px", fontSize: "10px" }} title="Pinned">P</span>}
         </span>
-        <span style={{ display: "flex", gap: "4px" }}>
+        <span style={{ display: "flex", gap: "4px", alignItems: "center" }}>
+          <span style={{ fontSize: "10px", color: graduated ? "#00ff00" : "#ffaa00" }} title="Avg ascension multiplier">
+            x{mult.toFixed(1)}
+          </span>
           {isFlagged && (
             <button
               style={{ ...smallBtnStyle, color: "#ffff00", borderColor: "#ffff00" }}
@@ -291,7 +354,7 @@ function GangDetailPanel({ status, running, toolId, error, pid }: DetailPanelPro
             <span style={styles.statValue}>{status.tierName}</span>
           </span>
           <span style={styles.dim}>|</span>
-          <StrategySelector current={status.strategy ?? "balanced"} running={running} />
+          <StrategySelector current={status.strategy ?? "balanced"} running={running} balancedPhase={status.balancedPhase} />
         </div>
         <ToolControl tool={toolId} running={running} pid={pid} />
       </div>
@@ -372,7 +435,7 @@ function GangDetailPanel({ status, running, toolId, error, pid }: DetailPanelPro
           <div style={styles.sectionTitle}>MEMBERS</div>
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(180px, 1fr))", gap: "8px" }}>
             {status.members.map(m => (
-              <MemberCard key={m.name} member={m} taskNames={taskNames} running={running} />
+              <MemberCard key={m.name} member={m} taskNames={taskNames} running={running} growTarget={status.growTargetMultiplier} />
             ))}
           </div>
         </div>
@@ -460,37 +523,69 @@ function GangDetailPanel({ status, running, toolId, error, pid }: DetailPanelPro
         <div style={styles.sectionTitle}>SETTINGS</div>
         <div style={{ ...styles.stat, display: "flex", alignItems: "center", justifyContent: "space-between" }}>
           <span style={styles.statLabel}>Training Threshold</span>
-          <span style={{ display: "flex", alignItems: "center", gap: "4px" }}>
-            <button
-              style={smallBtnStyle}
-              onClick={() => {
-                if (!running) return;
-                const cur = status.trainingThreshold ?? 200;
-                if (cur > 50) setGangTrainingThreshold(cur - 50);
-              }}
-            >-</button>
-            <span style={styles.statValue}>{status.trainingThreshold ?? 200}</span>
-            <button
-              style={smallBtnStyle}
-              onClick={() => {
-                if (!running) return;
-                const cur = status.trainingThreshold ?? 200;
-                setGangTrainingThreshold(cur + 50);
-              }}
-            >+</button>
-          </span>
+          <EditableNumber
+            value={status.trainingThreshold ?? 500}
+            onCommit={(v) => { if (running) setGangTrainingThreshold(v); }}
+            min={50}
+            step={50}
+          />
         </div>
-        <div style={styles.stat}>
+        {(status.strategy === "grow" || status.strategy === "balanced") && (
+          <>
+            <div style={{ ...styles.stat, display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+              <span style={styles.statLabel}>Grow Target Mult</span>
+              <EditableNumber
+                value={status.growTargetMultiplier ?? 30}
+                onCommit={(v) => { if (running) setGangGrowTarget(v); }}
+                prefix="x"
+                min={5}
+                step={5}
+              />
+            </div>
+            <div style={{ ...styles.stat, display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+              <span style={styles.statLabel}>Respect Reserve</span>
+              <EditableNumber
+                value={status.growRespectReserve ?? 2}
+                onCommit={(v) => { if (running) setGangGrowRespectReserve(v); }}
+                min={0}
+                max={11}
+                step={1}
+              />
+            </div>
+          </>
+        )}
+        <div style={{ ...styles.stat, display: "flex", alignItems: "center", justifyContent: "space-between" }}>
           <span style={styles.statLabel}>Wanted Threshold</span>
-          <span style={styles.statValue}>{status.wantedThreshold !== undefined ? formatPct(status.wantedThreshold) : "95%"}</span>
+          <EditableNumber
+            value={parseFloat(((status.wantedThreshold ?? 0.95) * 100).toFixed(1))}
+            onCommit={(v) => { if (running) setGangWantedThreshold(v / 100); }}
+            prefix="%"
+            min={50}
+            max={100}
+            step={1}
+          />
         </div>
-        <div style={styles.stat}>
+        <div style={{ ...styles.stat, display: "flex", alignItems: "center", justifyContent: "space-between" }}>
           <span style={styles.statLabel}>Ascend Auto</span>
-          <span style={styles.statValue}>{status.ascendAutoThreshold !== undefined ? `x${status.ascendAutoThreshold.toFixed(1)}` : "x2.0"}</span>
+          <EditableNumber
+            value={parseFloat((status.ascendAutoThreshold ?? 1.5).toFixed(2))}
+            onCommit={(v) => { if (running) setGangAscensionThresholds(v, status.ascendReviewThreshold ?? 1.15); }}
+            prefix="x"
+            min={1.05}
+            max={5}
+            step={0.05}
+          />
         </div>
-        <div style={styles.stat}>
+        <div style={{ ...styles.stat, display: "flex", alignItems: "center", justifyContent: "space-between" }}>
           <span style={styles.statLabel}>Ascend Review</span>
-          <span style={styles.statValue}>{status.ascendReviewThreshold !== undefined ? `x${status.ascendReviewThreshold.toFixed(1)}` : "x1.5"}</span>
+          <EditableNumber
+            value={parseFloat((status.ascendReviewThreshold ?? 1.15).toFixed(2))}
+            onCommit={(v) => { if (running) setGangAscensionThresholds(status.ascendAutoThreshold ?? 1.5, v); }}
+            prefix="x"
+            min={1.01}
+            max={5}
+            step={0.05}
+          />
         </div>
       </div>
     </div>
