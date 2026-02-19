@@ -42,7 +42,8 @@ import {
   BatchTargetState,
   BatchTargetStatus,
 } from "/types/ports";
-import { getAllServers, COLORS, HackAction } from "/lib/utils";
+import { COLORS, HackAction } from "/lib/utils";
+import { getCachedServers } from "/lib/server-cache";
 import {
   IncomeTracker,
   isTargetPrepped,
@@ -186,7 +187,7 @@ interface RunningJobInfo {
 function getRunningJobs(ns: NS): Record<string, RunningJobInfo> {
   const jobs: Record<string, RunningJobInfo> = {};
 
-  for (const hostname of getAllServers(ns)) {
+  for (const hostname of getCachedServers(ns)) {
     for (const proc of ns.ps(hostname)) {
       if (!proc.filename.includes("workers/")) continue;
 
@@ -294,7 +295,7 @@ function computeLegacyHackStatus(ns: NS, homeReserve: number, maxTargets: number
   let lowestRequiredAbovePlayer = Number.MAX_SAFE_INTEGER;
   let countNeedHigher = 0;
 
-  for (const hostname of getAllServers(ns)) {
+  for (const hostname of getCachedServers(ns)) {
     const server = ns.getServer(hostname);
     if ((server.moneyMax ?? 0) === 0) continue;
     if (hostname.startsWith("pserv-") || hostname === "home") continue;
@@ -417,7 +418,7 @@ function computeLegacyHackStatus(ns: NS, homeReserve: number, maxTargets: number
 
 function killTargetWorkers(ns: NS, target: string): number {
   let killed = 0;
-  for (const hostname of getAllServers(ns)) {
+  for (const hostname of getCachedServers(ns)) {
     for (const proc of ns.ps(hostname)) {
       if (!proc.filename.includes("workers/")) continue;
       if (proc.args[0] !== target) continue;

@@ -1,80 +1,64 @@
 /**
  * RAM Calculation Utilities
  *
- * Functions for calculating available RAM, including RAM that could be freed
+ * Unified kill-tier logic for calculating available RAM and freeing RAM
  * by killing lower-priority scripts.
  *
- * Import with: import { calcAvailableAfterKills, freeRamForTarget } from '/lib/ram-utils';
+ * Import with: import { walkKillTiers, freeRamForTarget, calcAvailableAfterKills } from '/lib/ram-utils';
  */
 import { NS } from "@ns";
 import { KILL_TIERS } from "/types/ports";
 
-/**
- * Calculate total RAM available after hypothetically killing lower-tier scripts.
- * This includes currently available RAM plus RAM used by killable scripts.
- *
- * @param ns - NetScript context
- * @param host - Server to check (default: "home")
- * @param excludeDashboard - Whether to exclude dashboard from killable scripts (default: true)
- * @returns Total RAM that would be available after killing lower-tier scripts
- */
-export function calcAvailableAfterKills(
-  ns: NS,
-  host = "home",
-  excludeDashboard = true
-): number {
-  let available = ns.getServerMaxRam(host) - ns.getServerUsedRam(host);
+// === TYPES ===
 
-  // Determine which tiers can be killed
-  const killableTiers = excludeDashboard
-    ? KILL_TIERS.slice(0, -1) // Exclude dashboard tier (last one)
-    : KILL_TIERS;
-
-  // Add RAM from killable scripts
-  const processes = ns.ps(host);
-  for (const tier of killableTiers) {
-    for (const script of tier) {
-      const procs = processes.filter((p) => p.filename === script);
-      for (const proc of procs) {
-        available += ns.getScriptRam(proc.filename, host) * proc.threads;
-      }
-    }
-  }
-
-  return available;
+export interface KillResult {
+  pid: number;
+  filename: string;
+  ram: number;
+  args: (string | number | boolean)[];
 }
 
+// === CORE: UNIFIED KILL-TIER WALKER ===
+
 /**
- * Free RAM by killing lower-tier scripts until target RAM is available.
+ * Walk kill tiers to find (and optionally kill) processes to free RAM.
+ *
+ * This is the single source of truth for kill-tier logic. All callers
+ * that need to free RAM or estimate freeable RAM should use this function.
  *
  * @param ns - NetScript context
  * @param targetRam - Amount of RAM needed
- * @param host - Server to free RAM on (default: "home")
- * @param excludeDashboard - Whether to exclude dashboard from killable scripts (default: true)
- * @returns True if target RAM was achieved, false otherwise
+ * @param options.host - Server to check (default: "home")
+ * @param options.dryRun - If true, don't actually kill processes (default: false)
+ * @param options.excludeDashboard - If true, skip last tier (default: true)
+ * @returns List of killed/would-kill processes and whether target was met
  */
-export function freeRamForTarget(
+export function walkKillTiers(
   ns: NS,
   targetRam: number,
-  host = "home",
-  excludeDashboard = true
-): boolean {
+  options?: {
+    host?: string;
+    dryRun?: boolean;
+    excludeDashboard?: boolean;
+  },
+): { killed: KillResult[]; sufficient: boolean } {
+  const host = options?.host ?? "home";
+  const dryRun = options?.dryRun ?? false;
+  const excludeDashboard = options?.excludeDashboard ?? true;
+
   let available = ns.getServerMaxRam(host) - ns.getServerUsedRam(host);
 
   if (available >= targetRam) {
-    return true;
+    return { killed: [], sufficient: true };
   }
 
-  const killableTiers = excludeDashboard
-    ? KILL_TIERS.slice(0, -1)
-    : KILL_TIERS;
+  const tiers = excludeDashboard ? KILL_TIERS.slice(0, -1) : KILL_TIERS;
+  const killed: KillResult[] = [];
 
-  const killed: string[] = [];
-
-  for (const tierScripts of killableTiers) {
+  for (const tierScripts of tiers) {
     if (available >= targetRam) break;
 
-    // Get processes matching this tier, sorted by RAM descending
+    // Get processes matching this tier, sorted by RAM descending (kill fewest to free most)
     const processes = ns.ps(host);
     const tierProcs = processes
       .filter((p) => tierScripts.includes(p.filename))
@@ -82,35 +66,66 @@ export function freeRamForTarget(
         pid: p.pid,
         filename: p.filename,
         ram: ns.getScriptRam(p.filename, host) * p.threads,
+        args: p.args,
       }))
       .sort((a, b) => b.ram - a.ram);
 
     for (const proc of tierProcs) {
       if (available >= targetRam) break;
-      ns.kill(proc.pid);
-      killed.push(`${proc.filename} (${ns.formatRam(proc.ram)})`);
+      if (!dryRun) {
+        ns.kill(proc.pid);
+      }
+      killed.push(proc);
       available += proc.ram;
     }
   }
 
+  return { killed, sufficient: available >= targetRam };
+}
+
+// === CONVENIENCE WRAPPERS ===
+
+/**
+ * Calculate total RAM available after hypothetically killing lower-tier scripts.
+ * This includes currently available RAM plus RAM used by killable scripts.
+ */
+export function calcAvailableAfterKills(
+  ns: NS,
+  host = "home",
+  excludeDashboard = true,
+): number {
+  const available = ns.getServerMaxRam(host) - ns.getServerUsedRam(host);
+  const { killed } = walkKillTiers(ns, Infinity, { host, dryRun: true, excludeDashboard });
+  return available + killed.reduce((sum, k) => sum + k.ram, 0);
+}
+
+/**
+ * Free RAM by killing lower-tier scripts until target RAM is available.
+ * Prints a summary of killed processes.
+ */
+export function freeRamForTarget(
+  ns: NS,
+  targetRam: number,
+  host = "home",
+  excludeDashboard = true,
+): boolean {
+  const { killed, sufficient } = walkKillTiers(ns, targetRam, { host, excludeDashboard });
+
   if (killed.length > 0) {
-    ns.tprint(`INFO: Killed ${killed.length} process(es) to free RAM: ${killed.join(", ")}`);
+    const summary = killed.map((k) => `${k.filename} (${ns.formatRam(k.ram)})`);
+    ns.tprint(`INFO: Killed ${killed.length} process(es) to free RAM: ${summary.join(", ")}`);
   }
 
-  return available >= targetRam;
+  return sufficient;
 }
 
 /**
  * Get a breakdown of RAM used by each kill tier.
  * Useful for debugging and understanding RAM usage.
- *
- * @param ns - NetScript context
- * @param host - Server to check (default: "home")
- * @returns Array of tier info with RAM totals
  */
 export function getKillTierBreakdown(
   ns: NS,
-  host = "home"
+  host = "home",
 ): { tier: number; scripts: string[]; totalRam: number; processes: number }[] {
   const processes = ns.ps(host);
   const breakdown: { tier: number; scripts: string[]; totalRam: number; processes: number }[] = [];

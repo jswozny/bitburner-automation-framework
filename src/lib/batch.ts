@@ -7,6 +7,7 @@
  * Import with: import { ... } from "/lib/batch";
  */
 import { NS } from "@ns";
+import { getCachedServers } from "/lib/server-cache";
 
 // === CONSTANTS ===
 
@@ -65,6 +66,7 @@ export interface CyclePlan {
   prepOps: BatchOp[];
   newBatches: { target: string; ops: BatchOp[]; expectedEnd: number }[];
   abortTargets: string[];
+  scriptRam: number;
 }
 
 export interface AllocatedOp extends BatchOp {
@@ -75,22 +77,12 @@ export interface AllocatedOp extends BatchOp {
 
 export function selectXpTarget(ns: NS): string | null {
   const player = ns.getPlayer();
-  const queue = ["home"];
-  const seen = new Set<string>(["home"]);
   let bestHost: string | null = null;
   let bestMinSec = Infinity;
 
-  while (queue.length > 0) {
-    const current = queue.shift()!;
-    for (const neighbor of ns.scan(current)) {
-      if (!seen.has(neighbor)) {
-        seen.add(neighbor);
-        queue.push(neighbor);
-      }
-    }
-
-    if (current === "home" || current.startsWith("pserv-")) continue;
-    const server = ns.getServer(current);
+  for (const hostname of getCachedServers(ns)) {
+    if (hostname === "home" || hostname.startsWith("pserv-")) continue;
+    const server = ns.getServer(hostname);
     if (!server.hasAdminRights) continue;
     if ((server.moneyMax ?? 0) === 0) continue;
     if ((server.requiredHackingSkill ?? 0) > player.skills.hacking) continue;
@@ -98,7 +90,7 @@ export function selectXpTarget(ns: NS): string | null {
     const minSec = server.minDifficulty ?? Infinity;
     if (minSec < bestMinSec) {
       bestMinSec = minSec;
-      bestHost = current;
+      bestHost = hostname;
     }
   }
 

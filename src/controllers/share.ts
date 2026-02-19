@@ -5,7 +5,7 @@
  * Import with: import { getShareStatus, ShareStatus, ... } from '/controllers/share';
  */
 import { NS } from "@ns";
-import { getAllServers } from "/lib/utils";
+import { getCachedServers } from "/lib/server-cache";
 
 // === CONSTANTS ===
 
@@ -55,7 +55,7 @@ export function getShareStatus(
   const serverStats: ServerShareInfo[] = [];
   let totalThreads = 0;
 
-  for (const hostname of getAllServers(ns)) {
+  for (const hostname of getCachedServers(ns)) {
     const procs = ns.ps(hostname).filter((p) =>
       p.filename === shareScript || p.filename.endsWith("workers/share.js")
     );
@@ -132,7 +132,7 @@ export function getTotalShareCapacity(
   let totalThreads = 0;
   let totalRam = 0;
 
-  for (const hostname of getAllServers(ns)) {
+  for (const hostname of getCachedServers(ns)) {
     const available = getAvailableShareRam(ns, hostname, minFree, homeReserve);
     const threads = Math.floor(available / shareRam);
     totalThreads += threads;
@@ -150,7 +150,7 @@ export async function deployShareScript(
   script: string
 ): Promise<number> {
   let deployed = 0;
-  for (const server of getAllServers(ns)) {
+  for (const server of getCachedServers(ns)) {
     const info = ns.getServer(server);
     if (info.maxRam > 0 && info.hasAdminRights) {
       await ns.scp(script, server, "home");
@@ -178,7 +178,7 @@ export function launchShareThreads(
   let launchedThreads = 0;
   let serversUsed = 0;
 
-  for (const hostname of getAllServers(ns)) {
+  for (const hostname of getCachedServers(ns)) {
     // If allocation exists, only use assigned servers
     if (allowedServers && !allowedServers.has(hostname)) continue;
 

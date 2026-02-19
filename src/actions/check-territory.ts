@@ -34,7 +34,6 @@ export async function main(ns: NS): Promise<void> {
 
   // Exit early if not in a gang
   if (!ns.gang.inGang()) {
-    ns.tprint("INFO: check-territory: not in a gang, exiting");
     return;
   }
 

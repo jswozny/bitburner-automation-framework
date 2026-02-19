@@ -5,7 +5,7 @@
  * Import with: import { analyzeNukableServers, NukeResult, ... } from '/controllers/nuke';
  */
 import { NS } from "@ns";
-import { getAllServers } from "/lib/utils";
+import { getCachedServers } from "/lib/server-cache";
 import { exploitServer, countAvailableTools, ExploitResult } from "/controllers/exploit";
 
 // Re-export for convenience
@@ -36,7 +36,7 @@ export interface NukeResult {
 export function analyzeNukableServers(ns: NS): NukeResult {
   const player = ns.getPlayer();
   const numHackTools = countAvailableTools(ns);
-  const allServers = getAllServers(ns);
+  const allServers = getCachedServers(ns);
 
   const nuked: ExploitResult[] = [];
   const alreadyRooted: string[] = [];
@@ -99,7 +99,7 @@ export function analyzeNukableServers(ns: NS): NukeResult {
 export function getPotentialTargets(ns: NS): ServerNukeInfo[] {
   const player = ns.getPlayer();
   const numHackTools = countAvailableTools(ns);
-  const allServers = getAllServers(ns);
+  const allServers = getCachedServers(ns);
   const targets: ServerNukeInfo[] = [];
 
   for (const hostname of allServers) {
@@ -131,7 +131,7 @@ export function getPotentialTargets(ns: NS): ServerNukeInfo[] {
 export function getNukeStatus(ns: NS): Omit<NukeResult, "nuked"> & { nuked: never[] } {
   const player = ns.getPlayer();
   const numHackTools = countAvailableTools(ns);
-  const allServers = getAllServers(ns);
+  const allServers = getCachedServers(ns);
 
   const alreadyRooted: string[] = [];
   const notReady: { hostname: string; reason: string }[] = [];

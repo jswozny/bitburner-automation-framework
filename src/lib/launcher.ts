@@ -12,8 +12,9 @@
  * Estimated RAM cost: ~3.8 GB (2.2 GB API + 1.6 GB base)
  */
 import { NS } from "@ns";
-import { KILL_TIERS, QUEUE_PORT, PRIORITY } from "/types/ports";
+import { QUEUE_PORT, PRIORITY } from "/types/ports";
 import type { QueueEntry } from "/types/ports";
+import { walkKillTiers } from "/lib/ram-utils";
 
 /**
  * Launch a script, freeing RAM by killing lower-priority processes if needed.
@@ -39,44 +40,24 @@ export function ensureRamAndExec(
     return ns.exec(scriptPath, host, threads, ...args);
   }
 
-  // Need to free RAM — walk through kill tiers
-  let deficit = requiredRam - available;
-  const killed: string[] = [];
-
-  for (const tierScripts of KILL_TIERS) {
-    if (deficit <= 0) break;
-
-    // Get processes matching this tier, sorted by RAM descending (kill fewest to free most)
-    const processes = ns.ps(host);
-    const tierProcs = processes
-      .filter((p) => tierScripts.includes(p.filename))
-      .map((p) => ({
-        pid: p.pid,
-        filename: p.filename,
-        ram: ns.getScriptRam(p.filename, host) * p.threads,
-      }))
-      .sort((a, b) => b.ram - a.ram);
-
-    for (const proc of tierProcs) {
-      if (deficit <= 0) break;
-      ns.kill(proc.pid);
-      killed.push(`${proc.filename} (pid ${proc.pid}, ${ns.formatRam(proc.ram)})`);
-      deficit -= proc.ram;
-    }
-  }
+  // Need to free RAM — walk through all kill tiers (including dashboard)
+  const { killed, sufficient } = walkKillTiers(ns, requiredRam, {
+    host,
+    excludeDashboard: false,
+  });
 
   if (killed.length > 0) {
-    ns.tprint(`INFO: Killed ${killed.length} process(es) to free RAM: ${killed.join(", ")}`);
+    const summary = killed.map((k) => `${k.filename} (pid ${k.pid}, ${ns.formatRam(k.ram)})`);
+    ns.tprint(`INFO: Killed ${killed.length} process(es) to free RAM: ${summary.join(", ")}`);
   }
 
-  // Re-check available RAM after kills
-  available = ns.getServerMaxRam(host) - ns.getServerUsedRam(host);
-  if (available >= requiredRam) {
-    return ns.exec(scriptPath, host, threads, ...args);
+  if (!sufficient) {
+    available = ns.getServerMaxRam(host) - ns.getServerUsedRam(host);
+    ns.tprint(`ERROR: Could not free enough RAM for ${scriptPath} (need ${ns.formatRam(requiredRam)}, have ${ns.formatRam(available)})`);
+    return 0;
   }
 
-  ns.tprint(`ERROR: Could not free enough RAM for ${scriptPath} (need ${ns.formatRam(requiredRam)}, have ${ns.formatRam(available)})`);
-  return 0;
+  return ns.exec(scriptPath, host, threads, ...args);
 }
 
 /**
@@ -100,30 +81,16 @@ export function dryRunEnsureRamAndExec(
     return { wouldKill: [], sufficient: true };
   }
 
-  let deficit = requiredRam - available;
-  const wouldKill: { filename: string; pid: number; ram: number }[] = [];
+  const { killed, sufficient } = walkKillTiers(ns, requiredRam, {
+    host,
+    dryRun: true,
+    excludeDashboard: false,
+  });
 
-  for (const tierScripts of KILL_TIERS) {
-    if (deficit <= 0) break;
-
-    const processes = ns.ps(host);
-    const tierProcs = processes
-      .filter((p) => tierScripts.includes(p.filename))
-      .map((p) => ({
-        pid: p.pid,
-        filename: p.filename,
-        ram: ns.getScriptRam(p.filename, host) * p.threads,
-      }))
-      .sort((a, b) => b.ram - a.ram);
-
-    for (const proc of tierProcs) {
-      if (deficit <= 0) break;
-      wouldKill.push(proc);
-      deficit -= proc.ram;
-    }
-  }
-
-  return { wouldKill, sufficient: deficit <= 0 };
+  return {
+    wouldKill: killed.map((k) => ({ filename: k.filename, pid: k.pid, ram: k.ram })),
+    sufficient,
+  };
 }
 
 /**

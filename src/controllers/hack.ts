@@ -11,7 +11,8 @@
  *      run hack/distributed.js --interval 500 --max-targets 50
  */
 import { NS  } from "@ns";
-import { COLORS, getAllServers, determineAction, HackAction } from "/lib/utils";
+import { COLORS, determineAction, HackAction } from "/lib/utils";
+import { getCachedServers } from "/lib/server-cache";
 import {
   scoreTarget as batchScoreTarget,
   calculatePrepPlan,
@@ -87,7 +88,7 @@ export const SCRIPTS = {
 export function getUsableServers(ns: NS, homeReserve: number): ServerInfo[] {
   const servers: ServerInfo[] = [];
 
-  for (const hostname of getAllServers(ns)) {
+  for (const hostname of getCachedServers(ns)) {
     const server = ns.getServer(hostname);
     if (!server.hasAdminRights) continue;
     if (server.maxRam === 0) continue;
@@ -114,7 +115,7 @@ export function getTargets(ns: NS, maxTargets: number): TargetInfo[] {
   const player = ns.getPlayer();
   const targets: TargetInfo[] = [];
 
-  for (const hostname of getAllServers(ns)) {
+  for (const hostname of getCachedServers(ns)) {
     const server = ns.getServer(hostname);
 
     if (!server.hasAdminRights) continue;
@@ -415,7 +416,7 @@ export function selectBatchTargets(ns: NS, maxTargets: number): TargetScore[] {
   const player = ns.getPlayer();
   const scores: TargetScore[] = [];
 
-  for (const hostname of getAllServers(ns)) {
+  for (const hostname of getCachedServers(ns)) {
     const server = ns.getServer(hostname);
 
     if (!server.hasAdminRights) continue;
@@ -534,7 +535,7 @@ export function planBatchCycle(
     }
   }
 
-  return { prepOps, newBatches, abortTargets };
+  return { prepOps, newBatches, abortTargets, scriptRam };
 }
 
 // === BATCH MODE: SERVER ALLOCATION ===
@@ -554,7 +555,7 @@ export function allocateServersToBatchOps(
   plan: CyclePlan,
 ): AllocatedOp[] {
   const allocated: AllocatedOp[] = [];
-  const scriptRam = 1.75; // Standard worker RAM
+  const scriptRam = plan.scriptRam;
 
   // Dynamic prep budget: 100% when no batches need RAM, 50% when batches compete
   const totalFleetRam = servers.reduce((s, srv) => s + srv.availableRam, 0);
@@ -670,54 +671,3 @@ export function executeBatchOps(ns: NS, ops: AllocatedOp[]): void {
   }
 }
 
-// === RUNNER ===
-
-export async function main(ns: NS): Promise<void> {
-  const flags = ns.flags([
-    ["one-shot", false],
-    ["interval", 200],
-    ["home-reserve", 32],
-    ["max-targets", 100],
-  ]) as {
-    "one-shot": boolean;
-    interval: number;
-    "home-reserve": number;
-    "max-targets": number;
-    _: string[];
-  };
-
-  const config: DistributedConfig = {
-    oneShot: flags["one-shot"],
-    interval: flags.interval,
-    homeReserve: flags["home-reserve"],
-    maxTargets: flags["max-targets"],
-    moneyThreshold: 0.8,
-    securityBuffer: 5,
-    hackPercent: 0.25,
-  };
-
-  do {
-    ns.clearLog();
-
-    const result = await runDistributedCycle(ns, config);
-
-    if (result.assignments.length === 0) {
-      ns.print(`${COLORS.red}ERROR: No valid targets found!${COLORS.reset}`);
-      if (!config.oneShot) {
-        await ns.sleep(5000);
-      }
-      continue;
-    }
-
-    const lines = formatDistributedStatus(ns, result);
-    for (const line of lines) {
-      ns.print(line);
-    }
-
-    if (!config.oneShot) {
-      const waitTime = Math.max(Math.min(result.shortestWait, 30000), 1000);
-      ns.print(`${COLORS.white}Waiting ${ns.tFormat(waitTime)}...${COLORS.reset}`);
-      await ns.sleep(config.interval + waitTime);
-    }
-  } while (!config.oneShot);
-}

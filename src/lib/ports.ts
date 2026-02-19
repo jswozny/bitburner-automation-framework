@@ -75,6 +75,12 @@ export function dequeueAction(ns: NS): QueueEntry | null {
 
 /**
  * Peek at all queue entries without consuming them.
+ *
+ * Implementation note: This drains the queue and re-adds items because
+ * Bitburner ports only support peek() for the first item. This is safe
+ * because Bitburner's JS engine is single-threaded within a tick — there
+ * is no await between the drain and re-add, so no other script can
+ * observe or modify the port during this operation.
  */
 export function peekQueue(ns: NS): QueueEntry[] {
   const handle = ns.getPortHandle(QUEUE_PORT);
