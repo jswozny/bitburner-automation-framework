@@ -20,7 +20,6 @@ import {
   getPendingAugs,
   getNeuroFluxInfo,
   calculateNeuroFluxPurchasePlan,
-  canDonateToFaction,
   calculateNFGDonatePurchasePlan,
   calculateDonationForRep,
   getSequentialPurchaseAugs,
@@ -77,12 +76,10 @@ function computeAugmentsStatus(ns: NS): AugmentsStatus {
       ? Math.min(1, nfInfo.bestFactionRep / nfInfo.repRequired)
       : 0;
   const nfRepGap = Math.max(0, nfInfo.repRequired - nfInfo.bestFactionRep);
-  const canDonate = nfInfo.bestFaction
-    ? canDonateToFaction(ns, nfInfo.bestFaction)
-    : false;
-  const donatePlan = canDonate
-    ? calculateNFGDonatePurchasePlan(ns, playerMoney)
-    : null;
+  // Always calculate the donate plan — it finds its own best donatable faction,
+  // which may differ from nfInfo.bestFaction (the highest-rep faction).
+  const donatePlan = calculateNFGDonatePurchasePlan(ns, playerMoney);
+  const canDonate = donatePlan.faction !== "None";
 
   // Outright cost: donation to cover rep gap + purchase price for next NFG
   const donationCostForGap =

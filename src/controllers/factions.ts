@@ -479,15 +479,10 @@ export const DONATION_FAVOR_THRESHOLD = 150;
 /** Rep requirement multiplier per NFG purchase (approx) */
 export const NFG_REP_MULT = 1.14;
 
-/** Factions that cannot receive donations (gang factions) */
+/** Factions that never support donations (regardless of favor) */
 export const NON_DONATABLE_FACTIONS = new Set([
-  "Slum Snakes",
-  "Tetrads",
-  "The Syndicate",
-  "The Dark Army",
-  "Speakers for the Dead",
-  "NiteSec",
-  "The Black Hand",
+  "Bladeburners",
+  "Church of the Machine God",
 ]);
 
 // === DONATION TYPES ===
@@ -518,6 +513,10 @@ export interface NFGDonatePurchasePlan {
  */
 export function canDonateToFaction(ns: NS, faction: string): boolean {
   if (NON_DONATABLE_FACTIONS.has(faction)) {
+    return false;
+  }
+  // Can't donate to your own gang's faction
+  if (getGangFaction(ns) === faction) {
     return false;
   }
   const favor = ns.singularity.getFactionFavor(faction);
