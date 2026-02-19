@@ -327,7 +327,25 @@ export function getInstalledAugs(ns: NS): string[] {
 export function getPendingAugs(ns: NS): string[] {
   const owned = getOwnedAugs(ns);
   const installed = getInstalledAugs(ns);
-  return owned.filter((a) => !installed.includes(a));
+
+  // Build count map of installed augs to handle duplicates (e.g. NFG)
+  const installedCounts = new Map<string, number>();
+  for (const a of installed) {
+    installedCounts.set(a, (installedCounts.get(a) ?? 0) + 1);
+  }
+
+  // For each owned aug, subtract from installed count; remaining are pending
+  const pending: string[] = [];
+  for (const a of owned) {
+    const count = installedCounts.get(a) ?? 0;
+    if (count > 0) {
+      installedCounts.set(a, count - 1);
+    } else {
+      pending.push(a);
+    }
+  }
+
+  return pending;
 }
 
 /**
