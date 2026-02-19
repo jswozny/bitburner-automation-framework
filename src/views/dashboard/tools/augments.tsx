@@ -79,21 +79,21 @@ function AugmentsDetailPanel({ status, running, toolId, pid }: DetailPanelProps<
     );
   }
 
-  // Excluded set from pluginUIState
-  const excluded = getPluginUIState<string[]>("augments", "excluded", []);
-  const excludedSet = new Set(excluded);
+  // Selected set from pluginUIState (opt-in: new items default to unchecked)
+  const selected = getPluginUIState<string[]>("augments", "selected", []);
+  const selectedSet = new Set(selected);
 
-  const isChecked = (name: string) => !excludedSet.has(name);
+  const isChecked = (name: string) => selectedSet.has(name);
 
   const toggleAug = (name: string) => {
-    const current = getPluginUIState<string[]>("augments", "excluded", []);
+    const current = getPluginUIState<string[]>("augments", "selected", []);
     const currentSet = new Set(current);
     if (currentSet.has(name)) {
       currentSet.delete(name);
     } else {
       currentSet.add(name);
     }
-    setPluginUIState("augments", "excluded", [...currentSet]);
+    setPluginUIState("augments", "selected", [...currentSet]);
   };
 
   // Filter dropdown
@@ -104,14 +104,14 @@ function AugmentsDetailPanel({ status, running, toolId, pid }: DetailPanelProps<
 
   const allVisibleChecked = displayAvailable.length > 0 && displayAvailable.every((a) => isChecked(a.name));
   const toggleAllVisible = () => {
-    const current = getPluginUIState<string[]>("augments", "excluded", []);
+    const current = getPluginUIState<string[]>("augments", "selected", []);
     const currentSet = new Set(current);
     if (allVisibleChecked) {
-      for (const a of displayAvailable) currentSet.add(a.name);
-    } else {
       for (const a of displayAvailable) currentSet.delete(a.name);
+    } else {
+      for (const a of displayAvailable) currentSet.add(a.name);
     }
-    setPluginUIState("augments", "excluded", [...currentSet]);
+    setPluginUIState("augments", "selected", [...currentSet]);
   };
 
   // Checked items for purchase planner (always uses full list, not filtered)
@@ -442,6 +442,17 @@ function AugmentsDetailPanel({ status, running, toolId, pid }: DetailPanelProps<
                 <span style={styles.statLabel}>Need</span>
                 <span style={{ color: "#ffaa00" }}>{status.neuroFlux.repGapFormatted} more</span>
               </div>
+              {status.neuroFlux.outrightCost !== null && (
+                <div style={styles.stat}>
+                  <span style={styles.statLabel}>Buy Outright</span>
+                  <span style={{ color: status.neuroFlux.outrightCost <= status.playerMoney ? "#00ff00" : "#ff4444" }}>
+                    ${status.neuroFlux.outrightCostFormatted}
+                  </span>
+                  <span style={{ ...styles.dim, marginLeft: "6px", fontSize: "10px" }}>
+                    (${status.neuroFlux.donationCostForGapFormatted} donate + ${status.neuroFlux.currentPriceFormatted} buy)
+                  </span>
+                </div>
+              )}
             </>
           )}
 

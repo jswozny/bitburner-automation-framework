@@ -22,6 +22,7 @@ import {
   calculateNeuroFluxPurchasePlan,
   canDonateToFaction,
   calculateNFGDonatePurchasePlan,
+  calculateDonationForRep,
   getSequentialPurchaseAugs,
 } from "/controllers/factions";
 import { publishStatus } from "/lib/ports";
@@ -83,6 +84,16 @@ function computeAugmentsStatus(ns: NS): AugmentsStatus {
     ? calculateNFGDonatePurchasePlan(ns, playerMoney)
     : null;
 
+  // Outright cost: donation to cover rep gap + purchase price for next NFG
+  const donationCostForGap =
+    canDonate && nfRepGap > 0
+      ? calculateDonationForRep(ns, nfRepGap)
+      : null;
+  const outrightCost =
+    donationCostForGap !== null
+      ? donationCostForGap + nfInfo.currentPrice
+      : null;
+
   // Current multiplier based on pending augs (flat, not rolling)
   const currentMultiplier = Math.pow(AUG_COST_MULT, pendingAugs.length);
 
@@ -132,6 +143,10 @@ function computeAugmentsStatus(ns: NS): AugmentsStatus {
                 }
               : null,
           canDonate,
+          outrightCost,
+          outrightCostFormatted: outrightCost !== null ? ns.formatNumber(outrightCost) : null,
+          donationCostForGap,
+          donationCostForGapFormatted: donationCostForGap !== null ? ns.formatNumber(donationCostForGap) : null,
           donationPlan:
             donatePlan && donatePlan.canExecute
               ? {

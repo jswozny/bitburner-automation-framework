@@ -306,6 +306,10 @@ export interface AugmentsStatus {
       totalCostFormatted: string;
     } | null;
     canDonate: boolean;
+    outrightCost: number | null;
+    outrightCostFormatted: string | null;
+    donationCostForGap: number | null;
+    donationCostForGapFormatted: string | null;
     donationPlan: {
       purchases: number;
       totalDonationCost: number;

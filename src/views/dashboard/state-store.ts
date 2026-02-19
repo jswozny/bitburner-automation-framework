@@ -533,12 +533,42 @@ function executeCommand(ns: NS, cmd: Command): void {
     case "buy-selected-augments":
       {
         if (cmd.selectedAugs && cmd.selectedAugs.length > 0) {
-          const onlyArg = JSON.stringify(cmd.selectedAugs);
-          const pid = ns.exec("actions/purchase-augments.js", "home", 1, "--only", onlyArg);
-          if (pid > 0) {
-            ns.toast(`Buying ${cmd.selectedAugs.length} selected augments...`, "success", 2000);
+          const script = "actions/purchase-augments.js";
+          const args = ["--only", JSON.stringify(cmd.selectedAugs)];
+          const requiredRam = ns.getScriptRam(script, "home");
+          let available = ns.getServerMaxRam("home") - ns.getServerUsedRam("home");
+
+          if (available < requiredRam) {
+            const safeTiers = KILL_TIERS.slice(0, -1);
+            let deficit = requiredRam - available;
+            for (const tierScripts of safeTiers) {
+              if (deficit <= 0) break;
+              const processes = ns.ps("home");
+              const tierProcs = processes
+                .filter(p => tierScripts.includes(p.filename))
+                .sort((a, b) => (ns.getScriptRam(b.filename, "home") * b.threads)
+                              - (ns.getScriptRam(a.filename, "home") * a.threads));
+              for (const proc of tierProcs) {
+                if (deficit <= 0) break;
+                ns.kill(proc.pid);
+                deficit -= ns.getScriptRam(proc.filename, "home") * proc.threads;
+              }
+            }
+            available = ns.getServerMaxRam("home") - ns.getServerUsedRam("home");
+          }
+
+          if (available >= requiredRam) {
+            const pid = ns.exec(script, "home", 1, ...args);
+            if (pid > 0) {
+              ns.toast(`Buying ${cmd.selectedAugs.length} selected augments...`, "success", 2000);
+            } else {
+              ns.toast("Failed to launch purchase-augments", "error", 3000);
+            }
           } else {
-            ns.toast("Failed to launch purchase-augments (not enough RAM)", "error", 3000);
+            ns.toast(
+              `Not enough RAM for purchase-augments (need ${ns.formatRam(requiredRam)}, have ${ns.formatRam(available)})`,
+              "error", 4000
+            );
           }
         }
       }
