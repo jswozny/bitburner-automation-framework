@@ -304,6 +304,11 @@ export interface AugmentsStatus {
       purchases: number;
       totalCost: number;
       totalCostFormatted: string;
+      repLimited: boolean;
+      nextRepRequired: number | null;
+      nextRepRequiredFormatted: string | null;
+      nextRepGap: number | null;
+      nextRepGapFormatted: string | null;
     } | null;
     canDonate: boolean;
     outrightCost: number | null;

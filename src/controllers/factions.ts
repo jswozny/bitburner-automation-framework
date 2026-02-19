@@ -676,6 +676,11 @@ export interface NeuroFluxPurchasePlan {
   purchases: number;
   totalCost: number;
   perPurchase: { level: number; cost: number }[];
+  repLimited: boolean;
+  nextRepRequired: number | null;
+  nextRepGap: number | null;
+  bestFaction: string | null;
+  bestFactionRep: number;
 }
 
 /**
@@ -731,9 +736,13 @@ export function calculateNeuroFluxPurchasePlan(
   const perPurchase: { level: number; cost: number }[] = [];
   let totalCost = 0;
   let currentPrice = info.currentPrice;
+  let currentRepReq = info.repRequired;
   let level = info.currentLevel;
+  let repLimited = false;
+  let nextRepRequired: number | null = null;
+  let nextRepGap: number | null = null;
 
-  // Can only purchase if we have enough rep
+  // Can only purchase if we have enough rep for the first level
   if (!info.hasEnoughRep || !info.bestFaction) {
     return {
       startLevel: info.currentLevel,
@@ -741,15 +750,29 @@ export function calculateNeuroFluxPurchasePlan(
       purchases: 0,
       totalCost: 0,
       perPurchase: [],
+      repLimited: !info.hasEnoughRep && info.bestFaction !== null,
+      nextRepRequired: !info.hasEnoughRep ? info.repRequired : null,
+      nextRepGap: !info.hasEnoughRep ? info.repRequired - info.bestFactionRep : null,
+      bestFaction: info.bestFaction,
+      bestFactionRep: info.bestFactionRep,
     };
   }
 
-  // Calculate sequential purchases until we run out of money
+  // Calculate sequential purchases until we run out of money or rep
   while (totalCost + currentPrice <= availableMoney) {
+    // Check rep before counting this purchase
+    if (info.bestFactionRep < currentRepReq) {
+      repLimited = true;
+      nextRepRequired = currentRepReq;
+      nextRepGap = currentRepReq - info.bestFactionRep;
+      break;
+    }
+
     level++;
     perPurchase.push({ level, cost: currentPrice });
     totalCost += currentPrice;
     currentPrice = Math.round(currentPrice * AUG_COST_MULT);
+    currentRepReq = Math.ceil(currentRepReq * NFG_REP_MULT);
   }
 
   return {
@@ -758,6 +781,11 @@ export function calculateNeuroFluxPurchasePlan(
     purchases: perPurchase.length,
     totalCost,
     perPurchase,
+    repLimited,
+    nextRepRequired,
+    nextRepGap,
+    bestFaction: info.bestFaction,
+    bestFactionRep: info.bestFactionRep,
   };
 }
 

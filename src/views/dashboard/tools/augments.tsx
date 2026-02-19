@@ -188,7 +188,7 @@ function AugmentsDetailPanel({ status, running, toolId, pid }: DetailPanelProps<
             Buy Checked ({checkedCount})
           </button>
         )}
-        {status.neuroFlux?.purchasePlan && (
+        {status.neuroFlux?.purchasePlan && status.neuroFlux.purchasePlan.purchases > 0 && (
           <button
             style={{
               ...styles.buttonPlay, marginLeft: 0, padding: "4px 12px",
@@ -456,8 +456,26 @@ function AugmentsDetailPanel({ status, running, toolId, pid }: DetailPanelProps<
             </>
           )}
 
+          {/* Next level cost when have rep but can't afford */}
+          {status.neuroFlux.hasEnoughRep && !status.neuroFlux.canPurchase && (
+            <>
+              <div style={styles.stat}>
+                <span style={styles.statLabel}>Next Level</span>
+                <span style={{ color: "#ff4444" }}>
+                  ${status.neuroFlux.currentPriceFormatted}
+                </span>
+              </div>
+              <div style={styles.stat}>
+                <span style={styles.statLabel}>Need</span>
+                <span style={{ color: "#ffaa00" }}>
+                  ${formatNumber(status.neuroFlux.currentPrice - status.playerMoney)} more
+                </span>
+              </div>
+            </>
+          )}
+
           {/* Purchase info when can buy */}
-          {status.neuroFlux.purchasePlan && (
+          {status.neuroFlux.purchasePlan && status.neuroFlux.purchasePlan.purchases > 0 && (
             <>
               <div style={styles.stat}>
                 <span style={styles.statLabel}>Can Buy</span>
@@ -472,6 +490,16 @@ function AugmentsDetailPanel({ status, running, toolId, pid }: DetailPanelProps<
                 </span>
               </div>
             </>
+          )}
+
+          {/* Rep-limited warning */}
+          {status.neuroFlux.purchasePlan?.repLimited && status.neuroFlux.purchasePlan.purchases > 0 && status.neuroFlux.purchasePlan.nextRepGapFormatted && (
+            <div style={styles.stat}>
+              <span style={styles.statLabel}>Next Level</span>
+              <span style={{ color: "#ffaa00" }}>
+                Need {status.neuroFlux.purchasePlan.nextRepGapFormatted} more rep
+              </span>
+            </div>
           )}
 
           {/* Donate & Buy section when eligible */}

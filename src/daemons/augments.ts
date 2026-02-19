@@ -130,13 +130,18 @@ function computeAugmentsStatus(ns: NS): AugmentsStatus {
           currentPrice: nfInfo.currentPrice,
           currentPriceFormatted: ns.formatNumber(nfInfo.currentPrice),
           purchasePlan:
-            nfPlan.purchases > 0
+            nfPlan.purchases > 0 || nfPlan.repLimited
               ? {
                   startLevel: nfPlan.startLevel,
                   endLevel: nfPlan.endLevel,
                   purchases: nfPlan.purchases,
                   totalCost: nfPlan.totalCost,
                   totalCostFormatted: ns.formatNumber(nfPlan.totalCost),
+                  repLimited: nfPlan.repLimited,
+                  nextRepRequired: nfPlan.nextRepRequired,
+                  nextRepRequiredFormatted: nfPlan.nextRepRequired !== null ? ns.formatNumber(nfPlan.nextRepRequired) : null,
+                  nextRepGap: nfPlan.nextRepGap,
+                  nextRepGapFormatted: nfPlan.nextRepGap !== null ? ns.formatNumber(nfPlan.nextRepGap) : null,
                 }
               : null,
           canDonate,
