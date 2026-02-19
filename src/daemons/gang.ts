@@ -17,6 +17,7 @@
 import { NS } from "@ns";
 import { COLORS } from "/lib/utils";
 import { calcAvailableAfterKills, freeRamForTarget } from "/lib/ram-utils";
+import { writeDefaultConfig, getConfigString, getConfigBool } from "/lib/config";
 import { publishStatus, peekStatus } from "/lib/ports";
 import {
   STATUS_PORTS,
@@ -944,36 +945,27 @@ async function runFullMode(
 
 // === MAIN ===
 
-function buildSpawnArgs(flags: {
-  strategy: string;
-  "no-kill": boolean;
-}): string[] {
-  const args: string[] = [];
-  if (flags.strategy) args.push("--strategy", flags.strategy);
-  if (flags["no-kill"]) args.push("--no-kill");
-  return args;
+function buildSpawnArgs(): string[] {
+  return [];
 }
 
 export async function main(ns: NS): Promise<void> {
   ns.ramOverride(5);
   ns.disableLog("ALL");
 
-  const flags = ns.flags([
-    ["strategy", ""],
-    ["no-kill", false],
-  ]) as {
-    strategy: string;
-    "no-kill": boolean;
-    _: string[];
-  };
+  writeDefaultConfig(ns, "gang", {
+    strategy: "",
+    noKill: "false",
+  });
 
-  const noKill = flags["no-kill"];
-  const spawnArgs = buildSpawnArgs(flags);
+  const noKill = getConfigBool(ns, "gang", "noKill", false);
+  const spawnArgs = buildSpawnArgs();
 
-  // Load config and apply CLI overrides
+  // Load config and apply config file overrides
   const config = loadConfig(ns);
-  if (flags.strategy && ["respect", "money", "territory", "balanced", "grow"].includes(flags.strategy)) {
-    config.strategy = flags.strategy as GangStrategy;
+  const strategyOverride = getConfigString(ns, "gang", "strategy", "");
+  if (strategyOverride && ["respect", "money", "territory", "balanced", "grow"].includes(strategyOverride)) {
+    config.strategy = strategyOverride as GangStrategy;
     saveConfig(ns, config);
   }
 

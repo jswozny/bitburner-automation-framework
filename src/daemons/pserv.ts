@@ -16,6 +16,7 @@ import { COLORS } from "/lib/utils";
 import { getPservStatus, getBestAffordableRam, getBestAffordableUpgrade, PservConfig, runPservCycle } from "/controllers/pserv";
 import { publishStatus } from "/lib/ports";
 import { STATUS_PORTS, PservStatus } from "/types/ports";
+import { writeDefaultConfig, getConfigString, getConfigNumber, getConfigBool } from "/lib/config";
 
 /**
  * Build a PservStatus object with formatted values for the dashboard.
@@ -120,30 +121,22 @@ function printStatus(ns: NS, status: PservStatus, bought: number, upgraded: numb
 export async function main(ns: NS): Promise<void> {
   ns.disableLog("ALL");
 
-  const flags = ns.flags([
-    ["prefix", "pserv"],
-    ["min-ram", 8],
-    ["reserve", 0],
-    ["one-shot", false],
-    ["interval", 10000],
-  ]) as {
-    prefix: string;
-    "min-ram": number;
-    reserve: number;
-    "one-shot": boolean;
-    interval: number;
-    _: string[];
-  };
-
-  const config: PservConfig = {
-    prefix: String(flags.prefix),
-    minRam: Number(flags["min-ram"]),
-    reserve: Number(flags.reserve),
-    oneShot: flags["one-shot"],
-    interval: Number(flags.interval),
-  };
+  writeDefaultConfig(ns, "pserv", {
+    prefix: "pserv",
+    minRam: "8",
+    reserve: "0",
+    oneShot: "false",
+    interval: "10000",
+  });
 
   do {
+    const config: PservConfig = {
+      prefix: getConfigString(ns, "pserv", "prefix", "pserv"),
+      minRam: getConfigNumber(ns, "pserv", "minRam", 8),
+      reserve: getConfigNumber(ns, "pserv", "reserve", 0),
+      oneShot: getConfigBool(ns, "pserv", "oneShot", false),
+      interval: getConfigNumber(ns, "pserv", "interval", 10000),
+    };
     ns.clearLog();
 
     // Run the purchase/upgrade cycle
@@ -170,5 +163,5 @@ export async function main(ns: NS): Promise<void> {
       );
       await ns.sleep(config.interval);
     }
-  } while (!config.oneShot);
+  } while (!getConfigBool(ns, "pserv", "oneShot", false));
 }

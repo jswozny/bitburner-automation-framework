@@ -21,6 +21,7 @@
 import { NS } from "@ns";
 import { COLORS, makeBar, formatTime } from "/lib/utils";
 import { calcAvailableAfterKills, freeRamForTarget } from "/lib/ram-utils";
+import { writeDefaultConfig, getConfigString, getConfigNumber, getConfigBool } from "/lib/config";
 import {
   getBasicFactionRep,
   analyzeFactions,
@@ -687,8 +688,6 @@ function printHighTierStatus(
  */
 async function runLiteMode(
   ns: NS,
-  oneShot: boolean,
-  interval: number,
   currentRam: number
 ): Promise<void> {
   const C = COLORS;
@@ -723,8 +722,10 @@ async function runLiteMode(
       firstRun = false;
     }
 
+    const oneShot = getConfigBool(ns, "rep", "oneShot", false);
+    const interval = getConfigNumber(ns, "rep", "interval", 2000);
     if (!oneShot) await ns.sleep(interval);
-  } while (!oneShot);
+  } while (!getConfigBool(ns, "rep", "oneShot", false));
 }
 
 /**
@@ -735,9 +736,6 @@ async function runBasicMode(
   tier: RepTierConfig,
   currentTierRam: number,
   tierRamCosts: number[],
-  targetFactionOverride: string,
-  oneShot: boolean,
-  interval: number,
   spawnArgs: string[]
 ): Promise<void> {
   let repGainRate = 0;
@@ -748,6 +746,10 @@ async function runBasicMode(
   const UPGRADE_CHECK_INTERVAL = 10;
 
   do {
+    const targetFactionOverride = getConfigString(ns, "rep", "faction", "");
+    const oneShot = getConfigBool(ns, "rep", "oneShot", false);
+    const interval = getConfigNumber(ns, "rep", "interval", 2000);
+
     ns.clearLog();
 
     // Compute status based on tier
@@ -793,7 +795,6 @@ async function runBasicMode(
     if (cyclesSinceUpgradeCheck >= UPGRADE_CHECK_INTERVAL) {
       cyclesSinceUpgradeCheck = 0;
       const potentialRam = calcAvailableAfterKills(ns) + currentTierRam;
-      //const sf4Level = ns.getResetInfo().ownedSF.get(4) ?? 0;
 
       // Check if we can afford a higher tier
       for (let i = REP_TIERS.length - 1; i > tier.tier; i--) {
@@ -813,7 +814,7 @@ async function runBasicMode(
       );
       await ns.sleep(interval);
     }
-  } while (!oneShot);
+  } while (!getConfigBool(ns, "rep", "oneShot", false));
 }
 
 /**
@@ -824,10 +825,6 @@ async function runFullMode(
   tier: RepTierConfig,
   currentTierRam: number,
   tierRamCosts: number[],
-  targetFactionOverride: string,
-  noWork: boolean,
-  oneShot: boolean,
-  interval: number,
   spawnArgs: string[]
 ): Promise<void> {
   let repGainRate = 0;
@@ -839,6 +836,11 @@ async function runFullMode(
   const UPGRADE_CHECK_INTERVAL = 10;
 
   do {
+    const targetFactionOverride = getConfigString(ns, "rep", "faction", "");
+    const noWork = getConfigBool(ns, "rep", "noWork", false);
+    const oneShot = getConfigBool(ns, "rep", "oneShot", false);
+    const interval = getConfigNumber(ns, "rep", "interval", 2000);
+
     ns.clearLog();
 
     const player = ns.getPlayer();
@@ -983,27 +985,15 @@ async function runFullMode(
       );
       await ns.sleep(interval);
     }
-  } while (!oneShot);
+  } while (!getConfigBool(ns, "rep", "oneShot", false));
 }
 
 // === MAIN ===
 
-/** Build args array from current flags for respawning */
-function buildSpawnArgs(flags: {
-  faction: string;
-  "no-work": boolean;
-  "no-kill": boolean;
-  tier: string;
-  interval: number;
-  "one-shot": boolean;
-}): string[] {
+/** Build args array for respawning — only structural flags that affect RAM */
+function buildSpawnArgs(tier: string): string[] {
   const args: string[] = [];
-  if (flags.faction) args.push("--faction", flags.faction);
-  if (flags["no-work"]) args.push("--no-work");
-  if (flags["no-kill"]) args.push("--no-kill");
-  if (flags.tier) args.push("--tier", flags.tier);
-  if (flags.interval !== 2000) args.push("--interval", String(flags.interval));
-  if (flags["one-shot"]) args.push("--one-shot");
+  if (tier) args.push("--tier", tier);
   return args;
 }
 
@@ -1011,30 +1001,28 @@ export async function main(ns: NS): Promise<void> {
   ns.ramOverride(5); // Start cheap so we can always launch
   ns.disableLog("ALL");
 
+  writeDefaultConfig(ns, "rep", {
+    faction: "",
+    noWork: "false",
+    noKill: "false",
+    interval: "2000",
+    oneShot: "false",
+  });
+
   const flags = ns.flags([
-    ["faction", ""],
-    ["no-work", false],
-    ["no-kill", false],
     ["tier", ""],
-    ["interval", 2000],
-    ["one-shot", false],
   ]) as {
-    faction: string;
-    "no-work": boolean;
-    "no-kill": boolean;
     tier: string;
-    interval: number;
-    "one-shot": boolean;
     _: string[];
   };
 
-  const targetFactionOverride = String(flags.faction);
-  const noWork = flags["no-work"];
-  const noKill = flags["no-kill"];
+  const targetFactionOverride = getConfigString(ns, "rep", "faction", "");
+  const noWork = getConfigBool(ns, "rep", "noWork", false);
+  const noKill = getConfigBool(ns, "rep", "noKill", false);
   const forcedTierName = flags.tier as RepTierName | "";
-  const interval = flags.interval;
-  const oneShot = flags["one-shot"];
-  const spawnArgs = buildSpawnArgs(flags);
+  const interval = getConfigNumber(ns, "rep", "interval", 2000);
+  const oneShot = getConfigBool(ns, "rep", "oneShot", false);
+  const spawnArgs = buildSpawnArgs(flags.tier);
 
   // Check SF4 level
   const sf4Level = ns.getResetInfo().ownedSF.get(4) ?? 0;
@@ -1112,16 +1100,13 @@ export async function main(ns: NS): Promise<void> {
 
   // Run appropriate mode
   if (selectedTier.tier === 0) {
-    await runLiteMode(ns, oneShot, interval, requiredRam);
+    await runLiteMode(ns, requiredRam);
   } else if (selectedTier.tier <= 2) {
     await runBasicMode(
       ns,
       selectedTier,
       requiredRam,
       tierRamCosts,
-      targetFactionOverride,
-      oneShot,
-      interval,
       spawnArgs
     );
   } else {
@@ -1130,10 +1115,6 @@ export async function main(ns: NS): Promise<void> {
       selectedTier,
       requiredRam,
       tierRamCosts,
-      targetFactionOverride,
-      noWork,
-      oneShot,
-      interval,
       spawnArgs
     );
   }
