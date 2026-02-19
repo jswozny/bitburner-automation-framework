@@ -9,7 +9,7 @@
  *        run actions/purchase-augments.js --max-spend 1e12
  */
 import { NS } from "@ns";
-import { analyzeFactions, calculatePurchasePriority, AUG_COST_MULT, getAffordableAugs, getSequentialPurchaseAugs } from "/controllers/factions";
+import { analyzeFactions, calculatePurchasePriority, AUG_COST_MULT, getSequentialPurchaseAugs } from "/controllers/factions";
 
 export const MANUAL_COMMAND = 'ns.singularity.purchaseAugmentation("FACTION", "AUG_NAME")';
 

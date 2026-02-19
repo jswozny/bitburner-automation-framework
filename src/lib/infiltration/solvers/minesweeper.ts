@@ -80,7 +80,7 @@ export const minesweeperSolver: MiniGameSolver = {
     // Read mine positions immediately — every ms counts in the 2s memory window
     const grid = findGrid(container);
     if (!grid) throw new Error("Minesweeper: could not find grid");
-    const { width, height } = grid;
+    const { width } = grid;
 
     // Check phase
     const h4 = container.querySelector("h4");

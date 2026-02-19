@@ -15,7 +15,6 @@ import {
   setPluginUIState,
   getStateSnapshot,
   configureInfiltration,
-  isToolRunning,
 } from "views/dashboard/state-store";
 
 // === STATUS FORMATTING ===
@@ -181,7 +180,7 @@ function InfiltrationOverviewCard({ status, running, toolId, error, pid }: Overv
 
 // === DETAIL PANEL ===
 
-function InfiltrationDetailPanel({ status, running, toolId, error, pid }: DetailPanelProps<InfiltrationStatus>): React.ReactElement {
+function InfiltrationDetailPanel({ status, running, toolId, pid }: DetailPanelProps<InfiltrationStatus>): React.ReactElement {
   if (!status && !running) {
     return (
       <div style={styles.panel}>

@@ -11,7 +11,7 @@
  */
 import { NS } from "@ns";
 import { COLORS } from "/lib/utils";
-import { dequeueAction, queueAction } from "/lib/ports";
+import { dequeueAction } from "/lib/ports";
 import { QueueEntry, PRIORITY, KILL_TIERS } from "/types/ports";
 
 // === ROUND-ROBIN STATUS CHECKS ===
@@ -112,7 +112,7 @@ function freeRamByKillTiers(
 /**
  * Wait for a script to finish running
  */
-async function waitForScript(ns: NS, pid: number, timeoutMs: number = 30_000): Promise<boolean> {
+async function waitForScript(ns: NS, pid: number, timeoutMs = 30_000): Promise<boolean> {
   const startTime = Date.now();
   while (ns.isRunning(pid)) {
     if (Date.now() - startTime > timeoutMs) {

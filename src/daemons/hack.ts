@@ -436,7 +436,7 @@ function computeBatchHackStatus(
   maxBatches: number,
   targetStates: Map<string, BatchTargetState>,
   incomeTracker: IncomeTracker,
-  activeBatchMap: Map<number, { target: string; expectedEnd: number }>,
+  _activeBatchMap: Map<number, { target: string; expectedEnd: number }>,
 ): HackStatus {
   const servers = getUsableServers(ns, homeReserve);
   const totalRam = servers.reduce((sum, s) => sum + s.availableRam, 0);
@@ -1116,7 +1116,7 @@ async function runXpMode(
 ): Promise<void> {
   const C = COLORS;
   let xpGainedTotal = 0;
-  let startTime = Date.now();
+  const startTime = Date.now();
 
   do {
     ns.clearLog();

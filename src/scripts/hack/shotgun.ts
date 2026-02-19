@@ -161,7 +161,7 @@ export function runShotgunCycle(ns: NS, config: ShotgunConfig): ShotgunStatus | 
     return null;
   }
 
-  const { action, threads } = determineActionForTarget(ns, target, config);
+  const { action } = determineActionForTarget(ns, target, config);
   const { threadsLaunched, serversUsed } = executeAcrossAllServers(
     ns,
     target,

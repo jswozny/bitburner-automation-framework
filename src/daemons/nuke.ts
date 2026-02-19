@@ -10,7 +10,7 @@
  *   run daemons/nuke.js --interval 60000
  */
 import { NS } from "@ns";
-import { analyzeNukableServers, countAvailableTools, getNukeStatus } from "/controllers/nuke";
+import { analyzeNukableServers, getNukeStatus } from "/controllers/nuke";
 import { COLORS, getAllServers } from "/lib/utils";
 import { publishStatus } from "/lib/ports";
 import { STATUS_PORTS, NukeStatus } from "/types/ports";

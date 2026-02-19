@@ -12,13 +12,13 @@
  *
  * Run: run network-monitor.js
  */
-import { COLORS, getAllServers, makeBar, discoverAllWithDepthAndPath, pathToArray } from '/lib/utils.js';
+import { COLORS, getAllServers, makeBar, discoverAllWithDepthAndPath } from '/lib/utils.js';
 
 export async function main(ns) {
   // === CONFIGURATION ===
   const REFRESH_RATE = 1000;  // ms between refreshes
 
-  const { red, green, yellow, blue, magenta, cyan, white, dim, reset } = COLORS;
+  const { red, green, yellow, blue, cyan, white, dim, reset } = COLORS;
 
   ns.disableLog('ALL');
   ns.ui.openTail();
@@ -27,6 +27,7 @@ export async function main(ns) {
   const startTime = Date.now();
   let lastMoney = ns.getPlayer().money;
 
+  // eslint-disable-next-line no-constant-condition
   while (true) {
 
     ns.clearLog();
@@ -36,7 +37,7 @@ export async function main(ns) {
     const moneyGained = player.money - lastMoney;
 
     // Pre-compute paths for clickable links
-    const { parentByHost } = discoverAllWithDepthAndPath(ns, 'home', 100);
+    discoverAllWithDepthAndPath(ns, 'home', 100);
 
     // === HEADER ===
     const TITLE = 'NETWORK DASHBOARD';
@@ -106,7 +107,6 @@ export async function main(ns) {
 
     // Summarize remaining rooted servers
     let remainingActive = 0;
-    let remainingIdle = 0;
     let remainingExpected = 0;
 
     for (const hostname of remaining) {
@@ -122,7 +122,6 @@ export async function main(ns) {
         totalExpected += exp;
         remainingExpected += exp;
       } else {
-        remainingIdle++;
         idleCount++;
       }
     }
@@ -165,7 +164,7 @@ export async function main(ns) {
 
 /** Render a server row and return stats */
 function renderServerRow(ns, hostname, actions) {
-  const { red, green, yellow, blue, cyan, gray, dim, reset } = COLORS;
+  const { red, green, yellow, blue, cyan, gray, reset } = COLORS;
 
   actions = actions || { hack: 0, grow: 0, weaken: 0, earliestCompletion: null };
   const server = ns.getServer(hostname);

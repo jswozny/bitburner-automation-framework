@@ -640,7 +640,7 @@ async function runFullMode(
   currentRam: number,
   tierRamCosts: number[],
   config: GangConfig,
-  spawnArgs: string[],
+  _spawnArgs: string[],
 ): Promise<void> {
   const C = COLORS;
 

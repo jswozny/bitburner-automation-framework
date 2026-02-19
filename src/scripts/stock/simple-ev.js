@@ -208,8 +208,6 @@ function createTradeExecutor(ns, isSimulation, simState) {
     const price = ns.stock.getAskPrice(sym);
     // Short profit: you sold high (avgPrice), buying back low (price)
     const profit = shares * (pos.avgPrice - price) - commission;
-    const gain = shares * pos.avgPrice + profit; // Return original + profit
-
     simState.cash += shares * pos.avgPrice + profit;
     simState.totalCommissions += commission;
     pos.shares -= shares;
@@ -252,7 +250,7 @@ function createTradeExecutor(ns, isSimulation, simState) {
     return { success: true, price, gain };
   };
 
-  const realBuyShort = (sym, shares) => {
+  const realBuyShort = (_sym, _shares) => {
     return { success: false, reason: 'Can not short' };
     /*
     const price = ns.stock.buyShort(sym, shares);
@@ -264,7 +262,7 @@ function createTradeExecutor(ns, isSimulation, simState) {
     */
   };
 
-  const realSellShort = (sym, shares) => {
+  const realSellShort = (_sym, _shares) => {
     return { success: false, reason: 'Can not short' };
     /*
     const price = ns.stock.sellShort(sym, shares);
@@ -419,7 +417,6 @@ function managePortfolio(ns, analyses, executor, isSimulation, simState) {
       if (shouldExit && (hasSufficientProfit || profitPercent < -0.1 || betterOpportunityExists)) {
         const result = executor.sellLong(sym, longShares);
         if (result.success) {
-          const profit = longShares * (analysis.bidPrice - longAvgPrice) - executor.commission;
           actions.push({ action: 'SELL_LONG', sym, shares: longShares, result });
         }
       }
@@ -446,7 +443,6 @@ function managePortfolio(ns, analyses, executor, isSimulation, simState) {
       if (shouldExit && (hasSufficientProfit || profitPercent < -0.1)) {
         const result = executor.sellShort(sym, shortShares);
         if (result.success) {
-          const profit = shortShares * (shortAvgPrice - analysis.askPrice) - executor.commission;
           actions.push({ action: 'SELL_SHORT', sym, shares: shortShares, result });
         }
       }
@@ -682,7 +678,7 @@ export async function main(ns) {
   if (!isSimulation) {
     sessionStartValue = ns.getServerMoneyAvailable('home');
     for (const sym of symbols) {
-      const [sharesLong, avgLong, sharesShort, avgShort] = ns.stock.getPosition(sym);
+      const [sharesLong] = ns.stock.getPosition(sym);
       sessionStartValue += sharesLong * ns.stock.getBidPrice(sym);
       // Add short value if you have shorts
     }
@@ -709,6 +705,7 @@ export async function main(ns) {
   }
 
   // Main loop
+  // eslint-disable-next-line no-constant-condition
   while (true) {
     // Analyze all stocks
     const analyses = symbols.map(sym => analyzeStock(ns, sym));

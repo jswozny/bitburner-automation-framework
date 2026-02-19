@@ -43,7 +43,7 @@ export const bracketsSolver: MiniGameSolver = {
       const paragraphs = current.querySelectorAll("p");
       for (const p of paragraphs) {
         const text = p.textContent?.trim() ?? "";
-        if (text && /^[(\[{<)\]}>]+$/.test(text)) {
+        if (text && /^[([{<)\]}>]+$/.test(text)) {
           bracketText = text;
           break;
         }

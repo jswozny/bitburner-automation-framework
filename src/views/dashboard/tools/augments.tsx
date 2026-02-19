@@ -6,7 +6,6 @@
  * sequential augs. Independent of the rep daemon.
  */
 import React from "lib/react";
-import { NS } from "@ns";
 import { ToolPlugin, FormattedAugmentsStatus, OverviewCardProps, DetailPanelProps } from "views/dashboard/types";
 import { styles } from "views/dashboard/styles";
 import { ToolControl } from "views/dashboard/components/ToolControl";

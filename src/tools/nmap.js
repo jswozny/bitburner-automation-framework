@@ -1,4 +1,4 @@
-import { discoverAllWithDepthAndPath, pathTo } from '/lib/utils.js';
+import { discoverAllWithDepthAndPath } from '/lib/utils.js';
 
 /** @param {NS} ns */
 export async function main(ns) {

@@ -117,10 +117,8 @@ export const cyberpunkSolver: MiniGameSolver = {
     // 3. Read grid cell values
     const cells = Array.from(grid.el.children);
     const gridValues: string[] = cells.map(c => (c.textContent?.trim() ?? "").toUpperCase());
-    const gridHeight = Math.ceil(cells.length / width);
-
     // 4. Find current cursor position
-    let curIdx = findSelectedIndex(cells);
+    const curIdx = findSelectedIndex(cells);
     let curRow = Math.floor(curIdx / width);
     let curCol = curIdx % width;
 

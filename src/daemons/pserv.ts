@@ -13,7 +13,7 @@
  */
 import { NS } from "@ns";
 import { COLORS } from "/lib/utils";
-import { getPservStatus, getBestAffordableRam, getBestAffordableUpgrade, PservConfig, runPservCycle } from "/controllers/pserv";
+import { getPservStatus, PservConfig, runPservCycle } from "/controllers/pserv";
 import { publishStatus } from "/lib/ports";
 import { STATUS_PORTS, PservStatus } from "/types/ports";
 
