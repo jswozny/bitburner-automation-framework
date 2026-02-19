@@ -9,7 +9,7 @@
  *        run actions/purchase-augments.js --max-spend 1e12
  */
 import { NS } from "@ns";
-import { analyzeFactions, calculatePurchasePriority, getAffordableAugs, getSequentialPurchaseAugs } from "/controllers/factions";
+import { analyzeFactions, calculatePurchasePriority, AUG_COST_MULT, getAffordableAugs, getSequentialPurchaseAugs } from "/controllers/factions";
 
 export const MANUAL_COMMAND = 'ns.singularity.purchaseAugmentation("FACTION", "AUG_NAME")';
 
@@ -47,6 +47,18 @@ export async function main(ns: NS): Promise<void> {
   const filteredPlan = onlyAugs
     ? plan.filter((a) => onlyAugs!.has(a.name))
     : plan;
+
+  // Recalculate rolling multipliers for the filtered subset
+  // Without this, filtered augs keep inflated multipliers from their
+  // position in the full list (e.g. position 9 of 10 → 1.9^9 instead of 1.9^2)
+  if (onlyAugs) {
+    let mult = 1;
+    for (const aug of filteredPlan) {
+      aug.adjustedCost = Math.round(aug.basePrice * mult);
+      aug.multiplier = mult;
+      mult *= AUG_COST_MULT;
+    }
+  }
 
   if (filteredPlan.length === 0) {
     ns.tprint("No augmentations available for purchase.");
