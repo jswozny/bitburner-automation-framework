@@ -11,7 +11,8 @@
  */
 import { NS } from "@ns";
 import { analyzeNukableServers, countAvailableTools, getNukeStatus } from "/controllers/nuke";
-import { COLORS, getAllServers } from "/lib/utils";
+import { COLORS } from "/lib/utils";
+import { getCachedServers, invalidateServerCache } from "/lib/server-cache";
 import { publishStatus } from "/lib/ports";
 import { STATUS_PORTS, NukeStatus } from "/types/ports";
 
@@ -22,7 +23,7 @@ import { STATUS_PORTS, NukeStatus } from "/types/ports";
 function computeNukeStatus(ns: NS): NukeStatus {
   const raw = getNukeStatus(ns);
   const player = ns.getPlayer();
-  const allServers = getAllServers(ns);
+  const allServers = getCachedServers(ns);
 
   const ready: NukeStatus["ready"] = [];
   const needHacking: NukeStatus["needHacking"] = [];
@@ -148,6 +149,24 @@ export async function main(ns: NS): Promise<void> {
     // Nuke any servers that are ready
     const result = analyzeNukableServers(ns);
     const nukedNames = result.nuked.map((r) => r.hostname);
+
+    // Deploy worker scripts to newly-rooted servers and invalidate cache
+    if (result.nuked.length > 0) {
+      invalidateServerCache();
+
+      const workers = [
+        "/workers/hack.js",
+        "/workers/grow.js",
+        "/workers/weaken.js",
+        "/workers/share.js",
+      ];
+      for (const nuked of result.nuked) {
+        const server = ns.getServer(nuked.hostname);
+        if (server.maxRam > 0) {
+          await ns.scp(workers, nuked.hostname, "home");
+        }
+      }
+    }
 
     // Compute full status for the dashboard
     const status = computeNukeStatus(ns);

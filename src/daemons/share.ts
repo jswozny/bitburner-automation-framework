@@ -13,7 +13,7 @@
  *   run daemons/share.js --interval 5000
  */
 import { NS } from "@ns";
-import { COLORS, getAllServers } from "/lib/utils";
+import { COLORS } from "/lib/utils";
 import { getShareStatus, DEFAULT_SHARE_SCRIPT, ShareConfig, deployShareScript, launchShareThreads } from "/controllers/share";
 import { publishStatus, peekStatus } from "/lib/ports";
 import { STATUS_PORTS, ShareStatus, FleetAllocation } from "/types/ports";

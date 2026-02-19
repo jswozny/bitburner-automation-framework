@@ -11,8 +11,9 @@
  */
 import { NS } from "@ns";
 import { COLORS } from "/lib/utils";
-import { dequeueAction, queueAction } from "/lib/ports";
-import { QueueEntry, PRIORITY, KILL_TIERS } from "/types/ports";
+import { dequeueAction } from "/lib/ports";
+import { QueueEntry, PRIORITY } from "/types/ports";
+import { walkKillTiers } from "/lib/ram-utils";
 
 // === ROUND-ROBIN STATUS CHECKS ===
 
@@ -83,30 +84,17 @@ function freeRamByKillTiers(
   ns: NS,
   neededRam: number,
 ): { hostname: string; script: string; args: (string | number | boolean)[] }[] {
-  const killed: { hostname: string; script: string; args: (string | number | boolean)[] }[] = [];
+  const { killed } = walkKillTiers(ns, neededRam, { excludeDashboard: false });
 
-  for (const tier of KILL_TIERS) {
-    // Check if we have enough RAM now
-    if (getAvailableRam(ns) >= neededRam) {
-      break;
-    }
-
-    for (const scriptPath of tier) {
-      // Find and kill all instances of this script across all servers
-      const processes = ns.ps("home").filter(p => p.filename === scriptPath);
-      for (const proc of processes) {
-        ns.print(`${COLORS.yellow}Killing ${scriptPath} (pid ${proc.pid}) to free RAM${COLORS.reset}`);
-        killed.push({
-          hostname: "home",
-          script: proc.filename,
-          args: proc.args,
-        });
-        ns.kill(proc.pid);
-      }
-    }
+  for (const k of killed) {
+    ns.print(`${COLORS.yellow}Killing ${k.filename} (pid ${k.pid}) to free RAM${COLORS.reset}`);
   }
 
-  return killed;
+  return killed.map((k) => ({
+    hostname: "home",
+    script: k.filename,
+    args: k.args,
+  }));
 }
 
 /**
