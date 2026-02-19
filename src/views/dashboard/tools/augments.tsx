@@ -96,7 +96,25 @@ function AugmentsDetailPanel({ status, running, toolId, pid }: DetailPanelProps<
     setPluginUIState("augments", "excluded", [...currentSet]);
   };
 
-  // Checked items for purchase planner
+  // Filter dropdown
+  const filter = getPluginUIState<string>("augments", "filter", "none");
+  const displayAvailable = filter === "none"
+    ? status.available
+    : status.available.filter((a) => a.tags ? a.tags.includes(filter) : true);
+
+  const allVisibleChecked = displayAvailable.length > 0 && displayAvailable.every((a) => isChecked(a.name));
+  const toggleAllVisible = () => {
+    const current = getPluginUIState<string[]>("augments", "excluded", []);
+    const currentSet = new Set(current);
+    if (allVisibleChecked) {
+      for (const a of displayAvailable) currentSet.add(a.name);
+    } else {
+      for (const a of displayAvailable) currentSet.delete(a.name);
+    }
+    setPluginUIState("augments", "excluded", [...currentSet]);
+  };
+
+  // Checked items for purchase planner (always uses full list, not filtered)
   const checkedItems = status.available.filter((a) => isChecked(a.name));
   const checkedCount = checkedItems.length;
 
@@ -213,16 +231,53 @@ function AugmentsDetailPanel({ status, running, toolId, pid }: DetailPanelProps<
       {/* Table 1: Available Purchases */}
       {status.available.length > 0 && (
         <div style={styles.section}>
-          <div style={styles.sectionTitle}>
-            AVAILABLE PURCHASES
-            <span style={{ ...styles.dim, marginLeft: "8px", fontWeight: "normal" }}>
-              {checkedCount}/{status.available.length} selected
+          <div style={{ ...styles.sectionTitle, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+            <span>
+              AVAILABLE PURCHASES
+              <span style={{ ...styles.dim, marginLeft: "8px", fontWeight: "normal" }}>
+                {filter !== "none"
+                  ? `${displayAvailable.length}/${status.available.length} shown`
+                  : `${checkedCount}/${status.available.length} selected`}
+              </span>
             </span>
+            <select
+              style={{
+                backgroundColor: "#1a1a1a",
+                color: "#00ff00",
+                border: "1px solid #333",
+                borderRadius: "3px",
+                padding: "1px 4px",
+                fontSize: "12px",
+                fontFamily: "inherit",
+                cursor: "pointer",
+              }}
+              value={filter}
+              onChange={(e) => setPluginUIState("augments", "filter", (e.target as HTMLSelectElement).value)}
+            >
+              <option value="none">All</option>
+              <option value="hacking">Hacking</option>
+              <option value="combat">Combat</option>
+              <option value="charisma">Charisma</option>
+              <option value="crime">Crime</option>
+              <option value="hacknet">Hacknet</option>
+              <option value="bladeburner">Bladeburner</option>
+              <option value="rep">Rep</option>
+              <option value="work">Work</option>
+              <option value="prereq">Has Prereq</option>
+            </select>
           </div>
           <table style={styles.table}>
             <thead>
               <tr>
-                <th style={{ ...styles.tableHeader, width: "28px" }}></th>
+                <th style={{ ...styles.tableHeader, width: "28px", textAlign: "center" }}>
+                  <input
+                    type="checkbox"
+                    checked={allVisibleChecked}
+                    onChange={toggleAllVisible}
+                    style={{ cursor: "pointer", accentColor: "#00ff00" }}
+                    title={allVisibleChecked ? "Deselect all visible" : "Select all visible"}
+                  />
+                </th>
                 <th style={styles.tableHeader}>Augmentation</th>
                 <th style={styles.tableHeader}>Faction</th>
                 <th style={{ ...styles.tableHeader, textAlign: "right" }}>Base Cost</th>
@@ -230,7 +285,7 @@ function AugmentsDetailPanel({ status, running, toolId, pid }: DetailPanelProps<
               </tr>
             </thead>
             <tbody>
-              {status.available.map((item, i) => {
+              {displayAvailable.map((item, i) => {
                 const checked = isChecked(item.name);
                 const rowStyle = i % 2 === 0 ? styles.tableRow : styles.tableRowAlt;
                 return (

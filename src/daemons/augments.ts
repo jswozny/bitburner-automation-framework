@@ -27,6 +27,34 @@ import {
 import { publishStatus } from "/lib/ports";
 import { STATUS_PORTS, AugmentsStatus } from "/types/ports";
 
+function classifyAugTags(ns: NS, name: string, prereqs: string[]): string[] {
+  const stats = ns.singularity.getAugmentationStats(name);
+  const tags: string[] = [];
+
+  const TAG_FIELDS: Record<string, (keyof typeof stats)[]> = {
+    hacking: ["hacking", "hacking_exp", "hacking_chance", "hacking_speed", "hacking_money", "hacking_grow"],
+    combat: ["strength", "defense", "dexterity", "agility", "strength_exp", "defense_exp", "dexterity_exp", "agility_exp"],
+    charisma: ["charisma", "charisma_exp"],
+    crime: ["crime_money", "crime_success"],
+    hacknet: ["hacknet_node_money", "hacknet_node_purchase_cost", "hacknet_node_ram_cost", "hacknet_node_core_cost", "hacknet_node_level_cost"],
+    bladeburner: ["bladeburner_max_stamina", "bladeburner_stamina_gain", "bladeburner_analysis", "bladeburner_success_chance"],
+    rep: ["company_rep", "faction_rep"],
+    work: ["work_money"],
+  };
+
+  for (const [tag, fields] of Object.entries(TAG_FIELDS)) {
+    if (fields.some((f) => (stats[f] as number) !== 1)) {
+      tags.push(tag);
+    }
+  }
+
+  if (prereqs.length > 0) {
+    tags.push("prereq");
+  }
+
+  return tags;
+}
+
 function computeAugmentsStatus(ns: NS): AugmentsStatus {
   const player = ns.getPlayer();
   const playerMoney = player.money;
@@ -68,6 +96,7 @@ function computeAugmentsStatus(ns: NS): AugmentsStatus {
         adjustedCost,
         baseCostFormatted: ns.formatNumber(item.basePrice),
         adjustedCostFormatted: ns.formatNumber(adjustedCost),
+        tags: classifyAugTags(ns, item.name, item.prereqs),
       };
     }),
     sequentialAugs: sequentialAugs.map((item) => ({

@@ -272,6 +272,7 @@ export interface AugmentPurchaseEntry {
   adjustedCost: number;
   baseCostFormatted: string;
   adjustedCostFormatted: string;
+  tags: string[];
 }
 
 export interface AugmentsStatus {
