@@ -618,13 +618,18 @@ function executeScript(ns: NS, scriptPath: string, args: string[]): void {
 
 // === UI STATE ===
 
+export interface TabState {
+  group: number; // -1 = Overview, 0..N = index into TAB_GROUPS
+  sub: number;   // index within the group's plugins
+}
+
 interface UIState {
-  activeTab: number;
+  activeTab: TabState;
   pluginUIState: Record<ToolName, Record<string, unknown>>;
 }
 
 const uiState: UIState = {
-  activeTab: 0,
+  activeTab: { group: -1, sub: 0 },
   pluginUIState: {
     nuke: {},
     pserv: {},
@@ -640,11 +645,11 @@ const uiState: UIState = {
   },
 };
 
-export function getActiveTab(): number {
+export function getActiveTab(): TabState {
   return uiState.activeTab;
 }
 
-export function setActiveTab(tab: number): void {
+export function setActiveTab(tab: TabState): void {
   uiState.activeTab = tab;
 }
 
