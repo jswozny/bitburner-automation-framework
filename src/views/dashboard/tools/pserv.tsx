@@ -70,11 +70,12 @@ function formatPservStatus(ns: NS): FormattedPservStatus {
 // === COMPONENTS ===
 
 function PservOverviewCard({ status, running, toolId, pid }: OverviewCardProps<FormattedPservStatus>): React.ReactElement {
+  const completed = !!(status?.allMaxed && status.serverCount >= status.serverCap);
   return (
     <div style={styles.card}>
       <div style={styles.cardTitle}>
         <span>PSERV</span>
-        <ToolControl tool={toolId} running={running} pid={pid} />
+        <ToolControl tool={toolId} running={running} completed={completed} pid={pid} />
       </div>
       <div style={styles.stat}>
         <span style={styles.statLabel}>Servers</span>
@@ -160,6 +161,7 @@ function ServerCell({ server, maxRam, index }: ServerCellProps): React.ReactElem
 }
 
 function PservDetailPanel({ status, running, toolId, pid }: DetailPanelProps<FormattedPservStatus>): React.ReactElement {
+  const completed = !!(status?.allMaxed && status.serverCount >= status.serverCap);
   // Create 25 slots (5x5 grid)
   const slots: (FormattedPservStatus["servers"][0] | null)[] = [];
   for (let i = 0; i < 25; i++) {
@@ -200,7 +202,7 @@ function PservDetailPanel({ status, running, toolId, pid }: DetailPanelProps<For
               {status.autoBuy ? "AUTO" : "MONITOR"}
             </button>
           )}
-          <ToolControl tool={toolId} running={running} pid={pid} />
+          <ToolControl tool={toolId} running={running} completed={completed} pid={pid} />
         </div>
       </div>
 

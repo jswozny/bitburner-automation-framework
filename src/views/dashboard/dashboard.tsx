@@ -253,6 +253,7 @@ function Dashboard(): React.ReactElement {
         statuses={TAB_GROUPS.map(g => g.entries.map((e): ToolStatus => {
           if (state.pids[e.toolId] > 0) return "running";
           if (e.toolId === "darkweb" && state.darkwebStatus?.allOwned) return "completed";
+          if (e.toolId === "pserv" && state.pservStatus?.allMaxed && state.pservStatus.serverCount >= state.pservStatus.serverCap) return "completed";
           return "stopped";
         }))}
       />
