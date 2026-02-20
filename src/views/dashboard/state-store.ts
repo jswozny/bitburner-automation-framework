@@ -135,6 +135,14 @@ export function claimFocus(target: "work" | "rep"): void {
 }
 
 /**
+ * Toggle pserv auto-buy mode.
+ */
+export function togglePservAutoBuy(enabled: boolean): void {
+  if (!commandPort) return;
+  commandPort.write(JSON.stringify({ tool: "pserv", action: "toggle-pserv-autobuy", pservAutoBuy: enabled }));
+}
+
+/**
  * Restart the rep daemon, optionally with a faction focus override.
  */
 export function restartRepDaemon(factionFocus?: string): void {
@@ -537,6 +545,10 @@ function executeCommand(ns: NS, cmd: Command): void {
         gangCtrl.write(JSON.stringify(cmd));
         ns.toast(`Gang: ${cmd.action.replace("gang-", "").replace(/-/g, " ")}`, "info", 2000);
       }
+      break;
+    case "toggle-pserv-autobuy":
+      setConfigValue(ns, "pserv", "autoBuy", cmd.pservAutoBuy ? "true" : "false");
+      ns.toast(`Pserv: ${cmd.pservAutoBuy ? "auto-buy ON" : "monitor only"}`, "info", 2000);
       break;
     case "claim-focus":
       if (cmd.focusTarget) {

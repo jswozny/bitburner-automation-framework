@@ -80,7 +80,7 @@ export interface QueueEntry {
 
 export interface Command {
   tool: ToolName;
-  action: "start" | "stop" | "open-tail" | "run-script" | "start-faction-work" | "set-focus" | "start-training" | "install-augments" | "run-backdoors" | "restart-rep-daemon" | "join-faction" | "restart-faction-daemon" | "restart-hack-daemon" | "restart-share-daemon" | "stop-infiltration" | "kill-infiltration" | "configure-infiltration" | "set-gang-strategy" | "pin-gang-member" | "unpin-gang-member" | "ascend-gang-member" | "toggle-gang-purchases" | "toggle-gang-warfare" | "set-gang-wanted-threshold" | "set-gang-ascension-thresholds" | "set-gang-training-threshold" | "set-gang-grow-target" | "set-gang-grow-respect-reserve" | "force-buy-equipment" | "restart-gang-daemon" | "buy-selected-augments" | "claim-focus";
+  action: "start" | "stop" | "open-tail" | "run-script" | "start-faction-work" | "set-focus" | "start-training" | "install-augments" | "run-backdoors" | "restart-rep-daemon" | "join-faction" | "restart-faction-daemon" | "restart-hack-daemon" | "restart-share-daemon" | "stop-infiltration" | "kill-infiltration" | "configure-infiltration" | "set-gang-strategy" | "pin-gang-member" | "unpin-gang-member" | "ascend-gang-member" | "toggle-gang-purchases" | "toggle-gang-warfare" | "set-gang-wanted-threshold" | "set-gang-ascension-thresholds" | "set-gang-training-threshold" | "set-gang-grow-target" | "set-gang-grow-respect-reserve" | "force-buy-equipment" | "restart-gang-daemon" | "buy-selected-augments" | "claim-focus" | "toggle-pserv-autobuy";
   scriptPath?: string;
   scriptArgs?: string[];
   factionName?: string;
@@ -108,6 +108,7 @@ export interface Command {
   gangGrowRespectReserve?: number;
   selectedAugs?: string[];
   focusTarget?: "work" | "rep";
+  pservAutoBuy?: boolean;
 }
 
 // === STATUS INTERFACES ===
@@ -137,6 +138,7 @@ export interface PservStatus {
   maxRam: string;
   maxPossibleRam: string;
   allMaxed: boolean;
+  autoBuy: boolean;
   servers: { hostname: string; ram: number; ramFormatted: string }[];
   maxPossibleRamNum: number;
   upgradeProgress: string;
@@ -156,7 +158,7 @@ export interface ShareStatus {
   shareRam: string;
   serversWithShare: number;
   serverStats: { hostname: string; threads: string }[];
-  cycleStatus: "active" | "cycle" | "idle";
+  cycleStatus: "active" | "cycle" | "idle" | "paused";
   lastKnownThreads: string;
   targetPercent?: number;  // 0 or undefined = greedy, 1-100 = capped
   interval?: number;       // daemon loop interval in ms (for grace period calc)

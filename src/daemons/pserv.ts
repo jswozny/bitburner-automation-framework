@@ -22,7 +22,7 @@ import { writeDefaultConfig, getConfigString, getConfigNumber, getConfigBool } f
  * Build a PservStatus object with formatted values for the dashboard.
  * Bridges raw controller data to the port type expected by the UI.
  */
-function computePservStatus(ns: NS, reserve: number): PservStatus {
+function computePservStatus(ns: NS, reserve: number, autoBuy: boolean): PservStatus {
   const raw = getPservStatus(ns);
   const maxPossibleRam = ns.getPurchasedServerMaxRam();
 
@@ -74,6 +74,7 @@ function computePservStatus(ns: NS, reserve: number): PservStatus {
     maxPossibleRam: ns.formatRam(maxPossibleRam),
     maxPossibleRamNum: maxPossibleRam,
     allMaxed: raw.allMaxed,
+    autoBuy,
     servers,
     upgradeProgress,
     nextUpgrade,
@@ -87,6 +88,9 @@ function printStatus(ns: NS, status: PservStatus, bought: number, upgraded: numb
   const C = COLORS;
 
   ns.print(`${C.cyan}═══ Pserv Daemon ═══${C.reset}`);
+  if (!status.autoBuy) {
+    ns.print(`${C.yellow}MONITOR ONLY — auto-buy disabled${C.reset}`);
+  }
   ns.print(
     `${C.dim}Servers: ${status.serverCount}/${status.serverCap} | Total RAM: ${status.totalRam}${C.reset}`,
   );
@@ -127,6 +131,7 @@ export async function main(ns: NS): Promise<void> {
     reserve: "0",
     oneShot: "false",
     interval: "10000",
+    autoBuy: "true",
   });
 
   do {
@@ -136,14 +141,17 @@ export async function main(ns: NS): Promise<void> {
       reserve: getConfigNumber(ns, "pserv", "reserve", 0),
       oneShot: getConfigBool(ns, "pserv", "oneShot", false),
       interval: getConfigNumber(ns, "pserv", "interval", 10000),
+      autoBuy: getConfigBool(ns, "pserv", "autoBuy", true),
     };
     ns.clearLog();
 
-    // Run the purchase/upgrade cycle
-    const result = await runPservCycle(ns, config);
+    // Run the purchase/upgrade cycle (or skip if monitor-only)
+    const result = config.autoBuy
+      ? await runPservCycle(ns, config)
+      : { bought: 0, upgraded: 0, waitingFor: null };
 
     // Compute formatted status for the dashboard
-    const pservStatus = computePservStatus(ns, config.reserve);
+    const pservStatus = computePservStatus(ns, config.reserve, config.autoBuy);
 
     // Publish to port for dashboard consumption
     publishStatus(ns, STATUS_PORTS.pserv, pservStatus);

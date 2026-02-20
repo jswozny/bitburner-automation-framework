@@ -8,6 +8,7 @@ import { NS } from "@ns";
 import { ToolPlugin, FormattedPservStatus, OverviewCardProps, DetailPanelProps } from "views/dashboard/types";
 import { styles } from "views/dashboard/styles";
 import { ToolControl } from "views/dashboard/components/ToolControl";
+import { togglePservAutoBuy } from "views/dashboard/state-store";
 import { getPservStatus } from "/controllers/pserv";
 
 // === STATUS FORMATTING ===
@@ -58,6 +59,7 @@ function formatPservStatus(ns: NS): FormattedPservStatus {
     maxRam: ns.formatRam(raw.maxRam),
     maxPossibleRam: ns.formatRam(raw.maxPossibleRam),
     allMaxed: raw.allMaxed,
+    autoBuy: true,
     maxPossibleRamNum: raw.maxPossibleRam,
     servers,
     upgradeProgress,
@@ -88,6 +90,9 @@ function PservOverviewCard({ status, running, toolId, pid }: OverviewCardProps<F
         <span style={styles.statLabel}>Status</span>
         <span style={status?.allMaxed ? styles.statHighlight : styles.statValue}>
           {status ? (status.allMaxed ? "ALL MAXED" : status.upgradeProgress) : "—"}
+          {status && !status.autoBuy && (
+            <span style={{ color: "#ff8800", marginLeft: "6px", fontSize: "10px" }}>MONITOR</span>
+          )}
         </span>
       </div>
     </div>
@@ -177,7 +182,26 @@ function PservDetailPanel({ status, running, toolId, pid }: DetailPanelProps<For
             <span style={styles.statHighlight}>{status?.totalRam ?? "—"}</span>
           </span>
         </div>
-        <ToolControl tool={toolId} running={running} pid={pid} />
+        <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+          {status && (
+            <button
+              style={{
+                backgroundColor: "#1a1a1a",
+                color: status.autoBuy ? "#00ff00" : "#ff8800",
+                border: `1px solid ${status.autoBuy ? "#00ff00" : "#ff8800"}`,
+                borderRadius: "3px",
+                padding: "1px 6px",
+                fontSize: "10px",
+                fontFamily: "inherit",
+                cursor: "pointer",
+              }}
+              onClick={() => { if (running) togglePservAutoBuy(!status.autoBuy); }}
+            >
+              {status.autoBuy ? "AUTO" : "MONITOR"}
+            </button>
+          )}
+          <ToolControl tool={toolId} running={running} pid={pid} />
+        </div>
       </div>
 
       {/* 5x5 Server Grid */}

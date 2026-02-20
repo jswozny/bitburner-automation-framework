@@ -29,11 +29,26 @@ let lastKnownInterval = 10000; // updated from daemon-published status
 // === STATUS FORMATTING ===
 
 function formatShareStatus(ns: NS): FormattedShareStatus {
+  // Read daemon-published status first
+  const portStatus = peekStatus<PortShareStatus>(ns, STATUS_PORTS.share);
+
+  // Short-circuit for paused mode — skip expensive server scan
+  if (portStatus?.cycleStatus === "paused") {
+    return {
+      totalThreads: "0",
+      sharePower: "1.000x",
+      shareRam: "0.00GB",
+      serversWithShare: 0,
+      serverStats: [],
+      cycleStatus: "paused",
+      lastKnownThreads: portStatus.lastKnownThreads ?? "0",
+    };
+  }
+
   const raw = getShareStatus(ns, DEFAULT_SHARE_SCRIPT);
   const now = Date.now();
 
   // Read daemon-published interval for accurate grace period
-  const portStatus = peekStatus<PortShareStatus>(ns, STATUS_PORTS.share);
   if (portStatus?.interval) lastKnownInterval = portStatus.interval;
   const gracePeriodMs = lastKnownInterval + 2000;
 
@@ -115,6 +130,9 @@ function ShareOverviewCard({ status, running, toolId, pid }: OverviewCardProps<F
           {status?.cycleStatus === "cycle" && (
             <span style={{ color: "#ffaa00", marginLeft: "4px" }}>(cycle)</span>
           )}
+          {status?.cycleStatus === "paused" && (
+            <span style={{ color: "#ffaa00", marginLeft: "4px" }}>(paused)</span>
+          )}
         </span>
       </div>
       <div style={styles.stat}>
@@ -170,6 +188,9 @@ function ShareDetailPanel({ status, running, toolId, pid }: DetailPanelProps<For
               {status?.cycleStatus === "cycle" && (
                 <span style={{ color: "#ffaa00", marginLeft: "4px" }}>(cycle)</span>
               )}
+              {status?.cycleStatus === "paused" && (
+                <span style={{ color: "#ffaa00", marginLeft: "4px" }}>(paused)</span>
+              )}
             </span>
           </span>
           <span style={styles.dim}>|</span>
@@ -180,6 +201,14 @@ function ShareDetailPanel({ status, running, toolId, pid }: DetailPanelProps<For
         </div>
         <ToolControl tool={toolId} running={running} pid={pid} />
       </div>
+
+      {/* Paused Banner */}
+      {status?.cycleStatus === "paused" && (
+        <div style={{ padding: "6px 8px", marginBottom: "6px", backgroundColor: "#2a1f00", borderRadius: "3px", border: "1px solid #ffaa00" }}>
+          <div style={{ color: "#ffaa00", fontWeight: "bold", fontSize: "12px" }}>PAUSED — Waiting for Rep Focus</div>
+          <div style={{ color: "#888", fontSize: "11px", marginTop: "2px" }}>Share activates automatically when Rep daemon claims focus.</div>
+        </div>
+      )}
 
       {/* Target % Control */}
       <div style={{ display: "flex", gap: "10px", alignItems: "center", marginBottom: "6px", padding: "4px 6px", backgroundColor: "#111", borderRadius: "3px", border: "1px solid #222" }}>

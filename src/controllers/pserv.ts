@@ -26,6 +26,7 @@ export interface PservConfig {
   reserve: number;
   oneShot: boolean;
   interval: number;
+  autoBuy: boolean;
 }
 
 export interface PservCycleResult {
