@@ -11,18 +11,24 @@
  *   run tools/debug/peek-ports.js 19        # Queue port
  */
 import { NS } from "@ns";
+import {
+  STATUS_PORTS,
+  INFILTRATION_CONTROL_PORT,
+  GANG_CONTROL_PORT,
+  QUEUE_PORT,
+  COMMAND_PORT,
+} from "/types/ports";
 
 const PORT_NAMES: Record<number, string> = {
-  1: "nuke",
-  2: "hack",
-  3: "pserv",
-  4: "share",
-  5: "rep",
-  6: "work",
-  7: "darkweb",
-  8: "bitnode",
-  19: "queue",
-  20: "command",
+  // Build from STATUS_PORTS (the source of truth)
+  ...Object.fromEntries(
+    Object.entries(STATUS_PORTS).map(([name, port]) => [port, name]),
+  ),
+  // Control / special ports
+  [INFILTRATION_CONTROL_PORT]: "infiltration-ctrl",
+  [GANG_CONTROL_PORT]: "gang-ctrl",
+  [QUEUE_PORT]: "queue",
+  [COMMAND_PORT]: "command",
 };
 
 function peekRaw(ns: NS, port: number): string | null {
@@ -67,7 +73,7 @@ function printPortSummary(ns: NS, port: number): void {
   const raw = peekRaw(ns, port);
 
   if (raw === null) {
-    ns.tprint(`  \x1b[2m[${String(port).padStart(2)}] ${name.padEnd(8)} (empty)\x1b[0m`);
+    ns.tprint(`  \x1b[2m[${String(port).padStart(2)}] ${name.padEnd(18)} (empty)\x1b[0m`);
     return;
   }
 
@@ -75,10 +81,10 @@ function printPortSummary(ns: NS, port: number): void {
     const parsed = JSON.parse(raw);
     const keys = Object.keys(parsed);
     const preview = truncate(JSON.stringify(parsed), 120);
-    ns.tprint(`  \x1b[32m[${String(port).padStart(2)}]\x1b[0m ${name.padEnd(8)} \x1b[2m${keys.length} keys, ${raw.length} chars\x1b[0m`);
+    ns.tprint(`  \x1b[32m[${String(port).padStart(2)}]\x1b[0m ${name.padEnd(18)} \x1b[2m${keys.length} keys, ${raw.length} chars\x1b[0m`);
     ns.tprint(`       ${preview}`);
   } catch {
-    ns.tprint(`  \x1b[32m[${String(port).padStart(2)}]\x1b[0m ${name.padEnd(8)} \x1b[2m${raw.length} chars (not JSON)\x1b[0m`);
+    ns.tprint(`  \x1b[32m[${String(port).padStart(2)}]\x1b[0m ${name.padEnd(18)} \x1b[2m${raw.length} chars (not JSON)\x1b[0m`);
     ns.tprint(`       ${truncate(raw, 120)}`);
   }
 }
@@ -96,17 +102,19 @@ export async function main(ns: NS): Promise<void> {
     return;
   }
 
-  // Summary of all status ports
-  ns.tprint(`\n\x1b[36m=== PORT STATUS ===\x1b[0m`);
+  // Summary of all status ports (derived from STATUS_PORTS)
+  ns.tprint(`\n\x1b[36m=== STATUS PORTS ===\x1b[0m`);
 
-  const statusPorts = [1, 2, 3, 4, 5, 6, 7, 8];
-  for (const port of statusPorts) {
+  const statusPortNums = Object.values(STATUS_PORTS).sort((a, b) => a - b);
+  for (const port of statusPortNums) {
     printPortSummary(ns, port);
   }
 
   ns.tprint("");
-  ns.tprint(`  \x1b[36m--- Special Ports ---\x1b[0m`);
-  printPortSummary(ns, 19);
-  printPortSummary(ns, 20);
+  ns.tprint(`  \x1b[36m--- Control / Special Ports ---\x1b[0m`);
+  printPortSummary(ns, INFILTRATION_CONTROL_PORT);
+  printPortSummary(ns, GANG_CONTROL_PORT);
+  printPortSummary(ns, QUEUE_PORT);
+  printPortSummary(ns, COMMAND_PORT);
   ns.tprint("");
 }
