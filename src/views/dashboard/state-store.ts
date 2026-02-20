@@ -19,6 +19,7 @@ import {
   COMMAND_PORT,
   INFILTRATION_CONTROL_PORT,
   GANG_CONTROL_PORT,
+  CONTRACTS_CONTROL_PORT,
   NukeStatus,
   PservStatus,
   ShareStatus,
@@ -298,6 +299,14 @@ export function forceGangEquipmentBuy(): void {
 }
 
 /**
+ * Force-attempt a specific coding contract (bypasses minTries).
+ */
+export function forceContractAttempt(host: string, file: string): void {
+  if (!commandPort) return;
+  commandPort.write(JSON.stringify({ tool: "contracts", action: "force-contract-attempt", contractHost: host, contractFile: file }));
+}
+
+/**
  * Restart the gang daemon with optional strategy.
  */
 export function restartGangDaemon(strategy?: GangStrategy): void {
@@ -549,6 +558,13 @@ function executeCommand(ns: NS, cmd: Command): void {
     case "toggle-pserv-autobuy":
       setConfigValue(ns, "pserv", "autoBuy", cmd.pservAutoBuy ? "true" : "false");
       ns.toast(`Pserv: ${cmd.pservAutoBuy ? "auto-buy ON" : "monitor only"}`, "info", 2000);
+      break;
+    case "force-contract-attempt":
+      if (cmd.contractHost && cmd.contractFile) {
+        const contractsCtrl = ns.getPortHandle(CONTRACTS_CONTROL_PORT);
+        contractsCtrl.write(JSON.stringify({ host: cmd.contractHost, file: cmd.contractFile }));
+        ns.toast(`Contract: forcing attempt on ${cmd.contractHost}`, "info", 2000);
+      }
       break;
     case "claim-focus":
       if (cmd.focusTarget) {

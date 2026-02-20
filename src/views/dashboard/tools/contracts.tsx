@@ -15,6 +15,7 @@ import {
 import { ContractResult, PendingContract } from "/types/ports";
 import { styles } from "views/dashboard/styles";
 import { ToolControl } from "views/dashboard/components/ToolControl";
+import { forceContractAttempt } from "views/dashboard/state-store";
 
 // === OVERVIEW CARD ===
 
@@ -141,6 +142,7 @@ function ContractsDetailPanel({
                 <th style={styles.tableHeader}>Type</th>
                 <th style={{ ...styles.tableHeader, width: "50px", textAlign: "right" }}>Tries</th>
                 <th style={{ ...styles.tableHeader, width: "80px" }}>Reason</th>
+                <th style={{ ...styles.tableHeader, width: "50px" }}>Action</th>
               </tr>
             </thead>
             <tbody>
@@ -156,6 +158,23 @@ function ContractsDetailPanel({
                     <td style={styles.tableCell}>{c.type}</td>
                     <td style={{ ...styles.tableCell, textAlign: "right" }}>{c.triesRemaining}</td>
                     <td style={{ ...styles.tableCell, color: reasonColor }}>{c.reason}</td>
+                    <td style={styles.tableCell}>
+                      {c.reason === "low tries" && running && (
+                        <button
+                          style={{
+                            background: "transparent",
+                            border: "1px solid #ffaa00",
+                            color: "#ffaa00",
+                            cursor: "pointer",
+                            padding: "1px 6px",
+                            fontSize: "10px",
+                          }}
+                          onClick={() => forceContractAttempt(c.host, c.file)}
+                        >
+                          Force
+                        </button>
+                      )}
+                    </td>
                   </tr>
                 );
               })}

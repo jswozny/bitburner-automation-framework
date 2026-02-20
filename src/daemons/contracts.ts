@@ -12,6 +12,7 @@ import { peekStatus, publishStatus } from "/lib/ports";
 import { writeDefaultConfig, getConfigNumber, getConfigBool } from "/lib/config";
 import {
   STATUS_PORTS,
+  CONTRACTS_CONTROL_PORT,
   NukeStatus,
   ContractResult,
   PendingContract,
@@ -35,6 +36,24 @@ let totalFailed = 0;
 const recentResults: ContractResult[] = [];
 const MAX_RECENT = 20;
 const attemptedThisCycle = new Set<string>();
+const forcedAttemptQueue: { host: string; file: string }[] = [];
+
+function readControlCommands(ns: NS): void {
+  const port = ns.getPortHandle(CONTRACTS_CONTROL_PORT);
+  while (!port.empty()) {
+    const data = port.read();
+    if (data === "NULL PORT DATA") break;
+    try {
+      const cmd = JSON.parse(data as string) as { host?: string; file?: string };
+      if (cmd.host && cmd.file) {
+        forcedAttemptQueue.push({ host: cmd.host, file: cmd.file });
+        ns.print(`${C.yellow}QUEUED${C.reset} forced attempt: ${cmd.file} on ${cmd.host}`);
+      }
+    } catch {
+      // Invalid command, skip
+    }
+  }
+}
 
 async function daemon(ns: NS): Promise<void> {
   ns.disableLog("ALL");
@@ -42,12 +61,12 @@ async function daemon(ns: NS): Promise<void> {
   writeDefaultConfig(ns, "contracts", {
     "interval": "60000",
     "oneShot": "false",
-    "minTries": "2",
+    "minTries": "1",
   });
 
   const interval = getConfigNumber(ns, "contracts", "interval", 60000);
   const oneShot = getConfigBool(ns, "contracts", "oneShot", false);
-  const minTries = getConfigNumber(ns, "contracts", "minTries", 2);
+  const minTries = getConfigNumber(ns, "contracts", "minTries", 1);
 
   const knownTypes = Object.keys(SOLVERS).length;
 
@@ -56,6 +75,7 @@ async function daemon(ns: NS): Promise<void> {
 
   // eslint-disable-next-line no-constant-condition
   while (true) {
+    readControlCommands(ns);
     const scanStart = Date.now();
 
     // Get server list from nuke status port
@@ -133,6 +153,52 @@ async function daemon(ns: NS): Promise<void> {
         // Cap recent results
         while (recentResults.length > MAX_RECENT) recentResults.pop();
       }
+    }
+
+    // Process forced attempts (bypass minTries check)
+    while (forcedAttemptQueue.length > 0) {
+      const { host, file } = forcedAttemptQueue.shift()!;
+      const key = `${host}:${file}`;
+
+      if (!ns.fileExists(file, host)) {
+        ns.toast(`Contract not found: ${file} on ${host}`, "error", 3000);
+        continue;
+      }
+
+      const type = ns.codingcontract.getContractType(file, host);
+      if (!SOLVERS[type]) {
+        ns.toast(`No solver for ${type}`, "error", 3000);
+        continue;
+      }
+
+      const data = ns.codingcontract.getData(file, host);
+      const result = solve(type, data);
+
+      if (!result.solved) {
+        ns.toast(`Solver returned no answer for ${type}`, "error", 3000);
+        continue;
+      }
+
+      const reward = ns.codingcontract.attempt(result.answer, file, host);
+      attemptedThisCycle.add(key);
+
+      if (reward) {
+        totalSolved++;
+        recentResults.unshift({ host, file, type, reward: String(reward), success: true, timestamp: Date.now() });
+        ns.print(`  ${C.green}FORCE-SOLVED${C.reset} ${type} on ${host} — ${reward}`);
+        ns.toast(`Contract solved: ${reward}`, "success", 3000);
+      } else {
+        totalFailed++;
+        recentResults.unshift({ host, file, type, reward: "", success: false, timestamp: Date.now() });
+        ns.print(`  ${C.red}FORCE-FAILED${C.reset} ${type} on ${host}`);
+        ns.toast(`Contract FAILED: ${type} on ${host}`, "error", 4000);
+      }
+
+      while (recentResults.length > MAX_RECENT) recentResults.pop();
+
+      // Remove from pending if it was there
+      const pendingIdx = pendingContracts.findIndex(p => p.host === host && p.file === file);
+      if (pendingIdx >= 0) pendingContracts.splice(pendingIdx, 1);
     }
 
     const status: ContractsStatus = {
