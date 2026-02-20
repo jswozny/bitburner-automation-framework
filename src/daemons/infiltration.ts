@@ -71,7 +71,6 @@ let totalVerifiedRep = 0;
 let observedMultiplier: number | null = null;
 let consecutiveLowEfficiency = 0;
 const LOW_EFFICIENCY_THRESHOLD = 0.05; // 5%
-const LOW_EFFICIENCY_MAX_CONSECUTIVE = 2;
 
 // Error state
 let errorInfo: { message: string; solver?: string; timestamp: number } | undefined;
@@ -615,24 +614,20 @@ async function runSingleInfiltration(ns: NS): Promise<boolean> {
               };
             }
           } else if (expectedDelta > 0 && actualDelta / expectedDelta < LOW_EFFICIENCY_THRESHOLD) {
-            // Positive but low — market saturation path
+            // Positive but low — market saturation, stop immediately
             const efficiency = actualDelta / expectedDelta;
             observedMultiplier = efficiency;
             totalVerifiedRep += actualDelta;
             totalRepEarned += actualDelta;
             consecutiveZeroDeltas = 0;
-            consecutiveLowEfficiency++;
-            log("warn", `Rep verification: +${actualDelta.toFixed(0)} actual vs ~${expectedDelta.toFixed(0)} expected — ${(efficiency * 100).toFixed(1)}% efficiency`);
-
-            if (consecutiveLowEfficiency >= LOW_EFFICIENCY_MAX_CONSECUTIVE) {
-              log("error", `Market demand saturated — ${(efficiency * 100).toFixed(1)}% efficiency. Wait ~10h for recovery.`);
-              stopRequested = true;
-              state = "ERROR";
-              errorInfo = {
-                message: `Market demand saturated — ${(efficiency * 100).toFixed(1)}% efficiency. Wait ~10h for recovery.`,
-                timestamp: Date.now(),
-              };
-            }
+            consecutiveLowEfficiency = 1;
+            log("error", `Market demand saturated — ${(efficiency * 100).toFixed(1)}% efficiency. Wait ~10h for recovery.`);
+            stopRequested = true;
+            state = "ERROR";
+            errorInfo = {
+              message: `Market demand saturated — ${(efficiency * 100).toFixed(1)}% efficiency. Wait ~10h for recovery.`,
+              timestamp: Date.now(),
+            };
           } else {
             // Normal — good efficiency
             const efficiency = expectedDelta > 0 ? actualDelta / expectedDelta : 1;
