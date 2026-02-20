@@ -24,6 +24,7 @@ import {
   DarkwebStatus,
   WorkStatus,
   BitnodeStatus,
+  FactionInfo,
   FactionStatus,
   GangStatus,
   GangTerritoryStatus,
@@ -269,14 +270,102 @@ function ruleInstallAugs(ctx: AdvisorContext): Recommendation | null {
   };
 }
 
+function findDaedalus(ctx: AdvisorContext): FactionInfo | null {
+  if (!ctx.faction) return null;
+  return ctx.faction.factions.find(f => f.name === "Daedalus") ?? null;
+}
+
+function ruleDaedalusApproaching(ctx: AdvisorContext): Recommendation | null {
+  const bn = ctx.bitnode;
+  if (!bn || bn.allComplete) return null;
+
+  const checks = [
+    { done: bn.augsComplete, progress: bn.augmentations / bn.augmentationsRequired, label: `${bn.augmentationsRequired - bn.augmentations} more aug(s)` },
+    { done: bn.moneyComplete, progress: bn.money / bn.moneyRequired, label: `need ${bn.moneyRequiredFormatted}` },
+    { done: bn.hackingComplete, progress: bn.hacking / bn.hackingRequired, label: `need ${bn.hackingRequired} hacking` },
+  ];
+
+  const metCount = checks.filter(c => c.done).length;
+  const bestUnmet = checks.filter(c => !c.done).sort((a, b) => b.progress - a.progress)[0];
+  if (!bestUnmet) return null;
+
+  // Fire when 2/3 met OR closest req is 60%+
+  if (metCount < 2 && bestUnmet.progress < 0.6) return null;
+
+  const missing = checks.filter(c => !c.done).map(c => c.label);
+  const progress = bestUnmet.progress;
+  const score = Math.round(35 + (progress * 20)); // 35-55
+
+  return {
+    id: "daedalus-approaching",
+    title: "Approaching Daedalus",
+    reason: `${metCount}/3 requirements met — ${missing.join(", ")}`,
+    category: "endgame",
+    score: Math.min(score, 55),
+  };
+}
+
+function ruleDaedalusReady(ctx: AdvisorContext): Recommendation | null {
+  const bn = ctx.bitnode;
+  if (!bn || !bn.allComplete) return null;
+
+  const daedalus = findDaedalus(ctx);
+  if (daedalus && daedalus.status === "joined") return null;
+
+  const score = daedalus?.status === "invited" ? 85 : 80;
+  const reason = daedalus?.status === "invited"
+    ? "Daedalus invitation waiting — join to unlock The Red Pill"
+    : "All requirements met — seek Daedalus invitation";
+
+  return {
+    id: "daedalus-ready",
+    title: "Seek Daedalus Invitation",
+    reason,
+    category: "endgame",
+    score,
+  };
+}
+
+function ruleDaedalusWork(ctx: AdvisorContext): Recommendation | null {
+  const daedalus = findDaedalus(ctx);
+  if (!daedalus || daedalus.status !== "joined") return null;
+
+  // If rep daemon is already targeting Daedalus, let ruleStartFactionWork handle it
+  const rep = ctx.rep;
+  if (rep?.targetFaction === "Daedalus") return null;
+
+  // If we already have enough rep (repGapPositive for Daedalus), skip
+  // We can't check directly, but if bitnode allComplete + Daedalus joined, defer to ruleBitnodeExit
+  const bn = ctx.bitnode;
+  if (bn?.allComplete) return null;
+
+  return {
+    id: "daedalus-work",
+    title: "Earn Rep with Daedalus",
+    reason: "Focus rep daemon on Daedalus to unlock The Red Pill augmentation",
+    category: "endgame",
+    score: 75,
+  };
+}
+
 function ruleBitnodeExit(ctx: AdvisorContext): Recommendation | null {
   const bn = ctx.bitnode;
   if (!bn || !bn.allComplete) return null;
+
+  const daedalus = findDaedalus(ctx);
+  if (!daedalus || daedalus.status !== "joined") return null;
+
+  // Evidence of sufficient rep: rep daemon targeting Daedalus with positive gap,
+  // or rep daemon no longer targeting Daedalus (implies TRP already purchased)
+  const rep = ctx.rep;
+  const hasEnoughRep = rep?.targetFaction === "Daedalus" ? (rep?.repGapPositive ?? false) : true;
+  if (!hasEnoughRep) return null;
+
   return {
     id: "bitnode-exit",
-    title: "Bitnode Exit Ready",
-    reason: "All FL1GHT.EXE requirements met — you can destroy the bitnode",
-    category: "augmentations",
+    title: "Destroy the Bitnode",
+    reason: "Hack w0r1d_d43m0n — all Daedalus requirements met",
+    category: "endgame",
     score: 100,
   };
 }
@@ -328,6 +417,9 @@ const RULES: AdvisorRule[] = [
   ruleStartShare,
   rulePurchaseAugs,
   ruleInstallAugs,
+  ruleDaedalusApproaching,
+  ruleDaedalusReady,
+  ruleDaedalusWork,
   ruleBitnodeExit,
   ruleGangTerritory,
   ruleGangAscension,

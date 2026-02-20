@@ -28,6 +28,7 @@ const CATEGORY_COLORS: Record<AdvisorCategory, string> = {
   factions: "#ff88ff",
   augmentations: "#ff4444",
   gang: "#ff8800",
+  endgame: "#00ffff",
 };
 
 function categoryColor(cat: AdvisorCategory): string {

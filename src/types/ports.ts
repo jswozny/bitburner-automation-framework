@@ -846,7 +846,7 @@ export interface GangStatus {
 
 export type AdvisorCategory =
   | "infrastructure" | "money" | "skills"
-  | "factions" | "augmentations" | "gang";
+  | "factions" | "augmentations" | "gang" | "endgame";
 
 export interface Recommendation {
   id: string;

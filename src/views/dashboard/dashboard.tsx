@@ -23,8 +23,6 @@ import {
   getStateSnapshot,
   loadDashboardSettings,
 } from "views/dashboard/state-store";
-import { BitnodeStatusBar } from "views/dashboard/components/BitnodeStatus";
-
 // Styles and components
 import { styles } from "views/dashboard/styles";
 import { GroupedTabBar, TabGroup } from "views/dashboard/components/TabBar";
@@ -262,7 +260,6 @@ function Dashboard(): React.ReactElement {
       <div style={styles.header}>
         <h1 style={styles.title}>AUTO TOOLS DASHBOARD</h1>
       </div>
-      <BitnodeStatusBar status={state.bitnodeStatus} />
       <GroupedTabBar
         groups={TAB_GROUP_PROPS}
         activeGroup={tabState.group}
