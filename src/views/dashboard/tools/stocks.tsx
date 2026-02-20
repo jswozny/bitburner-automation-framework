@@ -15,6 +15,7 @@ import {
 import { StockPosition, StockSignal } from "/types/ports";
 import { styles } from "views/dashboard/styles";
 import { ToolControl } from "views/dashboard/components/ToolControl";
+import { runScript } from "views/dashboard/state-store";
 
 // === OVERVIEW CARD ===
 
@@ -135,7 +136,23 @@ function StocksDetailPanel({
             </span>
           </span>
         </div>
-        <ToolControl tool={toolId} running={running} pid={pid} />
+        <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+          {status.positions.length > 0 && (
+            <button
+              style={{
+                ...styles.buttonPlay,
+                marginLeft: 0,
+                padding: "2px 8px",
+                backgroundColor: "#553300",
+                color: "#ffaa00",
+              }}
+              onClick={() => runScript("stocks", "tools/control/sell-all-stocks.js")}
+            >
+              SELL ALL
+            </button>
+          )}
+          <ToolControl tool={toolId} running={running} pid={pid} />
+        </div>
       </div>
 
       {/* API Status */}
