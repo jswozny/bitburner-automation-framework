@@ -10,14 +10,22 @@ import { NS } from "@ns";
 import { QUEUE_PORT, QueueEntry } from "/types/ports";
 
 /**
- * Publish a status object to a port (clear + write).
+ * Publish a status object to a port.
  * Each port holds exactly one current JSON value.
  * Injects `_publishedAt` timestamp for staleness detection.
+ *
+ * Writes the new value BEFORE draining old entries so the port
+ * is never empty — prevents dashboard flicker ("Waiting for first scan...").
  */
 export function publishStatus<T>(ns: NS, port: number, data: T): void {
   const handle = ns.getPortHandle(port);
-  handle.clear();
-  handle.write(JSON.stringify({ ...data, _publishedAt: Date.now() }));
+  const json = JSON.stringify({ ...data, _publishedAt: Date.now() });
+  handle.write(json);
+  // Drain stale entries from the front, keeping only the value we just wrote.
+  // peek() returns the oldest (front) entry; if it's not ours, pop it.
+  while (handle.peek() !== json) {
+    handle.read();
+  }
 }
 
 /**
