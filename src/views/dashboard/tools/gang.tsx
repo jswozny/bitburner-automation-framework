@@ -24,7 +24,9 @@ import {
   setGangWantedThreshold,
   setGangGrowTarget,
   setGangGrowRespectReserve,
+  getStateSnapshot,
 } from "views/dashboard/state-store";
+import { formatTime } from "lib/utils";
 
 // === HELPERS ===
 
@@ -358,9 +360,24 @@ function GangDetailPanel({ status, running, toolId, pid }: DetailPanelProps<Gang
             <span style={styles.statLabel}>Required</span>
             <span style={{ color: "#ff4444" }}>-{formatNumber(status.karmaRequired ?? 54000)}</span>
           </div>
-          <div style={{ color: "#888", fontSize: "10px", marginTop: "6px" }}>
-            Commit crimes via the Work daemon to accumulate karma. You need -54,000 karma to create a gang.
-          </div>
+          {(() => {
+            const work = getStateSnapshot().workStatus;
+            const rate = work?.crimeInfo?.karmaPerMin;
+            if (rate && Math.abs(rate) > 0) {
+              const remaining = (status.karmaRequired ?? 54000) - Math.abs(status.karma ?? 0);
+              const etaSec = (remaining / Math.abs(rate)) * 60;
+              return (
+                <div style={{ ...styles.etaDisplay, fontSize: "10px", marginTop: "6px" }}>
+                  ETA: {formatTime(etaSec)} at {work?.crimeInfo?.karmaPerMinFormatted}/min
+                </div>
+              );
+            }
+            return (
+              <div style={{ color: "#888", fontSize: "10px", marginTop: "6px" }}>
+                Commit crimes via the Work daemon to accumulate karma. You need -54,000 karma to create a gang.
+              </div>
+            );
+          })()}
         </div>
         <TierFooter
           tier={status.tier}
