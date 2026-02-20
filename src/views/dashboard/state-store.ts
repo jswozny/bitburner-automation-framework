@@ -37,6 +37,8 @@ import {
   AugmentsStatus,
   AdvisorStatus,
   ContractsStatus,
+  BudgetStatus,
+  StocksStatus,
   Command,
 } from "/types/ports";
 
@@ -615,6 +617,22 @@ function executeCommand(ns: NS, cmd: Command): void {
         }
       }
       break;
+    case "restart-stocks-daemon":
+      {
+        const currentStocksPid = cachedData.pids.stocks;
+        if (currentStocksPid > 0) {
+          ns.kill(currentStocksPid);
+          cachedData.pids.stocks = 0;
+        }
+        const stocksPid = ns.exec("daemons/stocks.js", "home", 1);
+        if (stocksPid > 0) {
+          cachedData.pids.stocks = stocksPid;
+          ns.toast("Stocks daemon restarted", "success", 2000);
+        } else {
+          ns.toast("Failed to restart stocks daemon (not enough RAM)", "error", 3000);
+        }
+      }
+      break;
     case "restart-gang-daemon":
       {
         const currentGangPid = cachedData.pids.gang;
@@ -686,6 +704,8 @@ const uiState: UIState = {
     augments: {},
     advisor: {},
     contracts: {},
+    budget: {},
+    stocks: {},
   },
 };
 
@@ -796,10 +816,12 @@ interface CachedData {
   augmentsStatus: AugmentsStatus | null;
   advisorStatus: AdvisorStatus | null;
   contractsStatus: ContractsStatus | null;
+  budgetStatus: BudgetStatus | null;
+  stocksStatus: StocksStatus | null;
 }
 
 const cachedData: CachedData = {
-  pids: { nuke: 0, pserv: 0, share: 0, rep: 0, hack: 0, darkweb: 0, work: 0, faction: 0, infiltration: 0, gang: 0, augments: 0, advisor: 0, contracts: 0 },
+  pids: { nuke: 0, pserv: 0, share: 0, rep: 0, hack: 0, darkweb: 0, work: 0, faction: 0, infiltration: 0, gang: 0, augments: 0, advisor: 0, contracts: 0, budget: 0, stocks: 0 },
   nukeStatus: null,
   pservStatus: null,
   shareStatus: null,
@@ -819,6 +841,8 @@ const cachedData: CachedData = {
   augmentsStatus: null,
   advisorStatus: null,
   contractsStatus: null,
+  budgetStatus: null,
+  stocksStatus: null,
 };
 
 // === PORT-BASED STATUS READING ===
@@ -879,6 +903,10 @@ export function readStatusPorts(ns: NS): void {
   cachedData.advisorStatus = peekStatus<AdvisorStatus>(ns, STATUS_PORTS.advisor, STALE_THRESHOLD_MS);
 
   cachedData.contractsStatus = peekStatus<ContractsStatus>(ns, STATUS_PORTS.contracts, 120_000);
+
+  cachedData.budgetStatus = peekStatus<BudgetStatus>(ns, STATUS_PORTS.budget, STALE_THRESHOLD_MS);
+
+  cachedData.stocksStatus = peekStatus<StocksStatus>(ns, STATUS_PORTS.stocks, STALE_THRESHOLD_MS);
 }
 
 // === TOOL CONTROL ===
@@ -899,6 +927,8 @@ function clearToolStatus(tool: ToolName): void {
     case "augments": cachedData.augmentsStatus = null; break;
     case "advisor": cachedData.advisorStatus = null; break;
     case "contracts": cachedData.contractsStatus = null; break;
+    case "budget": cachedData.budgetStatus = null; break;
+    case "stocks": cachedData.stocksStatus = null; break;
   }
 }
 
@@ -1062,5 +1092,7 @@ export function getStateSnapshot(): DashboardState {
     augmentsStatus: cachedData.augmentsStatus,
     advisorStatus: cachedData.advisorStatus,
     contractsStatus: cachedData.contractsStatus,
+    budgetStatus: cachedData.budgetStatus,
+    stocksStatus: cachedData.stocksStatus,
   };
 }

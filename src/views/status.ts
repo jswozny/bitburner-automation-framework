@@ -59,6 +59,8 @@ const DAEMON_DOCS: Record<ToolName, { start: string; stop: string; flags: string
   augments: { start: "run daemons/augments.js", stop: "kill daemons/augments.js", flags: "--interval <ms> --one-shot" },
   advisor: { start: "run daemons/advisor.js", stop: "kill daemons/advisor.js", flags: null },
   contracts: { start: "run daemons/contracts.js", stop: "kill daemons/contracts.js", flags: "--interval <ms> --one-shot --min-tries <N>" },
+  budget: { start: "run daemons/budget.js", stop: "kill daemons/budget.js", flags: null },
+  stocks: { start: "run daemons/stocks.js", stop: "kill daemons/stocks.js", flags: "config: /config/stocks.txt (enabled, pollInterval, smartMode, preThreshold, forecastThreshold, maWindow, minConfidence)" },
 };
 
 // === RUNNING STATE ===

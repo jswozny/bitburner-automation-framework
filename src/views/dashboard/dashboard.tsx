@@ -42,6 +42,8 @@ import { gangPlugin } from "views/dashboard/tools/gang";
 import { augmentsPlugin } from "views/dashboard/tools/augments";
 import { advisorPlugin } from "views/dashboard/tools/advisor";
 import { contractsPlugin } from "views/dashboard/tools/contracts";
+import { budgetPlugin } from "views/dashboard/tools/budget";
+import { stocksPlugin } from "views/dashboard/tools/stocks";
 
 // === PLUGIN REGISTRY ===
 
@@ -73,6 +75,8 @@ const PLUGIN_REGISTRY: PluginEntry[] = [
   { toolId: "infiltration", plugin: infiltrationPlugin, tabLabel: "Infiltrate", getStatus: pick("infiltrationStatus"), getError: () => null },
   { toolId: "advisor",      plugin: advisorPlugin,      tabLabel: "Advisor",    getStatus: pick("advisorStatus"),       getError: () => null },
   { toolId: "contracts",    plugin: contractsPlugin,    tabLabel: "Contracts",  getStatus: pick("contractsStatus"),    getError: () => null },
+  { toolId: "budget",       plugin: budgetPlugin,       tabLabel: "Budget",     getStatus: pick("budgetStatus"),       getError: () => null },
+  { toolId: "stocks",       plugin: stocksPlugin,       tabLabel: "Stocks",     getStatus: pick("stocksStatus"),       getError: () => null },
 ];
 
 /** Lookup a PluginEntry by toolId. */
@@ -89,7 +93,7 @@ interface TabGroupDef {
 const TAB_GROUPS: TabGroupDef[] = [
   { label: "Servers",        entries: [findEntry("nuke"), findEntry("hack"), findEntry("pserv"), findEntry("darkweb")] },
   { label: "Rep & Factions", entries: [findEntry("faction"), findEntry("rep"), findEntry("share"), findEntry("augments")] },
-  { label: "Growth",         entries: [findEntry("work"), findEntry("gang")] },
+  { label: "Money",          entries: [findEntry("work"), findEntry("budget"), findEntry("stocks"), findEntry("gang")] },
   { label: "Tools",          entries: [findEntry("infiltration"), findEntry("contracts")] },
 ];
 
