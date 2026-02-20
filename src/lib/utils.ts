@@ -32,7 +32,7 @@ export function getAllServers(ns: NS): string[] {
   while (queue.length > 0) {
     const current = queue.shift() ?? "";
     for (const neighbor of ns.scan(current)) {
-      if (!servers.has(neighbor)) {
+      if (!servers.has(neighbor) && neighbor !== "darkweb") {
         servers.add(neighbor);
         queue.push(neighbor);
       }
@@ -65,6 +65,7 @@ export function discoverAllWithDepthAndPath(
     const curDepth = depthByHost.get(cur) ?? 0;
 
     for (const n of ns.scan(cur)) {
+      if (n === "darkweb") continue;
       const candDepth = curDepth + 1;
       const prevDepth = depthByHost.get(n);
 
