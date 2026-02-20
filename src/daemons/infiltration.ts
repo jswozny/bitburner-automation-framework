@@ -67,10 +67,8 @@ let lastActualDelta = 0;
 let lastExpectedDelta = 0;
 let totalVerifiedRep = 0;
 
-// Market demand tracking
+// Reward efficiency tracking
 let observedMultiplier: number | null = null;
-let consecutiveLowEfficiency = 0;
-const LOW_EFFICIENCY_THRESHOLD = 0.05; // 5%
 
 // Error state
 let errorInfo: { message: string; solver?: string; timestamp: number } | undefined;
@@ -133,13 +131,12 @@ function publishCurrentStatus(ns: NS): void {
       rewardMode: config.rewardMode,
       enabledSolvers: Array.from(config.enabledSolvers),
     },
-    repVerification: {
+    rewardVerification: {
       lastActualDelta,
       lastExpectedDelta,
       consecutiveZeroDeltas,
       totalVerifiedRep,
       observedMultiplier,
-      consecutiveLowEfficiency,
     },
     log: [...logBuffer],
     error: errorInfo,
@@ -231,7 +228,7 @@ function checkControlPort(ns: NS): void {
     if (data === "NULL PORT DATA") break;
 
     try {
-      const msg = JSON.parse(data as string) as { action: string; target?: string; solvers?: string[]; rewardMode?: "rep" | "money" };
+      const msg = JSON.parse(data as string) as { action: string; target?: string; solvers?: string[]; rewardMode?: "rep" | "money" | "manual" };
 
       switch (msg.action) {
         case "stop":
@@ -565,6 +562,17 @@ async function runSingleInfiltration(ns: NS): Promise<boolean> {
 
   // === REWARD SELECTION ===
   if (isOnVictoryScreen()) {
+    // Manual mode: stop the daemon and let the user pick the reward
+    if (config.rewardMode === "manual") {
+      log("info", "Victory! Manual reward mode — stopping daemon.");
+      companyStats[target.name].successes++;
+      runsCompleted++;
+      stopRequested = true;
+      state = "COMPLETING";
+      publishCurrentStatus(ns);
+      return true;
+    }
+
     state = "REWARD_SELECT";
     publishCurrentStatus(ns);
 
@@ -574,19 +582,23 @@ async function runSingleInfiltration(ns: NS): Promise<boolean> {
     try {
       const loc = locations.find(l => l.name === target.name);
 
-      // Snapshot rep before reward if doing faction-rep
+      // Snapshot before reward for verification
       let repBefore: number | null = null;
+      let moneyBefore: number | null = null;
+
       if (reward.type === "faction-rep" && reward.faction) {
         try {
           repBefore = ns.singularity.getFactionRep(reward.faction);
         } catch {
           // API unavailable — fall back to estimated tracking
         }
+      } else if (reward.type === "money") {
+        moneyBefore = ns.getPlayer().money;
       }
 
       await selectReward(domUtils, reward.type, reward.faction);
 
-      // Verify rep after reward
+      // Unified reward verification
       if (reward.type === "faction-rep" && reward.faction && repBefore !== null) {
         await domUtils.sleep(800); // Wait for rep to apply
         try {
@@ -598,44 +610,25 @@ async function runSingleInfiltration(ns: NS): Promise<boolean> {
           lastExpectedDelta = expectedDelta;
 
           if (actualDelta <= 0) {
-            // Zero delta — anti-cheat path
             consecutiveZeroDeltas++;
-            consecutiveLowEfficiency++;
             observedMultiplier = 0;
             log("warn", `Rep verification: ZERO delta (expected ~${expectedDelta.toFixed(0)}) — ${consecutiveZeroDeltas} consecutive`);
 
             if (consecutiveZeroDeltas >= 3) {
-              log("error", `3 consecutive zero-delta rep runs — anti-cheat may be blocking rewards. Stopping.`);
+              log("error", `3 consecutive zero-delta rep runs — reward not applying. Stopping.`);
               stopRequested = true;
               state = "ERROR";
               errorInfo = {
-                message: "Rep not applying — 3 consecutive zero-delta runs detected. Anti-cheat may be active.",
+                message: "Rep not applying — 3 consecutive zero-delta runs detected.",
                 timestamp: Date.now(),
               };
             }
-          } else if (expectedDelta > 0 && actualDelta / expectedDelta < LOW_EFFICIENCY_THRESHOLD) {
-            // Positive but low — market saturation, stop immediately
-            const efficiency = actualDelta / expectedDelta;
-            observedMultiplier = efficiency;
-            totalVerifiedRep += actualDelta;
-            totalRepEarned += actualDelta;
-            consecutiveZeroDeltas = 0;
-            consecutiveLowEfficiency = 1;
-            log("error", `Market demand saturated — ${(efficiency * 100).toFixed(1)}% efficiency. Wait ~10h for recovery.`);
-            stopRequested = true;
-            state = "ERROR";
-            errorInfo = {
-              message: `Market demand saturated — ${(efficiency * 100).toFixed(1)}% efficiency. Wait ~10h for recovery.`,
-              timestamp: Date.now(),
-            };
           } else {
-            // Normal — good efficiency
             const efficiency = expectedDelta > 0 ? actualDelta / expectedDelta : 1;
             observedMultiplier = efficiency;
             totalVerifiedRep += actualDelta;
             totalRepEarned += actualDelta;
             consecutiveZeroDeltas = 0;
-            consecutiveLowEfficiency = 0;
             log("info", `Rep verification: +${actualDelta.toFixed(0)} actual vs ~${expectedDelta.toFixed(0)} expected — ${(efficiency * 100).toFixed(1)}% efficiency`);
           }
         } catch {
@@ -648,10 +641,41 @@ async function runSingleInfiltration(ns: NS): Promise<boolean> {
         // No verification available — use estimated
         totalRepEarned += loc?.reward.tradeRep ?? 0;
         rewardBreakdown.factionRep++;
+      } else if (reward.type === "money" && moneyBefore !== null) {
+        await domUtils.sleep(800); // Wait for money to apply
+        const moneyAfter = ns.getPlayer().money;
+        const actualDelta = moneyAfter - moneyBefore;
+        const expectedDelta = loc?.reward.sellCash ?? 0;
+
+        lastActualDelta = actualDelta;
+        lastExpectedDelta = expectedDelta;
+
+        if (actualDelta <= 0) {
+          consecutiveZeroDeltas++;
+          observedMultiplier = 0;
+          log("warn", `Money verification: ZERO delta (expected ~$${expectedDelta.toFixed(0)}) — ${consecutiveZeroDeltas} consecutive`);
+
+          if (consecutiveZeroDeltas >= 3) {
+            log("error", `3 consecutive zero-delta money runs — reward not applying. Stopping.`);
+            stopRequested = true;
+            state = "ERROR";
+            errorInfo = {
+              message: "Money not applying — 3 consecutive zero-delta runs detected.",
+              timestamp: Date.now(),
+            };
+          }
+        } else {
+          const efficiency = expectedDelta > 0 ? actualDelta / expectedDelta : 1;
+          observedMultiplier = efficiency;
+          consecutiveZeroDeltas = 0;
+          log("info", `Money verification: +$${actualDelta.toFixed(0)} actual vs ~$${expectedDelta.toFixed(0)} expected — ${(efficiency * 100).toFixed(1)}% efficiency`);
+        }
+
+        totalCashEarned += actualDelta > 0 ? actualDelta : 0;
+        rewardBreakdown.money++;
       } else {
         totalCashEarned += loc?.reward.sellCash ?? 0;
         consecutiveZeroDeltas = 0;
-        consecutiveLowEfficiency = 0;
         rewardBreakdown.money++;
       }
 
@@ -715,7 +739,6 @@ export async function main(ns: NS): Promise<void> {
   lastExpectedDelta = 0;
   totalVerifiedRep = 0;
   observedMultiplier = null;
-  consecutiveLowEfficiency = 0;
   errorInfo = undefined;
 
   // Install the isTrusted bypass before the game registers its keydown handler

@@ -703,19 +703,18 @@ export interface InfiltrationStatus {
 
   config: {
     targetCompanyOverride?: string;
-    rewardMode: "rep" | "money";
+    rewardMode: "rep" | "money" | "manual";
     enabledSolvers: string[];
   };
 
   log: InfiltrationLogEntry[];
 
-  repVerification?: {
+  rewardVerification?: {
     lastActualDelta: number;
     lastExpectedDelta: number;
     consecutiveZeroDeltas: number;
     totalVerifiedRep: number;
     observedMultiplier: number | null;
-    consecutiveLowEfficiency: number;
   };
 
   error?: {

@@ -15,7 +15,7 @@ export interface MiniGameSolver {
 
 export interface InfiltrationConfig {
   targetCompanyOverride?: string;
-  rewardMode: "rep" | "money";
+  rewardMode: "rep" | "money" | "manual";
   enabledSolvers: Set<string>;
   rewardStaleThresholdMs: number;
   logBufferSize: number;

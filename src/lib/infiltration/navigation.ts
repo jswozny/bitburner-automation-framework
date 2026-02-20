@@ -232,6 +232,17 @@ export async function clickStartButton(dom: DomUtils): Promise<void> {
   throw new Error("Navigation: could not find Start button");
 }
 
+/** Find a <button> whose textContent starts with the given prefix (case-insensitive). */
+function findButtonByPrefix(prefix: string): HTMLButtonElement | null {
+  const lower = prefix.toLowerCase();
+  const buttons = doc.querySelectorAll("button");
+  for (const btn of buttons) {
+    const text = btn.textContent?.trim().toLowerCase() ?? "";
+    if (text.startsWith(lower)) return btn;
+  }
+  return null;
+}
+
 /** Select a reward on the victory screen. */
 export async function selectReward(
   dom: DomUtils,
@@ -241,30 +252,39 @@ export async function selectReward(
   await dom.sleep(300);
 
   if (rewardType === "faction-rep" && factionName) {
-    // Look for "Trade for ... reputation"
-    const tradeEl = findClickableByText("reputation");
+    // IMPORTANT: Select the faction from the dropdown BEFORE clicking Trade.
+    // The Trade button fires immediately with whatever the dropdown currently shows.
+    await selectFactionForReward(dom, factionName);
+
+    // Now find and click the "Trade for ... reputation" button
+    const tradeBtn = findButtonByPrefix("trade for");
+    if (tradeBtn) {
+      dom.clickTrusted(tradeBtn);
+      await dom.sleep(300);
+      return;
+    }
+
+    // Fallback: broader search
+    const tradeEl = findClickableByText("trade for");
     if (tradeEl) {
       dom.clickTrusted(findClickableAncestor(tradeEl));
       await dom.sleep(300);
-
-      // May need to select faction from a dropdown/list
-      await selectFactionForReward(dom, factionName);
       return;
     }
   }
 
-  // Sell for money
-  const sellEl = findClickableByText("sell for");
-  if (sellEl) {
-    dom.clickTrusted(findClickableAncestor(sellEl));
+  // Sell for money — find the "Sell for $..." button
+  const sellBtn = findButtonByPrefix("sell for");
+  if (sellBtn) {
+    dom.clickTrusted(sellBtn);
     await dom.sleep(300);
     return;
   }
 
-  // Try "money" as fallback
-  const moneyEl = findClickableByText("money");
-  if (moneyEl) {
-    dom.clickTrusted(findClickableAncestor(moneyEl));
+  // Fallback: broader search
+  const sellEl = findClickableByText("sell for");
+  if (sellEl) {
+    dom.clickTrusted(findClickableAncestor(sellEl));
     await dom.sleep(300);
     return;
   }
@@ -280,35 +300,57 @@ export async function selectReward(
   throw new Error("Navigation: could not find reward selection buttons");
 }
 
-/** Select a specific faction in the reward selection screen. */
+/** Select a specific faction in the reward selection dropdown (MUI Select). */
 async function selectFactionForReward(dom: DomUtils, factionName: string): Promise<void> {
   await dom.sleep(200);
 
-  // Look for a select/dropdown element
-  const selects = doc.querySelectorAll('select, [role="combobox"], .MuiSelect-root, .MuiSelect-select');
+  // MUI Select opens its dropdown on mousedown, NOT click.
+  // We need to dispatch a mousedown event to open the portal dropdown,
+  // then find and click the matching MenuItem.
+  const selects = doc.querySelectorAll('.MuiSelect-select, [role="combobox"], .MuiSelect-root');
+  if (selects.length === 0) return; // No dropdown found — proceed anyway
+
   for (const sel of selects) {
-    dom.click(sel);
+    // Check if already showing the right faction
+    if (sel.textContent?.includes(factionName)) return;
+
+    // Open dropdown with mousedown (what MUI Select listens for)
+    sel.dispatchEvent(new MouseEvent("mousedown", {
+      bubbles: true,
+      cancelable: true,
+      button: 0,
+    }));
     await dom.sleep(300);
 
-    // Look for options in dropdown
-    const options = doc.querySelectorAll('li[role="option"], .MuiMenuItem-root, option');
+    // MUI renders the dropdown in a portal (outside the Select's DOM tree).
+    // Look for MenuItems in the whole document.
+    const options = doc.querySelectorAll('li[role="option"], .MuiMenuItem-root');
+    let found = false;
     for (const opt of options) {
       if (opt.textContent?.includes(factionName)) {
-        dom.click(opt);
-        await dom.sleep(300);
-
-        // Confirm if there's a button
-        const confirmEl = findClickableByText("confirm") ?? findClickableByText("trade");
-        if (confirmEl) {
-          dom.clickTrusted(findClickableAncestor(confirmEl));
-          await dom.sleep(200);
-        }
-        return;
+        // MenuItems respond to React onClick — use clickTrusted
+        dom.clickTrusted(opt);
+        found = true;
+        break;
       }
     }
+
+    // Wait for React state update so the Trade button uses the new faction
+    await dom.sleep(500);
+
+    if (found) {
+      // Verify: re-check the Select's displayed text
+      const newText = sel.textContent ?? "";
+      if (newText.includes(factionName)) return; // Success
+      // If text didn't change, the click may not have registered — continue to next Select
+    }
+
+    // Close any open dropdown before trying the next Select element
+    doc.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+    await dom.sleep(200);
   }
 
-  // If no faction selection UI found, the button click already chose the default
+  // If we get here, faction selection may have failed — proceed anyway, caller will click Trade/Sell
 }
 
 /** Check if we're on the infiltration intro screen. */

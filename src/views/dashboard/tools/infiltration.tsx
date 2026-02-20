@@ -79,7 +79,7 @@ const controlSelectStyle: React.CSSProperties = {
 // === REWARD MODE CONTROLS ===
 
 function InfiltrationControls({ running }: { running: boolean }): React.ReactElement {
-  const rewardMode = getPluginUIState<"rep" | "money">("infiltration", "rewardMode", "rep");
+  const rewardMode = getPluginUIState<"rep" | "money" | "manual">("infiltration", "rewardMode", "rep");
 
   // Check if rep daemon has a target faction
   const snapshot = getStateSnapshot();
@@ -94,7 +94,7 @@ function InfiltrationControls({ running }: { running: boolean }): React.ReactEle
           style={controlSelectStyle}
           value={rewardMode}
           onChange={(e) => {
-            const val = (e.target as HTMLSelectElement).value as "rep" | "money";
+            const val = (e.target as HTMLSelectElement).value as "rep" | "money" | "manual";
             setPluginUIState("infiltration", "rewardMode", val);
             if (running) {
               configureInfiltration(val);
@@ -103,6 +103,7 @@ function InfiltrationControls({ running }: { running: boolean }): React.ReactEle
         >
           <option value="rep">Rep (auto){!hasFaction ? " - no faction" : ""}</option>
           <option value="money">Money</option>
+          <option value="manual">Manual (stop on win)</option>
         </select>
       </span>
       {rewardMode === "rep" && !hasFaction && (
@@ -157,17 +158,26 @@ function InfiltrationOverviewCard({ status, running, toolId, error, pid }: Overv
             </div>
           )}
           {status?.expectedReward && (() => {
-            const mult = status.repVerification?.observedMultiplier;
-            const hasEff = mult !== null && mult !== undefined && status.expectedReward.faction;
-            const effectiveRep = hasEff ? status.expectedReward.tradeRep * mult : status.expectedReward.tradeRep;
+            const mult = status.rewardVerification?.observedMultiplier;
+            const hasEff = mult !== null && mult !== undefined;
             const effPct = hasEff ? (mult * 100).toFixed(0) : null;
+            if (status.expectedReward.faction) {
+              const effectiveRep = hasEff ? status.expectedReward.tradeRep * mult : status.expectedReward.tradeRep;
+              return (
+                <div style={styles.stat}>
+                  <span style={styles.statLabel}>Reward</span>
+                  <span style={{ color: "#00ffff", fontSize: "11px" }}>
+                    ~{formatNumber(effectiveRep)} rep{effPct ? ` (${effPct}%)` : ""}
+                  </span>
+                </div>
+              );
+            }
+            const effectiveCash = hasEff ? status.expectedReward.sellCash * mult : status.expectedReward.sellCash;
             return (
               <div style={styles.stat}>
                 <span style={styles.statLabel}>Reward</span>
-                <span style={{ color: status.expectedReward.faction ? "#00ffff" : "#ffff00", fontSize: "11px" }}>
-                  {status.expectedReward.faction
-                    ? `~${formatNumber(effectiveRep)} rep${effPct ? ` (${effPct}%)` : ""}`
-                    : `$${formatNumber(status.expectedReward.sellCash)}`}
+                <span style={{ color: "#ffff00", fontSize: "11px" }}>
+                  ${formatNumber(effectiveCash)}{effPct ? ` (${effPct}%)` : ""}
                 </span>
               </div>
             );
@@ -263,10 +273,9 @@ function InfiltrationDetailPanel({ status, running, toolId, pid }: DetailPanelPr
 
       {/* Expected Reward */}
       {status.expectedReward && (() => {
-        const mult = status.repVerification?.observedMultiplier;
-        const hasEff = mult !== null && mult !== undefined && status.expectedReward.faction;
+        const mult = status.rewardVerification?.observedMultiplier;
+        const hasEff = mult !== null && mult !== undefined;
         const effPct = hasEff ? mult * 100 : null;
-        const effectiveRep = hasEff ? status.expectedReward.tradeRep * mult : null;
         return (
           <div style={styles.card}>
             <div style={{ color: "#00ffff", fontSize: "12px", marginBottom: "4px" }}>
@@ -283,10 +292,12 @@ function InfiltrationDetailPanel({ status, running, toolId, pid }: DetailPanelPr
               </span>
               <span style={{ color: status.expectedReward.faction ? "#00ffff" : "#ffff00" }}>
                 {status.expectedReward.faction
-                  ? effectiveRep !== null
-                    ? `~${formatNumber(effectiveRep)} (${formatNumber(status.expectedReward.tradeRep)} API max) — ${status.expectedReward.faction}`
+                  ? hasEff
+                    ? `~${formatNumber(status.expectedReward.tradeRep * mult)} (${formatNumber(status.expectedReward.tradeRep)} API max) — ${status.expectedReward.faction}`
                     : `${formatNumber(status.expectedReward.tradeRep)} (${status.expectedReward.faction})`
-                  : `$${formatNumber(status.expectedReward.sellCash)}`}
+                  : hasEff
+                    ? `~$${formatNumber(status.expectedReward.sellCash * mult)} ($${formatNumber(status.expectedReward.sellCash)} API max)`
+                    : `$${formatNumber(status.expectedReward.sellCash)}`}
               </span>
             </div>
           </div>
@@ -294,11 +305,11 @@ function InfiltrationDetailPanel({ status, running, toolId, pid }: DetailPanelPr
       })()}
 
       {/* Market Demand */}
-      {status.repVerification && status.repVerification.observedMultiplier !== null && (
+      {status.rewardVerification && status.rewardVerification.observedMultiplier !== null && (
         <div style={styles.card}>
-          <div style={{ color: "#00ffff", fontSize: "12px", marginBottom: "4px" }}>MARKET DEMAND</div>
+          <div style={{ color: "#00ffff", fontSize: "12px", marginBottom: "4px" }}>REWARD VERIFICATION</div>
           {(() => {
-            const rv = status.repVerification;
+            const rv = status.rewardVerification;
             const effPct = (rv.observedMultiplier ?? 0) * 100;
             const effColor = effPct > 50 ? "#00ff00" : effPct > 10 ? "#ffff00" : "#ff4444";
             return (
@@ -319,14 +330,6 @@ function InfiltrationDetailPanel({ status, running, toolId, pid }: DetailPanelPr
                   <span style={styles.statLabel}>Verified Rep Total</span>
                   <span style={{ color: "#00ffff" }}>{formatNumber(rv.totalVerifiedRep)}</span>
                 </div>
-                {rv.consecutiveLowEfficiency > 0 && (
-                  <div style={styles.stat}>
-                    <span style={styles.statLabel}>Low Efficiency Streak</span>
-                    <span style={{ color: "#ff4444" }}>
-                      {rv.consecutiveLowEfficiency} / {2} (auto-pause)
-                    </span>
-                  </div>
-                )}
               </>
             );
           })()}
@@ -506,7 +509,7 @@ function InfiltrationDetailPanel({ status, running, toolId, pid }: DetailPanelPr
         </div>
         <div style={styles.stat}>
           <span style={styles.statLabel}>Reward</span>
-          <span style={styles.statValue}>{status.config.rewardMode === "money" ? "Money" : "Rep (auto)"}</span>
+          <span style={styles.statValue}>{status.config.rewardMode === "money" ? "Money" : status.config.rewardMode === "manual" ? "Manual (stop on win)" : "Rep (auto)"}</span>
         </div>
         <div style={styles.stat}>
           <span style={styles.statLabel}>Solvers</span>

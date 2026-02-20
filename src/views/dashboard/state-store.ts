@@ -201,7 +201,7 @@ export function restartShareDaemon(targetPercent?: number): void {
 /**
  * Send a configure command to the infiltration daemon.
  */
-export function configureInfiltration(rewardMode?: "rep" | "money"): void {
+export function configureInfiltration(rewardMode?: "rep" | "money" | "manual"): void {
   if (!commandPort) return;
   commandPort.write(JSON.stringify({
     tool: "infiltration",
