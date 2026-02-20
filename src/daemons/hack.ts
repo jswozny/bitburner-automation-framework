@@ -1,20 +1,18 @@
 /**
  * Hack Daemon
  *
- * Long-running daemon with two modes:
+ * Long-running daemon with three modes selected via /config/hack.txt:
  *
- * **Legacy mode** (default): Simple parallel hacking — each cycle picks one action
- * per target, launches workers, waits, repeats.
- *
- * **Batch mode** (--max-batches N): Full HWGW batching with precise timing,
+ * **Batch mode** (default, maxBatches=0): Full HWGW batching with precise timing,
  * shotgun batching, profitability scoring, auto-optimized hack percentages,
- * and desync detection with automatic re-prep.
+ * and desync detection with automatic re-prep. maxBatches=0 auto-detects
+ * optimal batch count from fleet RAM (requires >= 256 GB). Set maxBatches
+ * to a specific number for manual override.
  *
- * Usage:
- *   run daemons/hack.js                          # Legacy mode
- *   run daemons/hack.js --max-batches 5           # Batch mode
- *   run daemons/hack.js --one-shot --max-batches 1
- *   run daemons/hack.js --max-targets 10 --max-batches 3
+ * **Legacy mode**: Simple parallel hacking — falls back automatically when
+ * fleet RAM is below 256 GB and maxBatches=0.
+ *
+ * **XP mode** (strategy=xp): Pure weaken spam for hacking XP.
  */
 import { NS } from "@ns";
 import {
@@ -136,6 +134,12 @@ function computeFleetAllocation(
 function computeOptimalBatches(totalFleetRam: number): number {
   if (totalFleetRam < 256) return 0;
   return 256; // Arbitrary limit for when it feels like too much for the game perf
+}
+
+/** Resolve maxBatches: 0 means auto-detect from fleet RAM, >0 is a manual override. */
+function resolveMaxBatches(configValue: number, totalFleetRam: number): number {
+  if (configValue > 0) return configValue;
+  return computeOptimalBatches(totalFleetRam);
 }
 
 /** Read all hack daemon config values from /config/hack.txt */
@@ -731,9 +735,11 @@ export async function main(ns: NS): Promise<void> {
   const bootstrapAllocation = computeFleetAllocation(bootstrapServers, cfg.strategy, bootstrapSharePercent);
   publishStatus(ns, STATUS_PORTS.fleet, bootstrapAllocation);
 
+  const resolvedBatches = resolveMaxBatches(cfg.maxBatches, bootstrapAllocation.totalFleetRam);
+
   if (cfg.strategy === "xp") {
     await runXpMode(ns);
-  } else if (cfg.maxBatches > 0) {
+  } else if (resolvedBatches > 0) {
     await runBatchMode(ns);
   } else {
     await runLegacyMode(ns);
@@ -743,7 +749,6 @@ export async function main(ns: NS): Promise<void> {
 // === LEGACY MODE ===
 
 async function runLegacyMode(ns: NS): Promise<void> {
-  const AUTO_CHECK_INTERVAL = 10;
   let cycleCount = 0;
 
   do {
@@ -766,16 +771,6 @@ async function runLegacyMode(ns: NS): Promise<void> {
     const legacySharePercent = getSharePercentFromPort(ns);
     const legacyAllocation = computeFleetAllocation(legacyServers, "money", legacySharePercent);
     publishStatus(ns, STATUS_PORTS.fleet, legacyAllocation);
-
-    // Auto-mode check: upgrade to batch mode if fleet RAM supports it
-    if (cycleCount > 1 && cycleCount % AUTO_CHECK_INTERVAL === 0) {
-      const optimal = computeOptimalBatches(legacyAllocation.totalFleetRam);
-      if (optimal > 0) {
-        ns.tprint(`INFO: Fleet RAM (${ns.formatRam(legacyAllocation.totalFleetRam)}) supports batching — respawning`);
-        ns.spawn(ns.getScriptName(), { threads: 1, spawnDelay: 100 });
-        return;
-      }
-    }
 
     // Filter to hack-allocated servers only (respects share carve-out)
     const hackServerSet = new Set(legacyAllocation.hackServers);
@@ -847,13 +842,20 @@ async function runBatchMode(ns: NS): Promise<void> {
 
   do {
     const cfg = readHackConfig(ns);
+    ns.clearLog();
+    cycleCount++;
+
+    // Fleet allocation FIRST so we can resolve maxBatches
+    const allServers = getUsableServers(ns, cfg.homeReserve);
+    const sharePercent = getSharePercentFromPort(ns);
+    const allocation = computeFleetAllocation(allServers, "money", sharePercent);
+    publishStatus(ns, STATUS_PORTS.fleet, allocation);
+
     const batchConfig: BatchConfig = {
       homeReserve: cfg.homeReserve,
       maxTargets: cfg.maxTargets,
-      maxBatches: cfg.maxBatches,
+      maxBatches: resolveMaxBatches(cfg.maxBatches, allocation.totalFleetRam),
     };
-    ns.clearLog();
-    cycleCount++;
 
     // 1. Re-score targets periodically
     if (cycleCount === 1 || cycleCount % RESCORE_INTERVAL === 0) {
@@ -995,26 +997,7 @@ async function runBatchMode(ns: NS): Promise<void> {
       }
     }
 
-    // 6. Get usable servers and deploy workers (fleet allocation for share coordination)
-    const allServers = getUsableServers(ns, batchConfig.homeReserve);
-    const sharePercent = getSharePercentFromPort(ns);
-    const allocation = computeFleetAllocation(allServers, "money", sharePercent);
-    publishStatus(ns, STATUS_PORTS.fleet, allocation);
-
-    // Auto-mode check: scale batch count or downgrade to legacy
-    if (cycleCount > 1 && cycleCount % RESCORE_INTERVAL === 0) {
-      const optimal = computeOptimalBatches(allocation.totalFleetRam);
-      if (optimal === 0) {
-        ns.tprint(`INFO: Fleet RAM (${ns.formatRam(allocation.totalFleetRam)}) too low for batching — respawning`);
-        ns.spawn(ns.getScriptName(), { threads: 1, spawnDelay: 100 });
-        return;
-      } else if (optimal !== batchConfig.maxBatches) {
-        ns.tprint(`INFO: Fleet RAM (${ns.formatRam(allocation.totalFleetRam)}) changed — respawning`);
-        ns.spawn(ns.getScriptName(), { threads: 1, spawnDelay: 100 });
-        return;
-      }
-    }
-
+    // 6. Get usable servers and deploy workers
     const hackServerSet = new Set(allocation.hackServers);
     const servers = allServers.filter(s => hackServerSet.has(s.hostname));
     await deployWorkers(ns, allServers);
