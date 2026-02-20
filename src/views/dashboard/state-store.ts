@@ -33,6 +33,7 @@ import {
   GangStatus,
   GangStrategy,
   AugmentsStatus,
+  AdvisorStatus,
   Command,
 } from "/types/ports";
 
@@ -420,11 +421,13 @@ function executeCommand(ns: NS, cmd: Command): void {
           ns.kill(currentFactionPid);
           cachedData.pids.faction = 0;
         }
-        const factionArgs: string[] = [];
         if (cmd.cityFaction) {
-          factionArgs.push("--preferred-city", cmd.cityFaction);
+          // Write preferred city to config file (daemon reads from config, not flags)
+          const raw = ns.read("/config/faction.txt") || "# faction Config\ninterval=10000\noneShot=false\npreferredCity=\nnoKill=false";
+          const updated = raw.replace(/preferredCity=.*/, `preferredCity=${cmd.cityFaction}`);
+          ns.write("/config/faction.txt", updated, "w");
         }
-        const factionPid = ns.exec("daemons/faction.js", "home", 1, ...factionArgs);
+        const factionPid = ns.exec("daemons/faction.js", "home", 1);
         if (factionPid > 0) {
           cachedData.pids.faction = factionPid;
           ns.toast(cmd.cityFaction ? `Faction daemon: preferred ${cmd.cityFaction}` : "Faction daemon restarted", "success", 2000);
@@ -642,6 +645,7 @@ const uiState: UIState = {
     infiltration: {},
     gang: {},
     augments: {},
+    advisor: {},
   },
 };
 
@@ -750,10 +754,11 @@ interface CachedData {
   infiltrationStatus: InfiltrationStatus | null;
   gangStatus: GangStatus | null;
   augmentsStatus: AugmentsStatus | null;
+  advisorStatus: AdvisorStatus | null;
 }
 
 const cachedData: CachedData = {
-  pids: { nuke: 0, pserv: 0, share: 0, rep: 0, hack: 0, darkweb: 0, work: 0, faction: 0, infiltration: 0, gang: 0, augments: 0 },
+  pids: { nuke: 0, pserv: 0, share: 0, rep: 0, hack: 0, darkweb: 0, work: 0, faction: 0, infiltration: 0, gang: 0, augments: 0, advisor: 0 },
   nukeStatus: null,
   pservStatus: null,
   shareStatus: null,
@@ -771,6 +776,7 @@ const cachedData: CachedData = {
   infiltrationStatus: null,
   gangStatus: null,
   augmentsStatus: null,
+  advisorStatus: null,
 };
 
 // === PORT-BASED STATUS READING ===
@@ -827,6 +833,8 @@ export function readStatusPorts(ns: NS): void {
   cachedData.gangStatus = peekStatus<GangStatus>(ns, STATUS_PORTS.gang, STALE_THRESHOLD_MS);
 
   cachedData.augmentsStatus = peekStatus<AugmentsStatus>(ns, STATUS_PORTS.augments, STALE_THRESHOLD_MS);
+
+  cachedData.advisorStatus = peekStatus<AdvisorStatus>(ns, STATUS_PORTS.advisor, STALE_THRESHOLD_MS);
 }
 
 // === TOOL CONTROL ===
@@ -845,6 +853,7 @@ function clearToolStatus(tool: ToolName): void {
     case "infiltration": cachedData.infiltrationStatus = null; break;
     case "gang": cachedData.gangStatus = null; break;
     case "augments": cachedData.augmentsStatus = null; break;
+    case "advisor": cachedData.advisorStatus = null; break;
   }
 }
 
@@ -1000,5 +1009,6 @@ export function getStateSnapshot(): DashboardState {
     infiltrationStatus: cachedData.infiltrationStatus,
     gangStatus: cachedData.gangStatus,
     augmentsStatus: cachedData.augmentsStatus,
+    advisorStatus: cachedData.advisorStatus,
   };
 }

@@ -41,6 +41,7 @@ import { factionPlugin } from "views/dashboard/tools/faction";
 import { infiltrationPlugin } from "views/dashboard/tools/infiltration";
 import { gangPlugin } from "views/dashboard/tools/gang";
 import { augmentsPlugin } from "views/dashboard/tools/augments";
+import { advisorPlugin } from "views/dashboard/tools/advisor";
 
 // === PLUGIN REGISTRY ===
 
@@ -70,6 +71,7 @@ const PLUGIN_REGISTRY: PluginEntry[] = [
   { toolId: "work",         plugin: workPlugin,         tabLabel: "Work",       getStatus: pick("workStatus"),         getError: pick("workError") as (s: DashboardState) => string | null },
   { toolId: "gang",         plugin: gangPlugin,         tabLabel: "Gang",       getStatus: pick("gangStatus"),         getError: () => null },
   { toolId: "infiltration", plugin: infiltrationPlugin, tabLabel: "Infiltrate", getStatus: pick("infiltrationStatus"), getError: () => null },
+  { toolId: "advisor",      plugin: advisorPlugin,      tabLabel: "Advisor",    getStatus: pick("advisorStatus"),       getError: () => null },
 ];
 
 /** Lookup a PluginEntry by toolId. */
@@ -103,10 +105,22 @@ interface OverviewPanelProps {
 }
 
 function OverviewPanel({ state }: OverviewPanelProps): React.ReactElement {
+  const advisorEntry = findEntry("advisor");
+  const AdvisorPanel = advisorEntry.plugin.DetailPanel;
+
   return (
-    <div style={styles.panel}>
+    <div  >
+      <div style={{ marginBottom: "12px" }}>
+        <AdvisorPanel
+            status={advisorEntry.getStatus(state)}
+            running={state.pids[advisorEntry.toolId] > 0}
+            toolId={advisorEntry.toolId}
+            error={advisorEntry.getError(state)}
+            pid={state.pids[advisorEntry.toolId]}
+        />
+      </div>
       <div style={styles.grid}>
-        {PLUGIN_REGISTRY.map(entry => {
+        {PLUGIN_REGISTRY.filter(e => e.toolId !== "advisor").map(entry => {
           const Card = entry.plugin.OverviewCard;
           return (
             <Card

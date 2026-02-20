@@ -57,6 +57,7 @@ const DAEMON_DOCS: Record<ToolName, { start: string; stop: string; flags: string
   infiltration: { start: "run daemons/infiltration.js", stop: "kill daemons/infiltration.js", flags: null },
   gang: { start: "run daemons/gang.js", stop: "kill daemons/gang.js", flags: "--strategy respect|money|territory|balanced --no-kill" },
   augments: { start: "run daemons/augments.js", stop: "kill daemons/augments.js", flags: "--interval <ms> --one-shot" },
+  advisor: { start: "run daemons/advisor.js", stop: "kill daemons/advisor.js", flags: null },
 };
 
 // === RUNNING STATE ===

@@ -24,6 +24,7 @@ export const STATUS_PORTS = {
   gang: 13,
   gangTerritory: 14,
   augments: 16,
+  advisor: 17,
 } as const;
 
 export const GANG_CONTROL_PORT = 15;
@@ -33,7 +34,7 @@ export const COMMAND_PORT = 20;
 
 // === TOOL NAMES ===
 
-export type ToolName = "nuke" | "pserv" | "share" | "rep" | "hack" | "darkweb" | "work" | "faction" | "infiltration" | "gang" | "augments";
+export type ToolName = "nuke" | "pserv" | "share" | "rep" | "hack" | "darkweb" | "work" | "faction" | "infiltration" | "gang" | "augments" | "advisor";
 
 // === TOOL SCRIPTS (daemon paths) ===
 
@@ -49,6 +50,7 @@ export const TOOL_SCRIPTS: Record<ToolName, string> = {
   infiltration: "daemons/infiltration.js",
   gang: "daemons/gang.js",
   augments: "daemons/augments.js",
+  advisor: "daemons/advisor.js",
 };
 
 // === PRIORITY CONSTANTS ===
@@ -832,6 +834,27 @@ export interface GangStatus {
   balancedPhase?: "grow" | "respect" | "territory" | "money";
 }
 
+// === ADVISOR TYPES ===
+
+export type AdvisorCategory =
+  | "infrastructure" | "money" | "skills"
+  | "factions" | "augmentations" | "gang";
+
+export interface Recommendation {
+  id: string;
+  title: string;
+  reason: string;
+  category: AdvisorCategory;
+  score: number;
+}
+
+export interface AdvisorStatus {
+  recommendations: Recommendation[];
+  totalEvaluated: number;
+  topCategory: AdvisorCategory | null;
+  lastAnalysisMs: number;
+}
+
 // === DASHBOARD STATE ===
 
 export interface DashboardState {
@@ -853,6 +876,7 @@ export interface DashboardState {
   infiltrationStatus: InfiltrationStatus | null;
   gangStatus: GangStatus | null;
   augmentsStatus: AugmentsStatus | null;
+  advisorStatus: AdvisorStatus | null;
 }
 
 // === PLUGIN INTERFACE (for dashboard) ===

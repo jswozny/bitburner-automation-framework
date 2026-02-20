@@ -363,7 +363,7 @@ async function runLiteMode(
       };
       publishStatus(ns, STATUS_PORTS.gang, status);
       ns.print(`${C.yellow}Not in a gang.${C.reset}`);
-      await ns.gang.nextUpdate();
+      await ns.sleep(5000);
       continue;
     }
 
@@ -448,7 +448,7 @@ async function runBasicMode(
         canUpgrade: true,
         inGang: false,
       } as GangStatus);
-      await ns.gang.nextUpdate();
+      await ns.sleep(5000);
       continue;
     }
 
@@ -660,7 +660,7 @@ async function runFullMode(
         canUpgrade: false,
         inGang: false,
       } as GangStatus);
-      await ns.gang.nextUpdate();
+      await ns.sleep(5000);
       continue;
     }
 
