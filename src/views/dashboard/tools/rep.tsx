@@ -213,10 +213,6 @@ const TIER_LABELS: Record<number, string> = {
 // === COMPONENTS ===
 
 function RepOverviewCard({ status, running, toolId, error, pid }: OverviewCardProps<FormattedRepStatus>): React.ReactElement {
-  const tier = status?.tier ?? 0;
-  const tierColor = TIER_COLORS[tier] ?? "#888";
-  const tierLabel = TIER_LABELS[tier] ?? "Unknown";
-
   return (
     <div style={styles.card}>
       <div style={styles.cardTitle}>
@@ -293,7 +289,7 @@ function RepDetailPanel({ status, error, running, toolId, pid }: DetailPanelProp
 
   // High tier (3+): Full display
   if (tier >= 3) {
-    return <HighTierDetailPanel status={status} running={running} toolId={"rep"} pid={pid} tierColor={tierColor} tierLabel={tierLabel} />;
+    return <HighTierDetailPanel status={status} running={running} toolId={"rep"} pid={pid} />;
   }
 
   // Low tier (0-2): Basic display
@@ -426,15 +422,11 @@ function HighTierDetailPanel({
   running,
   toolId,
   pid,
-  tierColor,
-  tierLabel,
 }: {
   status: FormattedRepStatus;
   running: boolean;
   toolId: "rep";
   pid?: number;
-  tierColor: string;
-  tierLabel: string;
 }): React.ReactElement {
   const handleBackdoors = () => {
     runBackdoors();

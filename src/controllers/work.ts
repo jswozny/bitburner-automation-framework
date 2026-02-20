@@ -7,7 +7,7 @@
  * Import with: import { ... } from '/lib/work';
  */
 import { NS, CityName, GymType, UniversityClassType, CrimeType } from "@ns";
-import { findBestCrime, analyzeAllCrimes, analyzeCrime, CrimeAnalysis, CrimeName } from "/controllers/crime";
+import { findBestCrime, analyzeAllCrimes, CrimeAnalysis } from "/controllers/crime";
 
 // === CONSTANTS ===
 

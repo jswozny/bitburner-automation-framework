@@ -41,6 +41,7 @@ export async function main(ns: NS): Promise<void> {
   const startTime = Date.now();
   let lastMoney = ns.getPlayer().money;
 
+  // eslint-disable-next-line no-constant-condition
   while (true) {
     ns.clearLog();
 
@@ -111,7 +112,6 @@ export async function main(ns: NS): Promise<void> {
     }
 
     let remainingActive = 0;
-    let remainingIdle = 0;
     let remainingExpected = 0;
 
     for (const hostname of remaining) {
@@ -127,7 +127,6 @@ export async function main(ns: NS): Promise<void> {
         totalExpected += exp;
         remainingExpected += exp;
       } else {
-        remainingIdle++;
         idleCount++;
       }
     }

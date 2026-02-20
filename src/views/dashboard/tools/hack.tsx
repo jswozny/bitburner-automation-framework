@@ -27,7 +27,7 @@ import {
   setPluginUIState,
   getFleetAllocation,
 } from "views/dashboard/state-store";
-import { HackStrategy, FleetAllocation } from "/types/ports";
+import { HackStrategy } from "/types/ports";
 
 // === CONFIG ===
 

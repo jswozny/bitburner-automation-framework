@@ -124,10 +124,6 @@ export async function main(ns) {
         };
     }
 
-    function verifyPlayerState() {
-        return ns.getPlayer().city == "Aevum";
-    }
-
     // ============================================================
     // MAIN GAME LOOP
     // ============================================================

@@ -130,7 +130,7 @@ export async function main(ns: NS): Promise<void> {
 
   publishStatus(ns, STATUS_PORTS.gangTerritory, status);
 
-  const checkedStr = checkList.map(n => {
+  checkList.map(n => {
     const r = existingRivals.get(n);
     return `${n}: ${r ? (r.clashChance * 100).toFixed(1) + "%" : "?"}`;
   }).join(", ");

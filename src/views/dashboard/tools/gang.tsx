@@ -305,7 +305,7 @@ const FALLBACK_TASK_NAMES = [
   "Territory Warfare",
 ];
 
-function GangDetailPanel({ status, running, toolId, error, pid }: DetailPanelProps<GangStatus>): React.ReactElement {
+function GangDetailPanel({ status, running, toolId, pid }: DetailPanelProps<GangStatus>): React.ReactElement {
   if (!status && !running) {
     return (
       <div style={styles.panel}>
