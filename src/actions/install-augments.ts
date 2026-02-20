@@ -9,6 +9,7 @@
  *        run actions/install-augments.js --confirm
  */
 import { NS } from "@ns";
+import { setConfigValue } from "/lib/config";
 
 export const MANUAL_COMMAND = 'ns.singularity.installAugmentations("start.js")';
 
@@ -26,6 +27,11 @@ export async function main(ns: NS): Promise<void> {
     ns.tprint(`  Start script: ${flags.script}`);
     return;
   }
+
+  // Pre-configure work focus and focus holder for post-reset
+  // Config files persist across soft resets
+  setConfigValue(ns, "work", "focus", "hacking");
+  setConfigValue(ns, "focus", "holder", "work");
 
   ns.tprint(`Installing augmentations... Restarting with ${flags.script}`);
   ns.singularity.installAugmentations(flags.script);

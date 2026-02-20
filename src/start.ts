@@ -23,6 +23,9 @@ const CORE_SCRIPTS: { path: string; args: (string | number | boolean)[] }[] = [
   { path: "daemons/hack.js", args: [] },
   { path: "daemons/queue.js", args: [] },
   { path: "daemons/darkweb.js", args: [] },
+  { path: "daemons/work.js", args: [] },
+  { path: "daemons/rep.js", args: [] },
+  { path: "daemons/share.js", args: [] },
 ];
 
 /** Optional daemons launched if RAM permits. */

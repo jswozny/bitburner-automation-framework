@@ -350,6 +350,7 @@ function printStatus(ns: NS, status: WorkStatus): void {
 }
 
 export async function main(ns: NS): Promise<void> {
+  ns.ramOverride(5);
   ns.disableLog("ALL");
 
   writeDefaultConfig(ns, "work", {
