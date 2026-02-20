@@ -38,10 +38,12 @@ const BASE_SCRIPT_COST = 1.6; // GB - base cost of running any script
 const MONITOR_FUNCTIONS = [
   "getPortHandle",
   "sleep",
+  "spawn",
 ];
 
 // Additional functions needed by the active tier
 const ACTIVE_FUNCTIONS = [
+  "scan",
   "scp",
   "exec",
   "ps",
@@ -210,7 +212,7 @@ async function runMonitorMode(ns: NS): Promise<void> {
 
     if (holder === "rep") {
       ns.tprint("INFO: Rep focus detected — share daemon upgrading to active tier");
-      ns.spawn(ns.getScriptName(), { threads: 1, spawnDelay: 100 });
+      ns.spawn(ns.getScriptName(), { threads: 1, spawnDelay: 100, ramOverride: 5 });
       return;
     }
 
@@ -272,7 +274,7 @@ async function runActiveMode(ns: NS): Promise<void> {
     const holder = getConfigString(ns, "focus", "holder", "");
     if (holder !== "rep") {
       ns.tprint("INFO: Rep focus lost — share daemon downgrading to monitor tier");
-      ns.spawn(ns.getScriptName(), { threads: 1, spawnDelay: 100 }, "--tier", "monitor");
+      ns.spawn(ns.getScriptName(), { threads: 1, spawnDelay: 100, ramOverride: 5 }, "--tier", "monitor");
       return;
     }
 
