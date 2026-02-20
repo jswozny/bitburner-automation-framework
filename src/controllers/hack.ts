@@ -89,7 +89,8 @@ export function getUsableServers(ns: NS, homeReserve: number): ServerInfo[] {
   const servers: ServerInfo[] = [];
 
   for (const hostname of getCachedServers(ns)) {
-    const server = ns.getServer(hostname);
+    let server;
+    try { server = ns.getServer(hostname); } catch { continue; }
     if (!server.hasAdminRights) continue;
     if (server.maxRam === 0) continue;
 
@@ -116,7 +117,8 @@ export function getTargets(ns: NS, maxTargets: number): TargetInfo[] {
   const targets: TargetInfo[] = [];
 
   for (const hostname of getCachedServers(ns)) {
-    const server = ns.getServer(hostname);
+    let server;
+    try { server = ns.getServer(hostname); } catch { continue; }
 
     if (!server.hasAdminRights) continue;
     if ((server.requiredHackingSkill ?? 0) > player.skills.hacking) continue;
@@ -417,7 +419,8 @@ export function selectBatchTargets(ns: NS, maxTargets: number): TargetScore[] {
   const scores: TargetScore[] = [];
 
   for (const hostname of getCachedServers(ns)) {
-    const server = ns.getServer(hostname);
+    let server;
+    try { server = ns.getServer(hostname); } catch { continue; }
 
     if (!server.hasAdminRights) continue;
     if ((server.requiredHackingSkill ?? 0) > player.skills.hacking) continue;

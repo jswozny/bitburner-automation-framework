@@ -186,7 +186,9 @@ function getRunningJobs(ns: NS): Record<string, RunningJobInfo> {
   const jobs: Record<string, RunningJobInfo> = {};
 
   for (const hostname of getCachedServers(ns)) {
-    for (const proc of ns.ps(hostname)) {
+    let procs;
+    try { procs = ns.ps(hostname); } catch { continue; }
+    for (const proc of procs) {
       if (!proc.filename.includes("workers/")) continue;
 
       const target = proc.args[0] as string;
@@ -294,7 +296,8 @@ function computeLegacyHackStatus(ns: NS, homeReserve: number, maxTargets: number
   let countNeedHigher = 0;
 
   for (const hostname of getCachedServers(ns)) {
-    const server = ns.getServer(hostname);
+    let server;
+    try { server = ns.getServer(hostname); } catch { continue; }
     if ((server.moneyMax ?? 0) === 0) continue;
     if (hostname.startsWith("pserv-") || hostname === "home") continue;
 
@@ -417,7 +420,9 @@ function computeLegacyHackStatus(ns: NS, homeReserve: number, maxTargets: number
 function killTargetWorkers(ns: NS, target: string): number {
   let killed = 0;
   for (const hostname of getCachedServers(ns)) {
-    for (const proc of ns.ps(hostname)) {
+    let procs;
+    try { procs = ns.ps(hostname); } catch { continue; }
+    for (const proc of procs) {
       if (!proc.filename.includes("workers/")) continue;
       if (proc.args[0] !== target) continue;
       ns.kill(proc.pid);

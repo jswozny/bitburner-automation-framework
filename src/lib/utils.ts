@@ -31,7 +31,9 @@ export function getAllServers(ns: NS): string[] {
 
   while (queue.length > 0) {
     const current = queue.shift() ?? "";
-    for (const neighbor of ns.scan(current)) {
+    let neighbors: string[];
+    try { neighbors = ns.scan(current); } catch { continue; }
+    for (const neighbor of neighbors) {
       if (!servers.has(neighbor) && neighbor !== "darkweb") {
         servers.add(neighbor);
         queue.push(neighbor);

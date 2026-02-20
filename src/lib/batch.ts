@@ -82,7 +82,8 @@ export function selectXpTarget(ns: NS): string | null {
 
   for (const hostname of getCachedServers(ns)) {
     if (hostname === "home" || hostname.startsWith("pserv-")) continue;
-    const server = ns.getServer(hostname);
+    let server;
+    try { server = ns.getServer(hostname); } catch { continue; }
     if (!server.hasAdminRights) continue;
     if ((server.moneyMax ?? 0) === 0) continue;
     if ((server.requiredHackingSkill ?? 0) > player.skills.hacking) continue;
