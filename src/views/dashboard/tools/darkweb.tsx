@@ -61,7 +61,7 @@ function formatDarkwebStatus(ns: NS): FormattedDarkwebStatus | null {
 function DarkwebOverviewCard({ status, running, toolId, error, pid }: OverviewCardProps<FormattedDarkwebStatus>): React.ReactElement {
   const completed = !!status?.allOwned;
   return (
-    <div style={styles.card}>
+    <div style={styles.cardOverview}>
       <div style={styles.cardTitle}>
         <span>DARKWEB</span>
         <ToolControl tool={toolId} running={running} error={!!error} completed={completed} pid={pid} />
@@ -82,14 +82,18 @@ function DarkwebOverviewCard({ status, running, toolId, error, pid }: OverviewCa
               {status ? `${status.ownedCount}/${status.totalPrograms}` : "—"}
             </span>
           </div>
-          {status?.nextProgram && (
-            <div style={styles.stat}>
-              <span style={styles.statLabel}>Next</span>
+          <div style={styles.stat}>
+            <span style={styles.statLabel}>Next</span>
+            {status?.nextProgram ? (
               <span style={status.canAffordNext ? styles.statHighlight : { color: "#888" }}>
                 ${status.nextProgram.costFormatted}
               </span>
-            </div>
-          )}
+            ) : (
+              <span style={styles.statHighlight}>
+                {status ? "All Owned" : "—"}
+              </span>
+            )}
+          </div>
         </>
       )}
     </div>

@@ -24,7 +24,7 @@ function formatNumber(n: number): string {
 
 function AugmentsOverviewCard({ status, running, toolId, pid }: OverviewCardProps<FormattedAugmentsStatus>): React.ReactElement {
   return (
-    <div style={styles.card}>
+    <div style={styles.cardOverview}>
       <div style={styles.cardTitle}>
         <span>AUGS</span>
         <ToolControl tool={toolId} running={running} pid={pid} />

@@ -250,7 +250,7 @@ function MemberCard({ member, taskNames, running, growTarget }: {
 
 function GangOverviewCard({ status, running, toolId, error, pid }: OverviewCardProps<GangStatus>): React.ReactElement {
   return (
-    <div style={styles.card}>
+    <div style={styles.cardOverview}>
       <div style={styles.cardTitle}>
         <span>GANG</span>
         <ToolControl tool={toolId} running={running} error={!!error} pid={pid} />
@@ -275,21 +275,17 @@ function GangOverviewCard({ status, running, toolId, error, pid }: OverviewCardP
             <span style={styles.statHighlight}>{status.moneyGainRateFormatted ?? "0"}/s</span>
           </div>
           <div style={styles.stat}>
-            <span style={styles.statLabel}>Territory</span>
-            <span style={styles.statValue}>{status.territory !== undefined ? formatPct(status.territory) : "?"}</span>
+            <span style={styles.statLabel}>Terr / Mbrs</span>
+            <span style={styles.statValue}>
+              {status.territory !== undefined ? formatPct(status.territory) : "?"} | {status.memberCount ?? 0}/{status.maxMembers ?? 12}
+            </span>
           </div>
           <div style={styles.stat}>
-            <span style={styles.statLabel}>Members</span>
-            <span style={styles.statValue}>{status.memberCount ?? 0}/{status.maxMembers ?? 12}</span>
+            <span style={styles.statLabel}>Wanted</span>
+            <span style={{ color: (status.wantedPenalty ?? 1) >= 0.99 ? "#00ff00" : (status.wantedPenalty ?? 1) >= 0.9 ? "#ffff00" : "#ff4444", fontSize: "11px" }}>
+              {status.wantedPenalty !== undefined ? formatPct(status.wantedPenalty) : "—"}
+            </span>
           </div>
-          {status.wantedPenalty !== undefined && status.wantedPenalty < 0.99 && (
-            <div style={styles.stat}>
-              <span style={styles.statLabel}>Wanted</span>
-              <span style={{ color: status.wantedPenalty < 0.9 ? "#ff4444" : "#ffff00", fontSize: "11px" }}>
-                {formatPct(status.wantedPenalty)}
-              </span>
-            </div>
-          )}
         </>
       )}
     </div>

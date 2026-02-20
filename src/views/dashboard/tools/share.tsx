@@ -115,10 +115,8 @@ function formatRam(gb: number): string {
 // === COMPONENTS ===
 
 function ShareOverviewCard({ status, running, toolId, pid }: OverviewCardProps<FormattedShareStatus>): React.ReactElement {
-  const alloc = getFleetAllocation();
-
   return (
-    <div style={styles.card}>
+    <div style={styles.cardOverview}>
       <div style={styles.cardTitle}>
         <span>SHARE</span>
         <ToolControl tool={toolId} running={running} pid={pid} />
@@ -143,14 +141,6 @@ function ShareOverviewCard({ status, running, toolId, pid }: OverviewCardProps<F
         <span style={styles.statLabel}>Servers</span>
         <span style={styles.statValue}>{status?.serversWithShare ?? "—"}</span>
       </div>
-      {alloc && alloc.shareServers.length > 0 && (
-        <div style={styles.stat}>
-          <span style={styles.statLabel}>Dedicated</span>
-          <span style={{ color: "#888", fontSize: "11px" }}>
-            {alloc.shareServers.length} servers ({formatRam(alloc.shareFleetRam)})
-          </span>
-        </div>
-      )}
     </div>
   );
 }

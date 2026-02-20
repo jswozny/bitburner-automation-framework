@@ -76,7 +76,7 @@ function formatNukeStatus(ns: NS): FormattedNukeStatus {
 
 function NukeOverviewCard({ status, running, toolId, pid }: OverviewCardProps<FormattedNukeStatus>): React.ReactElement {
   return (
-    <div style={styles.card}>
+    <div style={styles.cardOverview}>
       <div style={styles.cardTitle}>
         <span>NUKE</span>
         <ToolControl tool={toolId} running={running} pid={pid} />
@@ -97,14 +97,6 @@ function NukeOverviewCard({ status, running, toolId, pid }: OverviewCardProps<Fo
           {status?.ready?.length ?? "—"}
         </span>
       </div>
-      {status?.fleetRam && (
-        <div style={styles.stat}>
-          <span style={styles.statLabel}>Fleet</span>
-          <span style={{ color: "#00ffff", fontSize: "11px" }}>
-            {status.fleetRam.totalUsedRam} / {status.fleetRam.totalMaxRam} ({status.fleetRam.utilization}%)
-          </span>
-        </div>
-      )}
     </div>
   );
 }

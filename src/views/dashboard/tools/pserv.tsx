@@ -72,7 +72,7 @@ function formatPservStatus(ns: NS): FormattedPservStatus {
 function PservOverviewCard({ status, running, toolId, pid }: OverviewCardProps<FormattedPservStatus>): React.ReactElement {
   const completed = !!(status?.allMaxed && status.serverCount >= status.serverCap);
   return (
-    <div style={styles.card}>
+    <div style={styles.cardOverview}>
       <div style={styles.cardTitle}>
         <span>PSERV</span>
         <ToolControl tool={toolId} running={running} completed={completed} pid={pid} />

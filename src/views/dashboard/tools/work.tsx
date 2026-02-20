@@ -195,7 +195,7 @@ function WorkOverviewCard({
   pid,
 }: OverviewCardProps<FormattedWorkStatus>): React.ReactElement {
   return (
-    <div style={styles.card}>
+    <div style={styles.cardOverview}>
       <div style={styles.cardTitle}>
         <span>WORK</span>
         <ToolControl tool={toolId} running={running} error={!!error} pid={pid} />

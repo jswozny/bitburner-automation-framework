@@ -25,7 +25,7 @@ function ContractsOverviewCard({
   pid,
 }: OverviewCardProps<FormattedContractsStatus>): React.ReactElement {
   return (
-    <div style={styles.card}>
+    <div style={styles.cardOverview}>
       <div style={styles.cardTitle}>
         <span>CONTRACTS</span>
         <ToolControl tool={toolId} running={running} pid={pid} />
@@ -43,12 +43,6 @@ function ContractsOverviewCard({
           <div style={styles.stat}>
             <span style={styles.statLabel}>Pending</span>
             <span style={styles.statValue}>{status.pendingContracts.length}</span>
-          </div>
-          <div style={styles.stat}>
-            <span style={styles.statLabel}>Solvers</span>
-            <span style={{ color: status.knownTypes === status.totalTypes ? "#00ff00" : "#ffaa00" }}>
-              {status.knownTypes}/{status.totalTypes}
-            </span>
           </div>
         </>
       ) : (

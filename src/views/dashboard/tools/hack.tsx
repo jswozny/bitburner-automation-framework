@@ -25,7 +25,6 @@ import {
   restartHackDaemon,
   getPluginUIState,
   setPluginUIState,
-  getFleetAllocation,
 } from "views/dashboard/state-store";
 import { HackStrategy } from "/types/ports";
 
@@ -38,14 +37,6 @@ const DEFAULT_CONFIG: Pick<DistributedConfig, "homeReserve" | "maxTargets" | "mo
   securityBuffer: 5,
   hackPercent: 0.25,
 };
-
-// === RAM FORMATTING ===
-
-function formatRam(gb: number): string {
-  if (gb >= 1e6) return `${(gb / 1e6).toFixed(1)}PB`;
-  if (gb >= 1e3) return `${(gb / 1e3).toFixed(1)}TB`;
-  return `${gb.toFixed(0)}GB`;
-}
 
 // === ACTION COLORS ===
 
@@ -460,22 +451,6 @@ function HackControls({ running, sharePercent }: { running: boolean; sharePercen
 
 // === COMPONENTS ===
 
-function FleetAllocationLine(): React.ReactElement | null {
-  const alloc = getFleetAllocation();
-  if (!alloc || alloc.shareServers.length === 0) return null;
-
-  return (
-    <div style={styles.stat}>
-      <span style={styles.statLabel}>Fleet</span>
-      <span style={{ color: "#888", fontSize: "11px" }}>
-        {alloc.hackServers.length}H / {alloc.shareServers.length}S
-        <span style={{ color: "#555" }}> | </span>
-        {formatRam(alloc.hackFleetRam)} / {formatRam(alloc.shareFleetRam)}
-      </span>
-    </div>
-  );
-}
-
 function HackOverviewCard({ status, running, toolId, pid }: OverviewCardProps<FormattedHackStatus>): React.ReactElement {
   const isBatch = status?.mode === "batch";
   const isXp = status?.strategy === "xp";
@@ -483,7 +458,7 @@ function HackOverviewCard({ status, running, toolId, pid }: OverviewCardProps<Fo
   const modeLabel = isXp ? " (XP)" : isBatch ? " (HWGW)" : "";
 
   return (
-    <div style={styles.card}>
+    <div style={styles.cardOverview}>
       <div style={styles.cardTitle}>
         <span>HACK{modeLabel}</span>
         <ToolControl tool={toolId} running={running} pid={pid} />
@@ -503,7 +478,6 @@ function HackOverviewCard({ status, running, toolId, pid }: OverviewCardProps<Fo
               <span style={styles.statLabel}>XP Rate</span>
               <span style={{ color: "#00ff00" }}>{status.xpRateFormatted ?? "0 XP/s"}</span>
             </div>
-            <FleetAllocationLine />
           </>
         ) : isBatch ? (
           <>
@@ -523,11 +497,6 @@ function HackOverviewCard({ status, running, toolId, pid }: OverviewCardProps<Fo
                 {status.preppingCount}P / {status.batchingCount}B
               </span>
             </div>
-            <div style={styles.stat}>
-              <span style={styles.statLabel}>Threads</span>
-              <span style={styles.statValue}>{status.totalThreads}</span>
-            </div>
-            <FleetAllocationLine />
           </>
         ) : (
           <>
@@ -545,11 +514,6 @@ function HackOverviewCard({ status, running, toolId, pid }: OverviewCardProps<Fo
                 {status.totalExpectedMoneyFormatted}
               </span>
             </div>
-            <div style={styles.stat}>
-              <span style={styles.statLabel}>Next ETA</span>
-              <span style={styles.etaDisplay}>{status.shortestWait}</span>
-            </div>
-            <FleetAllocationLine />
           </>
         )
       ) : (

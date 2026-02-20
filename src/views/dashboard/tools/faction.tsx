@@ -59,7 +59,7 @@ function buildRequirementsTooltip(f: { name: string; requirements?: { label: str
 
 function FactionOverviewCard({ status, running, toolId, error, pid }: OverviewCardProps<FormattedFactionStatus>): React.ReactElement {
   return (
-    <div style={styles.card}>
+    <div style={styles.cardOverview}>
       <div style={styles.cardTitle}>
         <span>FACTION</span>
         <ToolControl tool={toolId} running={running} error={!!error} pid={pid} />
@@ -81,12 +81,12 @@ function FactionOverviewCard({ status, running, toolId, error, pid }: OverviewCa
               {status?.invitedCount ?? 0}
             </span>
           </div>
-          {status?.preferredCityFaction && status.preferredCityFaction !== "None" && (
-            <div style={styles.stat}>
-              <span style={styles.statLabel}>City</span>
-              <span style={{ color: "#ffaa00", fontSize: "11px" }}>{status.preferredCityFaction}</span>
-            </div>
-          )}
+          <div style={styles.stat}>
+            <span style={styles.statLabel}>City</span>
+            <span style={{ color: status?.preferredCityFaction && status.preferredCityFaction !== "None" ? "#ffaa00" : "#666", fontSize: "11px" }}>
+              {status?.preferredCityFaction && status.preferredCityFaction !== "None" ? status.preferredCityFaction : "None"}
+            </span>
+          </div>
         </>
       )}
     </div>

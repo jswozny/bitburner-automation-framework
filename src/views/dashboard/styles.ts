@@ -103,6 +103,15 @@ export const styles = {
     borderRadius: "4px",
   } as React.CSSProperties,
 
+  cardOverview: {
+    backgroundColor: "#1a1a1a",
+    border: "1px solid #333",
+    padding: "10px",
+    marginBottom: "8px",
+    borderRadius: "4px",
+    minHeight: "112px",
+  } as React.CSSProperties,
+
   cardTitle: {
     color: "#00ffff",
     fontSize: "14px",

@@ -42,7 +42,7 @@ function AdvisorOverviewCard({ status, running, toolId, pid }: OverviewCardProps
   const count = status?.recommendations?.length ?? 0;
 
   return (
-    <div style={styles.card}>
+    <div style={styles.cardOverview}>
       <div style={styles.cardTitle}>
         <span>ADVISOR</span>
         <ToolControl tool={toolId} running={running} pid={pid} />

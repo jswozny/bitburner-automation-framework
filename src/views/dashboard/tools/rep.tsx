@@ -214,7 +214,7 @@ const TIER_LABELS: Record<number, string> = {
 
 function RepOverviewCard({ status, running, toolId, error, pid }: OverviewCardProps<FormattedRepStatus>): React.ReactElement {
   return (
-    <div style={styles.card}>
+    <div style={styles.cardOverview}>
       <div style={styles.cardTitle}>
         <span>REP</span>
         <ToolControl tool={toolId} running={running} error={!!error} pid={pid} />
@@ -224,12 +224,24 @@ function RepOverviewCard({ status, running, toolId, error, pid }: OverviewCardPr
       ) : (
         <>
           <div style={styles.stat}>
-            <span style={styles.statLabel}>Target</span>
-            <span style={styles.statHighlight}>{status?.targetFaction ?? "—"}</span>
+            <span style={styles.statLabel}>Next Unlock</span>
+            <span style={{ color: "#ffff00", fontSize: "11px" }}>
+              {status?.nextAugName
+                ? (status.nextAugName.length > 18 ? status.nextAugName.substring(0, 18) + "..." : status.nextAugName)
+                : status?.targetFaction ?? "—"}
+            </span>
           </div>
           <div style={styles.stat}>
-            <span style={styles.statLabel}>Installed</span>
-            <span style={styles.statValue}>{status?.installedAugs ?? "—"}</span>
+            <span style={styles.statLabel}>Rep</span>
+            <span style={styles.statValue}>
+              {status?.currentRepFormatted && status?.repRequiredFormatted
+                ? `${status.currentRepFormatted} / ${status.repRequiredFormatted}`
+                : "—"}
+            </span>
+          </div>
+          <div style={styles.stat}>
+            <span style={styles.statLabel}>ETA</span>
+            <span style={styles.etaDisplay}>{status?.eta ?? "—"}</span>
           </div>
         </>
       )}

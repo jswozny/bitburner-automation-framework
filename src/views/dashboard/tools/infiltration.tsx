@@ -132,7 +132,7 @@ function InfiltrationOverviewCard({ status, running, toolId, error, pid }: Overv
   };
 
   return (
-    <div style={styles.card}>
+    <div style={styles.cardOverview}>
       <div style={styles.cardTitle}>
         <span>INFILTRATE</span>
         <ToolControl tool={toolId} running={running} error={!!error || status?.state === "ERROR"} pid={pid} />
