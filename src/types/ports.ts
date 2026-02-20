@@ -440,7 +440,7 @@ export interface WorkStatus {
 
 // === HACK STRATEGY ===
 
-export type HackStrategy = "money" | "xp";
+export type HackStrategy = "money" | "xp" | "drain";
 
 // === FLEET ALLOCATION ===
 

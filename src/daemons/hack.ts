@@ -742,7 +742,9 @@ export async function main(ns: NS): Promise<void> {
 
   const resolvedBatches = resolveMaxBatches(cfg.maxBatches, bootstrapAllocation.totalFleetRam);
 
-  if (cfg.strategy === "xp") {
+  if (cfg.strategy === "drain") {
+    await runDrainMode(ns);
+  } else if (cfg.strategy === "xp") {
     await runXpMode(ns);
   } else if (resolvedBatches > 0) {
     await runBatchMode(ns);
@@ -1167,6 +1169,158 @@ async function runXpMode(ns: NS): Promise<void> {
     // 8. Sleep until weaken completes (or 30s max)
     if (!cfg.oneShot) {
       const sleepTime = Math.min(weakenTime + 500, 30000);
+      ns.print(`\nWaiting ${formatTimeCondensed(sleepTime)}...`);
+      await ns.sleep(sleepTime);
+    }
+  } while (!getConfigBool(ns, "hack", "oneShot", false));
+}
+
+// === DRAIN MODE ===
+
+async function runDrainMode(ns: NS): Promise<void> {
+  const C = COLORS;
+
+  do {
+    const cfg = readHackConfig(ns);
+    ns.clearLog();
+
+    // 1. Fleet allocation — 0 share so drain takes 100%
+    const allServers = getUsableServers(ns, cfg.homeReserve);
+    const allocation = computeFleetAllocation(allServers, "drain", 0);
+    publishStatus(ns, STATUS_PORTS.fleet, allocation);
+
+    // 2. Deploy workers
+    await deployWorkers(ns, allServers);
+
+    // 3. Get targets with money available, sorted by moneyAvailable desc
+    const rawTargets = getTargets(ns, 999);
+    const drainCandidates: { hostname: string; moneyAvailable: number; hackTime: number; hackChance: number; hackAnalyze: number }[] = [];
+
+    for (const t of rawTargets) {
+      const server = ns.getServer(t.hostname);
+      const moneyAvailable = server.moneyAvailable ?? 0;
+      if (moneyAvailable <= 0) continue;
+      const hackChance = ns.hackAnalyzeChance(t.hostname);
+      if (hackChance <= 0) continue;
+
+      drainCandidates.push({
+        hostname: t.hostname,
+        moneyAvailable,
+        hackTime: ns.getHackTime(t.hostname),
+        hackChance,
+        hackAnalyze: ns.hackAnalyze(t.hostname),
+      });
+    }
+
+    drainCandidates.sort((a, b) => b.moneyAvailable - a.moneyAvailable);
+
+    // 4. Build server slots sorted by RAM descending
+    const hackRam = ns.getScriptRam("/workers/hack.js");
+    const slots = allServers
+      .map(s => ({ hostname: s.hostname, available: s.availableRam }))
+      .sort((a, b) => b.available - a.available);
+
+    // 5. Greedy allocation: richest targets first
+    let totalHackThreads = 0;
+    let totalMoneyAvailable = 0;
+    let shortestHackTime = Number.MAX_SAFE_INTEGER;
+    let longestHackTime = 0;
+    const drainTargets: FormattedTarget[] = [];
+
+    for (const target of drainCandidates) {
+      const threadsNeeded = Math.ceil(1 / Math.max(target.hackAnalyze, 1e-9));
+      let threadsAllocated = 0;
+
+      for (let i = 0; i < slots.length && threadsAllocated < threadsNeeded; i++) {
+        const slot = slots[i];
+        const maxThreads = Math.floor(slot.available / hackRam);
+        if (maxThreads <= 0) continue;
+
+        const threads = Math.min(maxThreads, threadsNeeded - threadsAllocated);
+        const pid = ns.exec("/workers/hack.js", slot.hostname, threads, target.hostname, 0, Date.now(), "drain");
+        if (pid > 0) {
+          threadsAllocated += threads;
+          slot.available -= threads * hackRam;
+        }
+      }
+
+      if (threadsAllocated > 0) {
+        totalHackThreads += threadsAllocated;
+        totalMoneyAvailable += target.moneyAvailable;
+        shortestHackTime = Math.min(shortestHackTime, target.hackTime);
+        longestHackTime = Math.max(longestHackTime, target.hackTime);
+      }
+
+      const expectedMoney = target.moneyAvailable * Math.min(target.hackAnalyze * threadsAllocated, 1) * target.hackChance;
+
+      drainTargets.push({
+        rank: drainTargets.length + 1,
+        hostname: target.hostname,
+        action: "hack",
+        assignedThreads: threadsAllocated,
+        optimalThreads: threadsNeeded,
+        threadsSaturated: threadsAllocated >= threadsNeeded,
+        moneyPercent: 100,
+        moneyDisplay: `$${ns.formatNumber(target.moneyAvailable)}`,
+        securityDelta: "0",
+        securityClean: true,
+        eta: formatTimeCondensed(target.hackTime),
+        expectedMoney,
+        expectedMoneyFormatted: expectedMoney > 0 ? `$${ns.formatNumber(expectedMoney)}` : "-",
+        totalThreads: threadsAllocated,
+        completionEta: formatTimeCondensed(target.hackTime),
+        hackThreads: threadsAllocated,
+        growThreads: 0,
+        weakenThreads: 0,
+      });
+    }
+
+    const totalRam = allServers.reduce((sum, s) => sum + s.availableRam, 0);
+    const activeTargets = drainTargets.filter(t => t.totalThreads > 0).length;
+
+    // 6. Publish status
+    const hackStatus: HackStatus = {
+      totalRam: ns.formatRam(totalRam),
+      serverCount: allServers.length,
+      totalThreads: ns.formatNumber(totalHackThreads),
+      activeTargets,
+      totalTargets: drainTargets.length,
+      saturationPercent: drainTargets.length > 0 ? (activeTargets / drainTargets.length) * 100 : 0,
+      shortestWait: shortestHackTime === Number.MAX_SAFE_INTEGER ? "N/A" : formatTimeCondensed(shortestHackTime),
+      longestWait: longestHackTime === 0 ? "N/A" : formatTimeCondensed(longestHackTime),
+      hackingCount: activeTargets,
+      growingCount: 0,
+      weakeningCount: 0,
+      targets: drainTargets,
+      totalExpectedMoney: totalMoneyAvailable,
+      totalExpectedMoneyFormatted: `$${ns.formatNumber(totalMoneyAvailable)}`,
+      needHigherLevel: null,
+      strategy: "drain",
+    };
+    publishStatus(ns, STATUS_PORTS.hack, hackStatus);
+
+    // 7. Print terminal status
+    ns.print(`${C.cyan}════════════════════════════════════════════════════${C.reset}`);
+    ns.print(`${C.red}  DRAIN MODE - ${new Date().toLocaleTimeString()}${C.reset}`);
+    ns.print(`${C.cyan}════════════════════════════════════════════════════${C.reset}`);
+    ns.print(`${C.white}Targets: ${C.cyan}${activeTargets}${C.reset} / ${drainTargets.length} | Threads: ${C.green}${ns.formatNumber(totalHackThreads)}${C.reset} | RAM: ${ns.formatRam(totalRam)}`);
+    ns.print(`${C.white}Money Available: ${C.green}$${ns.formatNumber(totalMoneyAvailable)}${C.reset}`);
+    if (shortestHackTime < Number.MAX_SAFE_INTEGER) {
+      ns.print(`${C.white}Hack Time: ${formatTimeCondensed(shortestHackTime)} - ${formatTimeCondensed(longestHackTime)}${C.reset}`);
+    }
+    ns.print("");
+
+    for (const t of drainTargets.slice(0, 20)) {
+      if (t.totalThreads === 0) continue;
+      const sat = t.threadsSaturated ? `${C.green}SAT${C.reset}` : `${C.yellow}${t.assignedThreads}/${t.optimalThreads}${C.reset}`;
+      ns.print(`  ${C.cyan}${t.hostname.padEnd(18)}${C.reset} ${sat.padEnd(12)} ${t.moneyDisplay.padStart(10)} ${t.eta.padStart(8)}`);
+    }
+
+    // 8. Sleep until shortest hack completes, then re-scan
+    if (!cfg.oneShot) {
+      const sleepTime = shortestHackTime === Number.MAX_SAFE_INTEGER
+        ? 5000
+        : Math.min(shortestHackTime + 500, 30000);
       ns.print(`\nWaiting ${formatTimeCondensed(sleepTime)}...`);
       await ns.sleep(sleepTime);
     }

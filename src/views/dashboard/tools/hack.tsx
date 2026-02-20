@@ -399,9 +399,10 @@ function HackControls({ running, sharePercent }: { running: boolean; sharePercen
         >
           <option value="money">Money</option>
           <option value="xp">XP</option>
+          <option value="drain">Drain</option>
         </select>
       </span>
-      {strategy === "money" && (
+      {strategy !== "xp" && strategy !== "drain" && (
         <span style={{ display: "flex", alignItems: "center", gap: "4px" }}>
           <span style={{ ...styles.statLabel, fontSize: "11px" }}>Batches</span>
           <input
@@ -454,8 +455,9 @@ function HackControls({ running, sharePercent }: { running: boolean; sharePercen
 function HackOverviewCard({ status, running, toolId, pid }: OverviewCardProps<FormattedHackStatus>): React.ReactElement {
   const isBatch = status?.mode === "batch";
   const isXp = status?.strategy === "xp";
+  const isDrain = status?.strategy === "drain";
 
-  const modeLabel = isXp ? " (XP)" : isBatch ? " (HWGW)" : "";
+  const modeLabel = isDrain ? " (DRAIN)" : isXp ? " (XP)" : isBatch ? " (HWGW)" : "";
 
   return (
     <div style={styles.cardOverview}>
@@ -464,7 +466,24 @@ function HackOverviewCard({ status, running, toolId, pid }: OverviewCardProps<Fo
         <ToolControl tool={toolId} running={running} pid={pid} />
       </div>
       {status ? (
-        isXp ? (
+        isDrain ? (
+          <>
+            <div style={styles.stat}>
+              <span style={styles.statLabel}>Targets</span>
+              <span style={styles.statValue}>{status.activeTargets} servers</span>
+            </div>
+            <div style={styles.stat}>
+              <span style={styles.statLabel}>Threads</span>
+              <span style={styles.statValue}>{status.totalThreads}</span>
+            </div>
+            <div style={styles.stat}>
+              <span style={styles.statLabel}>Available</span>
+              <span style={{ color: status.totalExpectedMoney > 0 ? "#ff6600" : "#666" }}>
+                {status.totalExpectedMoneyFormatted}
+              </span>
+            </div>
+          </>
+        ) : isXp ? (
           <>
             <div style={styles.stat}>
               <span style={styles.statLabel}>XP Target</span>
@@ -536,6 +555,7 @@ function HackDetailPanel({ status, running, toolId, pid }: DetailPanelProps<Form
 
   const isBatch = status.mode === "batch";
   const isXp = status.strategy === "xp";
+  const isDrain = status.strategy === "drain";
 
   // Color helpers
   const getMoneyColor = (percent: number): string => {
@@ -550,6 +570,115 @@ function HackDetailPanel({ status, running, toolId, pid }: DetailPanelProps<Form
     if (val <= 5) return "#ffff00";
     return "#ff4444";
   };
+
+  // === DRAIN MODE DETAIL PANEL ===
+  if (isDrain) {
+    return (
+      <div style={styles.panel}>
+        {/* Header */}
+        <div style={styles.row}>
+          <div style={styles.rowLeft}>
+            <span>
+              <span style={styles.statLabel}>RAM: </span>
+              <span style={styles.statValue}>{status.totalRam}</span>
+            </span>
+            <span style={styles.dim}>|</span>
+            <span>
+              <span style={styles.statLabel}>Servers: </span>
+              <span style={styles.statValue}>{status.serverCount}</span>
+            </span>
+            <span style={styles.dim}>|</span>
+            <span style={{ color: "#ff6600", fontSize: "11px" }}>DRAIN MODE</span>
+          </div>
+          <ToolControl tool={toolId} running={running} pid={pid} />
+        </div>
+
+        {/* Controls */}
+        <HackControls running={running} />
+
+        {/* Summary */}
+        <div style={styles.grid}>
+          <div style={styles.card}>
+            <div style={styles.stat}>
+              <span style={styles.statLabel}>Drain Targets</span>
+              <span style={styles.statHighlight}>{status.activeTargets}</span>
+            </div>
+            <div style={styles.stat}>
+              <span style={styles.statLabel}>Hack Threads</span>
+              <span style={styles.statValue}>{status.totalThreads}</span>
+            </div>
+          </div>
+          <div style={styles.card}>
+            <div style={styles.stat}>
+              <span style={styles.statLabel}>Money Available</span>
+              <span style={{ color: "#ff6600", fontWeight: "bold" }}>{status.totalExpectedMoneyFormatted}</span>
+            </div>
+            <div style={styles.stat}>
+              <span style={styles.statLabel}>Hack Time</span>
+              <span style={styles.etaDisplay}>{status.shortestWait} - {status.longestWait}</span>
+            </div>
+          </div>
+        </div>
+
+        {/* Target Table */}
+        {status.targets.length > 0 && (
+          <div style={styles.section}>
+            <div style={styles.sectionTitle}>
+              DRAIN TARGETS
+              <span style={{ ...styles.dim, marginLeft: "8px", fontWeight: "normal" }}>
+                {status.activeTargets} draining | {status.totalTargets} total
+              </span>
+            </div>
+            <div style={{ maxHeight: "300px", overflowY: "auto" }}>
+              <table style={styles.table}>
+                <thead>
+                  <tr>
+                    <th style={{ ...styles.tableHeader, width: "24px" }} title="Rank by money available">#</th>
+                    <th style={styles.tableHeader} title="Target server hostname">Target</th>
+                    <th style={{ ...styles.tableHeader, textAlign: "right", width: "80px" }} title="Money currently on server">Available</th>
+                    <th style={{ ...styles.tableHeader, textAlign: "right", width: "60px" }} title="Hack threads allocated">Threads</th>
+                    <th style={{ ...styles.tableHeader, textAlign: "right", width: "55px" }} title="Hack completion time">Time</th>
+                    <th style={{ ...styles.tableHeader, textAlign: "right", width: "55px" }} title="Chance of successful hack">Chance</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {status.targets.map((target, i) => {
+                    const rowStyle = i % 2 === 0 ? styles.tableRow : styles.tableRowAlt;
+                    const hasThreads = target.totalThreads > 0;
+
+                    return (
+                      <tr key={target.hostname} style={rowStyle}>
+                        <td style={{ ...styles.tableCell, color: "#888" }}>{target.rank}</td>
+                        <td style={{ ...styles.tableCell, color: hasThreads ? "#00ffff" : "#666" }}>
+                          {target.hostname.substring(0, 16)}
+                        </td>
+                        <td style={{ ...styles.tableCell, textAlign: "right", color: "#ff6600" }}>
+                          {target.moneyDisplay}
+                        </td>
+                        <td style={{
+                          ...styles.tableCell,
+                          textAlign: "right",
+                          color: hasThreads ? (target.threadsSaturated ? "#00ff00" : "#ffff00") : "#666",
+                        }}>
+                          {hasThreads ? target.hackThreads.toLocaleString() : "-"}
+                        </td>
+                        <td style={{ ...styles.tableCell, textAlign: "right", color: "#888" }}>
+                          {target.eta}
+                        </td>
+                        <td style={{ ...styles.tableCell, textAlign: "right", color: "#888" }}>
+                          {target.expectedMoney > 0 ? target.expectedMoneyFormatted : "-"}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  }
 
   // === XP MODE DETAIL PANEL ===
   if (isXp) {
