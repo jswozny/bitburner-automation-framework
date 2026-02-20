@@ -1,5 +1,6 @@
-/** @param {NS} ns */
-export async function main(ns) {
+import { NS, Multipliers } from "@ns";
+
+export async function main(ns: NS): Promise<void> {
   const installed = ns.singularity.getOwnedAugmentations(false);
   const all = ns.singularity.getOwnedAugmentations(true);
   const pending = all.filter(a => !installed.includes(a));
@@ -23,7 +24,7 @@ export async function main(ns) {
   ns.tprint(`\nTotal: ${installed.length} installed, ${pending.length} pending`);
 }
 
-function formatStats(stats) {
+function formatStats(stats: Multipliers): string {
   return Object.entries(stats)
     .filter(([, v]) => v !== 1)
     .map(([k, v]) => {

@@ -1,11 +1,11 @@
-import { COLORS, discoverAllWithDepthAndPath, pathTo } from '/lib/utils.js';
+import { NS } from "@ns";
+import { COLORS, discoverAllWithDepthAndPath, pathTo } from "/lib/utils";
 
-/** @param {NS} ns */
-export async function main(ns) {
+export async function main(ns: NS): Promise<void> {
   const { red, reset } = COLORS;
 
-  const host = ns.args[0];
-  const source = ns.args[1];
+  const host = ns.args[0] as string | undefined;
+  const source = ns.args[1] as string | undefined;
 
   if (host === undefined || !ns.serverExists(host)) {
     ns.tprint(`${red}ERROR: Server ${host} does not exist.${reset}`);

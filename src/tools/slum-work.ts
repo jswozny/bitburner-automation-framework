@@ -1,15 +1,16 @@
-import { COLORS } from "/lib/utils.js";
+import { NS } from "@ns";
+import { COLORS } from "/lib/utils";
 import {
+  CrimeAnalysis,
   analyzeAllCrimes,
   fmtMoney,
   fmtExp,
   fmtPercent,
-} from "/controllers/crime.js";
+} from "/controllers/crime";
 
 const { green, yellow, cyan, dim, reset, bold } = COLORS;
 
-/** @param {NS} ns */
-export async function main(ns) {
+export async function main(ns: NS): Promise<void> {
   ns.tprint(`\n${bold}${cyan}=== Slum Work Analysis ===${reset}\n`);
 
   const rows = analyzeAllCrimes(ns, "moneyPerMin");
@@ -95,7 +96,7 @@ export async function main(ns) {
   }
 }
 
-function pad(s, n) {
+function pad(s: string, n: number): string {
   s = String(s);
   return s.length >= n ? s.slice(0, n) : s.padEnd(n, " ");
 }

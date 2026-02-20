@@ -1,26 +1,40 @@
-/** @param {NS} ns
- *
- * Dashboard Monitor
- *
- * Real-time view of all hacking activity across your network.
- * Run separately from your hacking scripts.
- *
- * Features:
- * - Money and security status per target
- * - Thread counts for hack/grow/weaken
- * - Expected income with timing
- *
- * Run: run network-monitor.js
- */
-import { COLORS, getAllServers, makeBar, discoverAllWithDepthAndPath, pathToArray } from '/lib/utils.js';
+import { NS } from "@ns";
+import { COLORS, getAllServers, makeBar } from "/lib/utils";
 
-export async function main(ns) {
-  // === CONFIGURATION ===
-  const REFRESH_RATE = 1000;  // ms between refreshes
+interface JobCounts {
+  hack: number;
+  grow: number;
+  weaken: number;
+  earliestCompletion: number | null;
+  expectedMoney: number;
+}
 
-  const { red, green, yellow, blue, magenta, cyan, white, dim, reset } = COLORS;
+interface RamStats {
+  total: number;
+  used: number;
+  activeServers: number;
+  totalServers: number;
+}
 
-  ns.disableLog('ALL');
+interface ServerJobEntry {
+  hostname: string;
+  threads: number;
+}
+
+interface RowResult {
+  hack: number;
+  grow: number;
+  weaken: number;
+  expected: number;
+  idle: boolean;
+}
+
+export async function main(ns: NS): Promise<void> {
+  const REFRESH_RATE = 1000;
+
+  const { red, green, yellow, blue, cyan, white, dim, reset } = COLORS;
+
+  ns.disableLog("ALL");
   ns.ui.openTail();
   ns.ui.resizeTail(820, 650);
 
@@ -28,23 +42,19 @@ export async function main(ns) {
   let lastMoney = ns.getPlayer().money;
 
   while (true) {
-
     ns.clearLog();
 
     const player = ns.getPlayer();
     const uptime = Date.now() - startTime;
     const moneyGained = player.money - lastMoney;
 
-    // Pre-compute paths for clickable links
-    const { parentByHost } = discoverAllWithDepthAndPath(ns, 'home', 100);
-
     // === HEADER ===
-    const TITLE = 'NETWORK DASHBOARD';
+    const TITLE = "NETWORK DASHBOARD";
     const HEADER_WIDTH = 50;
-    ns.print(`${cyan}${'═'.repeat(50)}${reset}`);
-    ns.print(`${' '.repeat((HEADER_WIDTH-TITLE.length)/2)}${white}${TITLE}${reset}`);
-    ns.print(`${cyan}${'═'.repeat(50)}${reset}`);
-    ns.print(`${dim}Uptime: ${ns.tFormat(uptime)} | Money: ${ns.formatNumber(player.money)} (${moneyGained >= 0 ? green + '+' : red}${ns.formatNumber(moneyGained)}${reset}${dim}/s)${reset}`);
+    ns.print(`${cyan}${"═".repeat(50)}${reset}`);
+    ns.print(`${" ".repeat((HEADER_WIDTH - TITLE.length) / 2)}${white}${TITLE}${reset}`);
+    ns.print(`${cyan}${"═".repeat(50)}${reset}`);
+    ns.print(`${dim}Uptime: ${ns.tFormat(uptime)} | Money: ${ns.formatNumber(player.money)} (${moneyGained >= 0 ? green + "+" : red}${ns.formatNumber(moneyGained)}${reset}${dim}/s)${reset}`);
 
     // === RAM USAGE ===
     const ramStats = getRamStats(ns);
@@ -58,35 +68,32 @@ export async function main(ns) {
     const allServers = getHackableServers(ns);
     const playerHacking = player.skills.hacking;
 
-    // Categorize servers
-    const needHigherLevel = [];  // Can't hack - level too low
-    const needPorts = [];        // Have level, need ports
-    const canHack = [];          // Have root access
+    const needHigherLevel: string[] = [];
+    const needPorts: string[] = [];
+    const canHack: string[] = [];
 
     for (const hostname of allServers) {
       const server = ns.getServer(hostname);
       if (server.hasAdminRights) {
         canHack.push(hostname);
-      } else if (server.requiredHackingSkill > playerHacking) {
+      } else if ((server.requiredHackingSkill ?? 0) > playerHacking) {
         needHigherLevel.push(hostname);
       } else {
         needPorts.push(hostname);
       }
     }
 
-    // Sort canHack by hack level (easiest first), take top 10
-    canHack.sort((a, b) => ns.getServer(b).moneyMax - ns.getServer(a).moneyMax);
+    canHack.sort((a, b) => (ns.getServer(b).moneyMax ?? 0) - (ns.getServer(a).moneyMax ?? 0));
     const top10 = canHack.slice(0, 10);
     const remaining = canHack.slice(10);
 
     // Header row
-    ns.print(`\n${dim}${'Target'.padEnd(18)} ${'$%'.padStart(5)} ${'Sec'.padStart(5)} ${'Hack'.padStart(7)} ${'Grow'.padStart(7)} ${'Wkn'.padStart(7)}   ${'Expected'}${reset}`);
-    ns.print(`${dim}${'─'.repeat(78)}${reset}`);
+    ns.print(`\n${dim}${"Target".padEnd(18)} ${"$%".padStart(5)} ${"Sec".padStart(5)} ${"Hack".padStart(7)} ${"Grow".padStart(7)} ${"Wkn".padStart(7)}   ${"Expected"}${reset}`);
+    ns.print(`${dim}${"─".repeat(78)}${reset}`);
 
     let totalHack = 0, totalGrow = 0, totalWeaken = 0, totalExpected = 0;
     let idleCount = 0;
 
-    // Show top 10 rooted servers
     for (const hostname of top10) {
       const result = renderServerRow(ns, hostname, jobs[hostname]);
       totalHack += result.hack;
@@ -96,7 +103,6 @@ export async function main(ns) {
       if (result.idle) idleCount++;
     }
 
-    // Show servers needing ports (have level, no root)
     for (const hostname of needPorts) {
       const server = ns.getServer(hostname);
       const portsHave = server.openPortCount;
@@ -104,7 +110,6 @@ export async function main(ns) {
       ns.print(`${dim}${hostname.padEnd(18)}${reset} ${yellow}🔒${reset} ${dim}${portsHave}/${portsNeeded} ports${reset}`);
     }
 
-    // Summarize remaining rooted servers
     let remainingActive = 0;
     let remainingIdle = 0;
     let remainingExpected = 0;
@@ -128,25 +133,25 @@ export async function main(ns) {
     }
 
     if (remainingActive > 0) {
-      ns.print(`${dim}... +${remainingActive} more active${reset} ${' '.repeat(38)} ${green}$${ns.formatNumber(remainingExpected)}${reset}`);
+      ns.print(`${dim}... +${remainingActive} more active${reset} ${" ".repeat(38)} ${green}$${ns.formatNumber(remainingExpected)}${reset}`);
     }
 
     // Totals
-    ns.print(`${dim}${'─'.repeat(78)}${reset}`);
-    ns.print(`${white}${'TOTAL'.padEnd(18)}${reset} ${' '.repeat(12)} ${green}${totalHack.toLocaleString().padStart(7)}${reset} ${yellow}${totalGrow.toLocaleString().padStart(7)}${reset} ${blue}${totalWeaken.toLocaleString().padStart(7)}${reset}   ${green}$${ns.formatNumber(totalExpected)}${reset}`);
+    ns.print(`${dim}${"─".repeat(78)}${reset}`);
+    ns.print(`${white}${"TOTAL".padEnd(18)}${reset} ${" ".repeat(12)} ${green}${totalHack.toLocaleString().padStart(7)}${reset} ${yellow}${totalGrow.toLocaleString().padStart(7)}${reset} ${blue}${totalWeaken.toLocaleString().padStart(7)}${reset}   ${green}$${ns.formatNumber(totalExpected)}${reset}`);
 
     // Summary footer
-    const summaryParts = [];
+    const summaryParts: string[] = [];
     if (idleCount > 0) summaryParts.push(`${yellow}${idleCount} idle${reset}`);
     if (needHigherLevel.length > 0) {
-      const nextLevel = Math.min(...needHigherLevel.map(h => ns.getServer(h).requiredHackingSkill));
+      const nextLevel = Math.min(...needHigherLevel.map(h => ns.getServer(h).requiredHackingSkill ?? 0));
       summaryParts.push(`${red}${needHigherLevel.length} need higher hack${reset} ${dim}(next: ${nextLevel})${reset}`);
     }
     if (summaryParts.length > 0) {
-      ns.print(`${dim}${summaryParts.join(' | ')}${reset}`)
+      ns.print(`${dim}${summaryParts.join(" | ")}${reset}`)
     }
 
-    // === SERVER BREAKDOWN (optional, shows top 5 busiest) ===
+    // === SERVER BREAKDOWN ===
     const serverJobs = getServerJobCounts(ns);
     const topServers = serverJobs.slice(0, 5);
 
@@ -163,60 +168,59 @@ export async function main(ns) {
   }
 }
 
-/** Render a server row and return stats */
-function renderServerRow(ns, hostname, actions) {
-  const { red, green, yellow, blue, cyan, gray, dim, reset } = COLORS;
+function renderServerRow(ns: NS, hostname: string, actions?: Partial<JobCounts>): RowResult {
+  const { red, green, yellow, blue, cyan, dim, reset } = COLORS;
+  const gray = COLORS.gray;
 
-  actions = actions || { hack: 0, grow: 0, weaken: 0, earliestCompletion: null };
+  const a = {
+    hack: actions?.hack ?? 0,
+    grow: actions?.grow ?? 0,
+    weaken: actions?.weaken ?? 0,
+    earliestCompletion: actions?.earliestCompletion ?? null,
+  };
   const server = ns.getServer(hostname);
-  const isActive = (actions.hack + actions.grow + actions.weaken) > 0;
+  const isActive = (a.hack + a.grow + a.weaken) > 0;
 
-  // Calculate expected money
-  const expectedMoney = calcExpectedMoney(ns, hostname, actions.hack);
+  const expectedMoney = calcExpectedMoney(ns, hostname, a.hack);
 
-  // Money percentage
-  const moneyPct = server.moneyMax > 0 ? (server.moneyAvailable / server.moneyMax) * 100 : 0;
+  const moneyMax = server.moneyMax ?? 0;
+  const moneyAvail = server.moneyAvailable ?? 0;
+  const moneyPct = moneyMax > 0 ? (moneyAvail / moneyMax) * 100 : 0;
   const moneyColor = moneyPct >= 80 ? green : moneyPct >= 50 ? yellow : red;
   const moneyStr = `${moneyColor}${moneyPct.toFixed(0).padStart(4)}%${reset}`;
 
-  // Security delta
-  const secDiff = server.hackDifficulty - server.minDifficulty;
+  const secDiff = (server.hackDifficulty ?? 0) - (server.minDifficulty ?? 0);
   const secColor = secDiff <= 2 ? green : secDiff <= 5 ? yellow : red;
-  const secStr = `${secColor}${('+' + secDiff.toFixed(0)).padStart(5)}${reset}`;
+  const secStr = `${secColor}${"+" + secDiff.toFixed(0)}${reset}`.padStart(5);
 
-  // Thread counts
-  const hackStr = actions.hack > 0
-    ? `${green}${actions.hack.toLocaleString().padStart(7)}${reset}`
-    : `${gray}${actions.hack.toLocaleString().padStart(7)}${reset}`;
-  const growStr = actions.grow > 0
-    ? `${yellow}${actions.grow.toLocaleString().padStart(7)}${reset}`
-    : `${gray}${actions.grow.toLocaleString().padStart(7)}${reset}`;
-  const weakenStr = actions.weaken > 0
-    ? `${blue}${actions.weaken.toLocaleString().padStart(7)}${reset}`
-    : `${gray}${actions.weaken.toLocaleString().padStart(7)}${reset}`;
+  const hackStr = a.hack > 0
+    ? `${green}${a.hack.toLocaleString().padStart(7)}${reset}`
+    : `${gray}${a.hack.toLocaleString().padStart(7)}${reset}`;
+  const growStr = a.grow > 0
+    ? `${yellow}${a.grow.toLocaleString().padStart(7)}${reset}`
+    : `${gray}${a.grow.toLocaleString().padStart(7)}${reset}`;
+  const weakenStr = a.weaken > 0
+    ? `${blue}${a.weaken.toLocaleString().padStart(7)}${reset}`
+    : `${gray}${a.weaken.toLocaleString().padStart(7)}${reset}`;
 
-  // Expected money + timing
-  const expectedStr = formatExpected(ns, expectedMoney, actions.earliestCompletion);
+  const expectedStr = formatExpected(ns, expectedMoney, a.earliestCompletion);
 
-  // Highlight active targets
   const nameColor = isActive ? cyan : gray;
   ns.print(`${nameColor}${hostname.padEnd(18)}${reset} ${moneyStr} ${secStr} ${hackStr} ${growStr} ${weakenStr}   ${expectedStr}`);
 
   return {
-    hack: actions.hack,
-    grow: actions.grow,
-    weaken: actions.weaken,
+    hack: a.hack,
+    grow: a.grow,
+    weaken: a.weaken,
     expected: expectedMoney,
-    idle: !isActive
+    idle: !isActive,
   };
 }
 
-/** Format expected money with timing */
-function formatExpected(ns, expectedMoney, earliestCompletion) {
+function formatExpected(ns: NS, expectedMoney: number, earliestCompletion: number | null): string {
   const { green, yellow, cyan, dim, reset } = COLORS;
 
   if (expectedMoney <= 0) {
-    // No hack threads, show prep status
     if (earliestCompletion && earliestCompletion > Date.now()) {
       const timeStr = ns.tFormat(earliestCompletion - Date.now(), false);
       return `${dim}prep${reset} ${yellow}${timeStr}${reset}`;
@@ -236,66 +240,56 @@ function formatExpected(ns, expectedMoney, earliestCompletion) {
   return `${moneyStr} ${dim}→ soon${reset}`;
 }
 
-/** Get all hackable servers (have money, not special), sorted alphabetically */
-function getHackableServers(ns) {
-  const servers = [];
+function getHackableServers(ns: NS): string[] {
+  const servers: string[] = [];
 
   for (const hostname of getAllServers(ns)) {
-    // Skip home and purchased servers
-    if (hostname === 'home' || hostname.startsWith('pserv-')) continue;
-
+    if (hostname === "home" || hostname.startsWith("pserv-")) continue;
     const server = ns.getServer(hostname);
-
-    // Skip servers with no money (not hackable targets)
     if (server.moneyMax === 0) continue;
-
     servers.push(hostname);
   }
 
   return servers.sort((a, b) => a.localeCompare(b));
 }
 
-/** Calculate expected money for a target from hack threads */
-function calcExpectedMoney(ns, target, hackThreads) {
+function calcExpectedMoney(ns: NS, target: string, hackThreads: number): number {
   if (hackThreads <= 0) return 0;
 
   const server = ns.getServer(target);
   const hackPercent = ns.hackAnalyze(target) * hackThreads;
   const hackChance = ns.hackAnalyzeChance(target);
-  return server.moneyAvailable * Math.min(hackPercent, 1) * hackChance;
+  return (server.moneyAvailable ?? 0) * Math.min(hackPercent, 1) * hackChance;
 }
 
-/** Get all running hacking jobs grouped by target with timing info */
-function getRunningJobs(ns) {
-  const jobs = {};
+function getRunningJobs(ns: NS): Record<string, JobCounts> {
+  const jobs: Record<string, JobCounts> = {};
 
   for (const hostname of getAllServers(ns)) {
     for (const proc of ns.ps(hostname)) {
-      if (!['workers/hack.js', 'workers/grow.js', 'workers/weaken.js'].includes(proc.filename)) continue;
+      if (!["workers/hack.js", "workers/grow.js", "workers/weaken.js"].includes(proc.filename)) continue;
 
-      const target = proc.args[0];
+      const target = proc.args[0] as string;
       if (!target) continue;
 
-      const action = proc.filename.split('/').pop().replace('.js', '');
-      const delay = proc.args[1] || 0;
-      const launchTime = proc.args[2]; // Date.now() passed when launched
+      const action = proc.filename.split("/").pop()!.replace(".js", "") as "hack" | "grow" | "weaken";
+      const delay = (proc.args[1] as number) || 0;
+      const launchTime = proc.args[2] as number | undefined;
 
       if (!jobs[target]) {
         jobs[target] = { hack: 0, grow: 0, weaken: 0, earliestCompletion: null, expectedMoney: 0 };
       }
       jobs[target][action] += proc.threads;
 
-      // Calculate completion time if we have launch time
-      if (launchTime && typeof launchTime === 'number') {
-        let duration;
-        if (action === 'hack') duration = ns.getHackTime(target);
-        else if (action === 'grow') duration = ns.getGrowTime(target);
+      if (launchTime && typeof launchTime === "number") {
+        let duration: number;
+        if (action === "hack") duration = ns.getHackTime(target);
+        else if (action === "grow") duration = ns.getGrowTime(target);
         else duration = ns.getWeakenTime(target);
 
         const completionTime = launchTime + delay + duration;
 
-        // Track earliest completion
-        if (jobs[target].earliestCompletion === null || completionTime < jobs[target].earliestCompletion) {
+        if (jobs[target].earliestCompletion === null || completionTime < jobs[target].earliestCompletion!) {
           jobs[target].earliestCompletion = completionTime;
         }
       }
@@ -305,14 +299,13 @@ function getRunningJobs(ns) {
   return jobs;
 }
 
-/** Get job counts per server */
-function getServerJobCounts(ns) {
-  const servers = [];
+function getServerJobCounts(ns: NS): ServerJobEntry[] {
+  const servers: ServerJobEntry[] = [];
 
   for (const hostname of getAllServers(ns)) {
     let threads = 0;
     for (const proc of ns.ps(hostname)) {
-      if (proc.filename.includes('/workers/')) {
+      if (proc.filename.includes("/workers/")) {
         threads += proc.threads;
       }
     }
@@ -324,8 +317,7 @@ function getServerJobCounts(ns) {
   return servers.sort((a, b) => b.threads - a.threads);
 }
 
-/** Get RAM stats across all servers */
-function getRamStats(ns) {
+function getRamStats(ns: NS): RamStats {
   let total = 0;
   let used = 0;
   let activeServers = 0;

@@ -1,5 +1,6 @@
-/** @param {NS} ns */
-export async function main(ns) {
+import { NS } from "@ns";
+
+export async function main(ns: NS): Promise<void> {
   const BACKDOOR = [
     "CSEC",
     "avmnite-02h",

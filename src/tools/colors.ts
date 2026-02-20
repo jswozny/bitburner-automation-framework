@@ -1,10 +1,7 @@
-/**
- * Updated for game version 2.4.0
- */
+import { NS } from "@ns";
 
-/** @param {NS} ns */
-export async function main(ns) {
-    ns.disableLog(`ALL`); // Failures are still logged, this just prevents unnecessary log spam.
+export async function main(ns: NS): Promise<void> {
+    ns.disableLog("ALL");
 
     ns.tprintf(`\x1b[1;35mUsing colors in script output with \x1b[1;36mtprint\x1b[1;35m & \x1b[36;1mtprintf\x1b[1;35m (terminal) and \x1b[36;1mprint\x1b[1;35m & \x1b[1;36mprintf\x1b[1;35m (log)`);
 
@@ -18,7 +15,6 @@ export async function main(ns) {
 
     ns.tprintf(`\n`);
 
-    // Implemented attribute numbers in Bitburner: 0, 1, 4, 30-37, 38;5, 48;5
     ns.tprintf(`\x1b[1;36m• Using an ANSI escape sequence`);
     ns.tprintf(`Syntax: \x1b[36m\\x1b[\x1b[35mn\x1b[36mm\x1b[m, replace \x1b[35mn\x1b[m by display attribute(s). Several attributes can be set in the same sequence, separated by semicolons.`);
     ns.tprintf(` 0     ─ \x1b[mall attributes off ─ equivalent to using an empty escape sequence: \x1b[36m\\x1b[m\n`);
@@ -54,9 +50,9 @@ export async function main(ns) {
     palette8bit += `\n`;
     // 16 basic colors (indices 0 to 15 inclusive)
     for (let i = 0; i < 16; i++) {
-        if (i <= 6 || i === 8 || i === 12) { // Use light text for better contrast of index against background.
+        if (i <= 6 || i === 8 || i === 12) {
             palette8bit += `\x1b[37;48;5;${i}m${String(i).padStart(9)}\x1b[m`;
-        } else { // Use dark text for better contrast of index against background.
+        } else {
             palette8bit += `\x1b[30;48;5;${i}m${String(i).padStart(9)}\x1b[m`;
         }
     }
@@ -64,7 +60,7 @@ export async function main(ns) {
     // 216 colors (6×6×6 cube) (indices 16 to 231 inclusive)
     for (let i = 0; i < 6; i++) {
         for (let j = 16; j <= 51; j++) {
-            let n = i * 36 + j; // n = i * rowlength + j
+            const n = i * 36 + j;
             if (j < 34) {
                 palette8bit += `\x1b[37;48;5;${n}m${String(n).padStart(4)}\x1b[m`;
             } else {

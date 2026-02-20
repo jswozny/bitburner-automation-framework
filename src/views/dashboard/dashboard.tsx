@@ -28,6 +28,7 @@ import { BitnodeStatusBar } from "views/dashboard/components/BitnodeStatus";
 // Styles and components
 import { styles } from "views/dashboard/styles";
 import { GroupedTabBar, TabGroup } from "views/dashboard/components/TabBar";
+import { ErrorBoundary } from "views/dashboard/components/ErrorBoundary";
 
 // Tool plugins
 import { nukePlugin } from "views/dashboard/tools/nuke";
@@ -113,26 +114,29 @@ function OverviewPanel({ state }: OverviewPanelProps): React.ReactElement {
   return (
     <div  >
       <div style={{ marginBottom: "12px" }}>
-        <AdvisorPanel
-            status={advisorEntry.getStatus(state)}
-            running={state.pids[advisorEntry.toolId] > 0}
-            toolId={advisorEntry.toolId}
-            error={advisorEntry.getError(state)}
-            pid={state.pids[advisorEntry.toolId]}
-        />
+        <ErrorBoundary label="Advisor">
+          <AdvisorPanel
+              status={advisorEntry.getStatus(state)}
+              running={state.pids[advisorEntry.toolId] > 0}
+              toolId={advisorEntry.toolId}
+              error={advisorEntry.getError(state)}
+              pid={state.pids[advisorEntry.toolId]}
+          />
+        </ErrorBoundary>
       </div>
       <div style={styles.grid}>
         {PLUGIN_REGISTRY.filter(e => e.toolId !== "advisor").map(entry => {
           const Card = entry.plugin.OverviewCard;
           return (
-            <Card
-              key={entry.toolId}
-              status={entry.getStatus(state)}
-              running={state.pids[entry.toolId] > 0}
-              toolId={entry.toolId}
-              error={entry.getError(state)}
-              pid={state.pids[entry.toolId]}
-            />
+            <ErrorBoundary key={entry.toolId} label={entry.tabLabel}>
+              <Card
+                status={entry.getStatus(state)}
+                running={state.pids[entry.toolId] > 0}
+                toolId={entry.toolId}
+                error={entry.getError(state)}
+                pid={state.pids[entry.toolId]}
+              />
+            </ErrorBoundary>
           );
         })}
       </div>
@@ -198,13 +202,15 @@ function Dashboard(): React.ReactElement {
 
     const Panel = entry.plugin.DetailPanel;
     return (
-      <Panel
-        status={entry.getStatus(state)}
-        running={state.pids[entry.toolId] > 0}
-        toolId={entry.toolId}
-        error={entry.getError(state)}
-        pid={state.pids[entry.toolId]}
-      />
+      <ErrorBoundary label={entry.tabLabel}>
+        <Panel
+          status={entry.getStatus(state)}
+          running={state.pids[entry.toolId] > 0}
+          toolId={entry.toolId}
+          error={entry.getError(state)}
+          pid={state.pids[entry.toolId]}
+        />
+      </ErrorBoundary>
     );
   };
 
