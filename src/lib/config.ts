@@ -84,6 +84,24 @@ export function getConfigNumber(
 }
 
 /**
+ * Set a single key in a config file (create file if missing, update or append key).
+ */
+export function setConfigValue(ns: NS, system: string, key: string, value: string): void {
+  const path = `/config/${system}.txt`;
+  const raw = ns.read(path);
+  if (!raw) {
+    ns.write(path, `# ${system} Config\n${key}=${value}`, "w");
+    return;
+  }
+  const regex = new RegExp(`^${key}=.*$`, "m");
+  if (regex.test(raw)) {
+    ns.write(path, raw.replace(regex, `${key}=${value}`), "w");
+  } else {
+    ns.write(path, raw + `\n${key}=${value}`, "w");
+  }
+}
+
+/**
  * Get a boolean config value, falling back to the provided default.
  * "true" and "1" are truthy, everything else is false.
  */

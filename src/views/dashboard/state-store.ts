@@ -9,6 +9,7 @@
  */
 import { NetscriptPort, NS } from "@ns";
 import { peekStatus } from "/lib/ports";
+import { setConfigValue } from "/lib/config";
 import {
   ToolName,
   DashboardState,
@@ -423,10 +424,7 @@ function executeCommand(ns: NS, cmd: Command): void {
           cachedData.pids.faction = 0;
         }
         if (cmd.cityFaction) {
-          // Write preferred city to config file (daemon reads from config, not flags)
-          const raw = ns.read("/config/faction.txt") || "# faction Config\ninterval=10000\noneShot=false\npreferredCity=\nnoKill=false";
-          const updated = raw.replace(/preferredCity=.*/, `preferredCity=${cmd.cityFaction}`);
-          ns.write("/config/faction.txt", updated, "w");
+          setConfigValue(ns, "faction", "preferredCity", cmd.cityFaction);
         }
         const factionPid = ns.exec("daemons/faction.js", "home", 1);
         if (factionPid > 0) {
@@ -444,11 +442,10 @@ function executeCommand(ns: NS, cmd: Command): void {
           ns.kill(currentHackPid);
           cachedData.pids.hack = 0;
         }
-        const hackArgs: string[] = [];
-        if (cmd.hackStrategy) hackArgs.push("--strategy", cmd.hackStrategy);
-        if (cmd.hackMaxBatches !== undefined) hackArgs.push("--max-batches", String(cmd.hackMaxBatches));
-        if (cmd.hackHomeReserve !== undefined) hackArgs.push("--home-reserve", String(cmd.hackHomeReserve));
-        const hackPid = ns.exec("daemons/hack.js", "home", 1, ...hackArgs);
+        if (cmd.hackStrategy) setConfigValue(ns, "hack", "strategy", cmd.hackStrategy);
+        if (cmd.hackMaxBatches !== undefined) setConfigValue(ns, "hack", "maxBatches", String(cmd.hackMaxBatches));
+        if (cmd.hackHomeReserve !== undefined) setConfigValue(ns, "hack", "homeReserve", String(cmd.hackHomeReserve));
+        const hackPid = ns.exec("daemons/hack.js", "home", 1);
         if (hackPid > 0) {
           cachedData.pids.hack = hackPid;
           ns.toast(`Hack daemon: ${cmd.hackStrategy ?? "money"} mode`, "success", 2000);
@@ -465,11 +462,10 @@ function executeCommand(ns: NS, cmd: Command): void {
           ns.kill(currentSharePid);
           cachedData.pids.share = 0;
         }
-        const shareArgs: string[] = [];
-        if (cmd.shareTargetPercent !== undefined && cmd.shareTargetPercent > 0) {
-          shareArgs.push("--target-percent", String(cmd.shareTargetPercent));
+        if (cmd.shareTargetPercent !== undefined) {
+          setConfigValue(ns, "share", "targetPercent", String(cmd.shareTargetPercent));
         }
-        const sharePid = ns.exec("daemons/share.js", "home", 1, ...shareArgs);
+        const sharePid = ns.exec("daemons/share.js", "home", 1);
         if (sharePid > 0) {
           cachedData.pids.share = sharePid;
           const label = cmd.shareTargetPercent && cmd.shareTargetPercent > 0
@@ -916,16 +912,15 @@ function startTool(ns: NS, tool: ToolName): void {
     const strategy = (hackState.strategy as string) || "money";
     const batches = (hackState.maxBatches as number) || 1;
     const reserve = (hackState.homeReserve as number) || 640;
-    const args = ["--strategy", strategy, "--max-batches", String(batches), "--home-reserve", String(reserve)];
-    pid = ns.exec(script, "home", 1, ...args);
+    setConfigValue(ns, "hack", "strategy", strategy);
+    setConfigValue(ns, "hack", "maxBatches", String(batches));
+    setConfigValue(ns, "hack", "homeReserve", String(reserve));
+    pid = ns.exec(script, "home", 1);
   } else if (tool === "share") {
     const shareState = uiState.pluginUIState.share;
     const targetPercent = (shareState.targetPercent as number) || 0;
-    const args: string[] = [];
-    if (targetPercent > 0) {
-      args.push("--target-percent", String(targetPercent));
-    }
-    pid = ns.exec(script, "home", 1, ...args);
+    setConfigValue(ns, "share", "targetPercent", String(targetPercent));
+    pid = ns.exec(script, "home", 1);
   } else if (tool === "gang") {
     const gangState = uiState.pluginUIState.gang;
     const strategy = (gangState.strategy as string) || "";
