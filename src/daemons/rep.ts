@@ -950,9 +950,10 @@ async function runFullMode(
             currentWork?.factionName === workTargetFaction;
 
           if (
-            !currentlyWorking ||
-            (currentWork as { factionWorkType?: string }).factionWorkType !==
-              bestWork
+            (!currentlyWorking ||
+              (currentWork as { factionWorkType?: string }).factionWorkType !==
+                bestWork) &&
+            currentWork?.type !== "CLASS" // Don't interrupt gym/university training
           ) {
             ns.singularity.workForFaction(
               workTargetFaction,

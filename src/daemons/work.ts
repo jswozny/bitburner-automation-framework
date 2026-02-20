@@ -499,7 +499,11 @@ const VALID_FOCUSES: WorkFocus[] = [
 function readAndApplyFocus(ns: NS): WorkFocus | null {
   const focus = getConfigString(ns, "work", "focus", "");
   if (focus && VALID_FOCUSES.includes(focus as WorkFocus)) {
-    setWorkFocus(ns, focus as WorkFocus);
+    // Only reset rotation state when focus actually changes
+    const workConfig = readWorkConfig(ns);
+    if (focus !== workConfig.focus) {
+      setWorkFocus(ns, focus as WorkFocus);
+    }
     return focus as WorkFocus;
   }
   // Fall back to whatever is in the work config file
