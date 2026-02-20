@@ -38,6 +38,7 @@ export type { GangStatus as FormattedGangStatus } from "/types/ports";
 export type { GangTerritoryStatus as FormattedGangTerritoryStatus } from "/types/ports";
 export type { AugmentsStatus as FormattedAugmentsStatus } from "/types/ports";
 export type { AdvisorStatus as FormattedAdvisorStatus } from "/types/ports";
+export type { ContractsStatus as FormattedContractsStatus } from "/types/ports";
 
 // Legacy plugin interface (kept for any remaining references)
 import React from "lib/react";

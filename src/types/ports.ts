@@ -25,6 +25,7 @@ export const STATUS_PORTS = {
   gangTerritory: 14,
   augments: 16,
   advisor: 17,
+  contracts: 18,
 } as const;
 
 export const GANG_CONTROL_PORT = 15;
@@ -34,7 +35,7 @@ export const COMMAND_PORT = 20;
 
 // === TOOL NAMES ===
 
-export type ToolName = "nuke" | "pserv" | "share" | "rep" | "hack" | "darkweb" | "work" | "faction" | "infiltration" | "gang" | "augments" | "advisor";
+export type ToolName = "nuke" | "pserv" | "share" | "rep" | "hack" | "darkweb" | "work" | "faction" | "infiltration" | "gang" | "augments" | "advisor" | "contracts";
 
 // === TOOL SCRIPTS (daemon paths) ===
 
@@ -51,6 +52,7 @@ export const TOOL_SCRIPTS: Record<ToolName, string> = {
   gang: "daemons/gang.js",
   augments: "daemons/augments.js",
   advisor: "daemons/advisor.js",
+  contracts: "daemons/contracts.js",
 };
 
 // === PRIORITY CONSTANTS ===
@@ -855,6 +857,38 @@ export interface AdvisorStatus {
   lastAnalysisMs: number;
 }
 
+// === CONTRACTS STATUS ===
+
+export interface ContractResult {
+  host: string;
+  file: string;
+  type: string;
+  reward: string;
+  success: boolean;
+  timestamp: number;
+}
+
+export interface PendingContract {
+  host: string;
+  file: string;
+  type: string;
+  triesRemaining: number;
+  reason: string;
+}
+
+export interface ContractsStatus {
+  solved: number;
+  failed: number;
+  skipped: number;
+  found: number;
+  pendingContracts: PendingContract[];
+  recentResults: ContractResult[];
+  knownTypes: number;
+  totalTypes: number;
+  lastScanTime: number;
+  serversScanned: number;
+}
+
 // === DASHBOARD STATE ===
 
 export interface DashboardState {
@@ -877,6 +911,7 @@ export interface DashboardState {
   gangStatus: GangStatus | null;
   augmentsStatus: AugmentsStatus | null;
   advisorStatus: AdvisorStatus | null;
+  contractsStatus: ContractsStatus | null;
 }
 
 // === PLUGIN INTERFACE (for dashboard) ===

@@ -58,6 +58,7 @@ const DAEMON_DOCS: Record<ToolName, { start: string; stop: string; flags: string
   gang: { start: "run daemons/gang.js", stop: "kill daemons/gang.js", flags: "--strategy respect|money|territory|balanced --no-kill" },
   augments: { start: "run daemons/augments.js", stop: "kill daemons/augments.js", flags: "--interval <ms> --one-shot" },
   advisor: { start: "run daemons/advisor.js", stop: "kill daemons/advisor.js", flags: null },
+  contracts: { start: "run daemons/contracts.js", stop: "kill daemons/contracts.js", flags: "--interval <ms> --one-shot --min-tries <N>" },
 };
 
 // === RUNNING STATE ===

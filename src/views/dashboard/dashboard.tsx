@@ -42,6 +42,7 @@ import { infiltrationPlugin } from "views/dashboard/tools/infiltration";
 import { gangPlugin } from "views/dashboard/tools/gang";
 import { augmentsPlugin } from "views/dashboard/tools/augments";
 import { advisorPlugin } from "views/dashboard/tools/advisor";
+import { contractsPlugin } from "views/dashboard/tools/contracts";
 
 // === PLUGIN REGISTRY ===
 
@@ -72,6 +73,7 @@ const PLUGIN_REGISTRY: PluginEntry[] = [
   { toolId: "gang",         plugin: gangPlugin,         tabLabel: "Gang",       getStatus: pick("gangStatus"),         getError: () => null },
   { toolId: "infiltration", plugin: infiltrationPlugin, tabLabel: "Infiltrate", getStatus: pick("infiltrationStatus"), getError: () => null },
   { toolId: "advisor",      plugin: advisorPlugin,      tabLabel: "Advisor",    getStatus: pick("advisorStatus"),       getError: () => null },
+  { toolId: "contracts",    plugin: contractsPlugin,    tabLabel: "Contracts",  getStatus: pick("contractsStatus"),    getError: () => null },
 ];
 
 /** Lookup a PluginEntry by toolId. */
@@ -89,7 +91,7 @@ const TAB_GROUPS: TabGroupDef[] = [
   { label: "Servers",        entries: [findEntry("nuke"), findEntry("hack"), findEntry("pserv"), findEntry("darkweb")] },
   { label: "Rep & Factions", entries: [findEntry("faction"), findEntry("rep"), findEntry("share"), findEntry("augments")] },
   { label: "Growth",         entries: [findEntry("work"), findEntry("gang")] },
-  { label: "Tools",          entries: [findEntry("infiltration")] },
+  { label: "Tools",          entries: [findEntry("infiltration"), findEntry("contracts")] },
 ];
 
 /** Build the TabGroup[] shape needed by GroupedTabBar. */

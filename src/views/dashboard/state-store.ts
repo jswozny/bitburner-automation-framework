@@ -34,6 +34,7 @@ import {
   GangStrategy,
   AugmentsStatus,
   AdvisorStatus,
+  ContractsStatus,
   Command,
 } from "/types/ports";
 
@@ -646,6 +647,7 @@ const uiState: UIState = {
     gang: {},
     augments: {},
     advisor: {},
+    contracts: {},
   },
 };
 
@@ -755,10 +757,11 @@ interface CachedData {
   gangStatus: GangStatus | null;
   augmentsStatus: AugmentsStatus | null;
   advisorStatus: AdvisorStatus | null;
+  contractsStatus: ContractsStatus | null;
 }
 
 const cachedData: CachedData = {
-  pids: { nuke: 0, pserv: 0, share: 0, rep: 0, hack: 0, darkweb: 0, work: 0, faction: 0, infiltration: 0, gang: 0, augments: 0, advisor: 0 },
+  pids: { nuke: 0, pserv: 0, share: 0, rep: 0, hack: 0, darkweb: 0, work: 0, faction: 0, infiltration: 0, gang: 0, augments: 0, advisor: 0, contracts: 0 },
   nukeStatus: null,
   pservStatus: null,
   shareStatus: null,
@@ -777,6 +780,7 @@ const cachedData: CachedData = {
   gangStatus: null,
   augmentsStatus: null,
   advisorStatus: null,
+  contractsStatus: null,
 };
 
 // === PORT-BASED STATUS READING ===
@@ -835,6 +839,8 @@ export function readStatusPorts(ns: NS): void {
   cachedData.augmentsStatus = peekStatus<AugmentsStatus>(ns, STATUS_PORTS.augments, STALE_THRESHOLD_MS);
 
   cachedData.advisorStatus = peekStatus<AdvisorStatus>(ns, STATUS_PORTS.advisor, STALE_THRESHOLD_MS);
+
+  cachedData.contractsStatus = peekStatus<ContractsStatus>(ns, STATUS_PORTS.contracts, STALE_THRESHOLD_MS);
 }
 
 // === TOOL CONTROL ===
@@ -854,6 +860,7 @@ function clearToolStatus(tool: ToolName): void {
     case "gang": cachedData.gangStatus = null; break;
     case "augments": cachedData.augmentsStatus = null; break;
     case "advisor": cachedData.advisorStatus = null; break;
+    case "contracts": cachedData.contractsStatus = null; break;
   }
 }
 
@@ -1010,5 +1017,6 @@ export function getStateSnapshot(): DashboardState {
     gangStatus: cachedData.gangStatus,
     augmentsStatus: cachedData.augmentsStatus,
     advisorStatus: cachedData.advisorStatus,
+    contractsStatus: cachedData.contractsStatus,
   };
 }

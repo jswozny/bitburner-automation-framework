@@ -72,6 +72,12 @@ Started by `start.js` or launched manually. All publish status to ports for the 
 | `daemons/rep.js` | Auto-grind faction rep toward next augmentation |
 | `daemons/work.js` | Auto-train stats at gyms/universities/crime |
 | `daemons/darkweb.js` | Auto-buy darkweb programs (exits when all owned) |
+| `daemons/faction.js` | Auto-join factions, track requirements and invitations |
+| `daemons/infiltration.js` | Automated infiltration runs with mini-game solvers |
+| `daemons/gang.js` | Gang management (tasks, ascension, equipment, territory) |
+| `daemons/augments.js` | Track available/affordable augmentations |
+| `daemons/advisor.js` | Analyze game state and rank recommended actions |
+| `daemons/contracts.js` | Find and auto-solve coding contracts on all servers |
 
 ## Tools
 
