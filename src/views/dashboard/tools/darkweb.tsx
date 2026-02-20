@@ -59,11 +59,12 @@ function formatDarkwebStatus(ns: NS): FormattedDarkwebStatus | null {
 // === COMPONENTS ===
 
 function DarkwebOverviewCard({ status, running, toolId, error, pid }: OverviewCardProps<FormattedDarkwebStatus>): React.ReactElement {
+  const completed = !!status?.allOwned;
   return (
     <div style={styles.card}>
       <div style={styles.cardTitle}>
         <span>DARKWEB</span>
-        <ToolControl tool={toolId} running={running} error={!!error} pid={pid} />
+        <ToolControl tool={toolId} running={running} error={!!error} completed={completed} pid={pid} />
       </div>
       {error ? (
         <div style={{ color: "#ffaa00", fontSize: "11px" }}>{error}</div>
@@ -96,10 +97,11 @@ function DarkwebOverviewCard({ status, running, toolId, error, pid }: OverviewCa
 }
 
 function DarkwebDetailPanel({ status, running, toolId, error, pid }: DetailPanelProps<FormattedDarkwebStatus>): React.ReactElement {
+  const completed = !!status?.allOwned;
   if (error) {
     return (
       <div style={styles.panel}>
-        <ToolControl tool={toolId} running={running} error={true} pid={pid} />
+        <ToolControl tool={toolId} running={running} error={true} completed={completed} pid={pid} />
         <div style={{ color: "#ffaa00", marginTop: "12px" }}>{error}</div>
         <div style={{ ...styles.dim, marginTop: "8px", fontSize: "11px" }}>
           Requires Singularity API (Source-File 4)
@@ -123,7 +125,7 @@ function DarkwebDetailPanel({ status, running, toolId, error, pid }: DetailPanel
               <span style={styles.statValue}>—</span>
             </span>
           </div>
-          <ToolControl tool={toolId} running={running} pid={pid} />
+          <ToolControl tool={toolId} running={running} completed={completed} pid={pid} />
         </div>
         <div style={styles.card}>
           <div style={{ color: "#888" }}>Waiting for status...</div>
@@ -142,7 +144,7 @@ function DarkwebDetailPanel({ status, running, toolId, error, pid }: DetailPanel
               <span style={{ color: "#ff4444" }}>NOT OWNED</span>
             </span>
           </div>
-          <ToolControl tool={toolId} running={running} pid={pid} />
+          <ToolControl tool={toolId} running={running} completed={completed} pid={pid} />
         </div>
         <div style={styles.card}>
           <div style={{ color: "#ffaa00", marginBottom: "8px" }}>
@@ -177,7 +179,7 @@ function DarkwebDetailPanel({ status, running, toolId, error, pid }: DetailPanel
             </span>
           </span>
         </div>
-        <ToolControl tool={toolId} running={running} pid={pid} />
+        <ToolControl tool={toolId} running={running} completed={completed} pid={pid} />
       </div>
 
       {/* All Programs Owned */}

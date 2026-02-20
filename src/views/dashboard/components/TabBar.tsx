@@ -11,6 +11,8 @@ export interface TabGroup {
   subLabels: string[];
 }
 
+export type ToolStatus = "running" | "stopped" | "completed";
+
 export interface GroupedTabBarProps {
   groups: TabGroup[];
   activeGroup: number; // -1 = Overview
@@ -18,7 +20,7 @@ export interface GroupedTabBarProps {
   onOverviewClick: () => void;
   onGroupClick: (groupIndex: number) => void;
   onSubClick: (subIndex: number) => void;
-  statuses?: boolean[][];
+  statuses?: ToolStatus[][];
 }
 
 export function GroupedTabBar({
@@ -54,18 +56,23 @@ export function GroupedTabBar({
             <span>{g.label}</span>
             {statuses && statuses[i] && (
               <span style={{ display: "flex", gap: "3px" }}>
-                {statuses[i].map((running, j) => (
-                  <span
-                    key={j}
-                    style={{
-                      width: "5px",
-                      height: "5px",
-                      borderRadius: "50%",
-                      backgroundColor: running ? "#00ff00" : "#ff4444",
-                      display: "inline-block",
-                    }}
-                  />
-                ))}
+                {statuses[i].map((status, j) => {
+                  const color = status === "running" ? "#00ff00"
+                    : status === "completed" ? "#4488ff"
+                    : "#ff4444";
+                  return (
+                    <span
+                      key={j}
+                      style={{
+                        width: "5px",
+                        height: "5px",
+                        borderRadius: "50%",
+                        backgroundColor: color,
+                        display: "inline-block",
+                      }}
+                    />
+                  );
+                })}
               </span>
             )}
           </div>

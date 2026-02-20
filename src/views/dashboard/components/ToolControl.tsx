@@ -15,10 +15,11 @@ export interface ToolControlProps {
   tool: ToolName;
   running: boolean;
   error?: boolean;
+  completed?: boolean;
   pid?: number;
 }
 
-export function ToolControl({ tool, running, error, pid }: ToolControlProps): React.ReactElement {
+export function ToolControl({ tool, running, error, completed, pid }: ToolControlProps): React.ReactElement {
   const handleClick = () => {
     // Write command to port - no NS context needed, port.write() is just JS
     writeCommand(tool, running ? "stop" : "start");
@@ -30,6 +31,7 @@ export function ToolControl({ tool, running, error, pid }: ToolControlProps): Re
     }
   };
 
+  const hideButton = completed && !running;
   const buttonStyle = running ? styles.buttonStop : styles.buttonPlay;
 
   return (
@@ -40,12 +42,15 @@ export function ToolControl({ tool, running, error, pid }: ToolControlProps): Re
       <StatusBadge
         running={running}
         error={error}
+        completed={completed}
         onClick={handleBadgeClick}
         clickable={running && !!pid && pid > 0}
       />
-      <button style={buttonStyle} onClick={handleClick}>
-        {running ? "■" : "▶"}
-      </button>
+      {!hideButton && (
+        <button style={buttonStyle} onClick={handleClick}>
+          {running ? "■" : "▶"}
+        </button>
+      )}
     </span>
   );
 }

@@ -25,7 +25,7 @@ import {
 } from "views/dashboard/state-store";
 // Styles and components
 import { styles } from "views/dashboard/styles";
-import { GroupedTabBar, TabGroup } from "views/dashboard/components/TabBar";
+import { GroupedTabBar, TabGroup, ToolStatus } from "views/dashboard/components/TabBar";
 import { ErrorBoundary } from "views/dashboard/components/ErrorBoundary";
 
 // Tool plugins
@@ -267,7 +267,11 @@ function Dashboard(): React.ReactElement {
         onOverviewClick={handleOverviewClick}
         onGroupClick={handleGroupClick}
         onSubClick={handleSubClick}
-        statuses={TAB_GROUPS.map(g => g.entries.map(e => state.pids[e.toolId] > 0))}
+        statuses={TAB_GROUPS.map(g => g.entries.map((e): ToolStatus => {
+          if (state.pids[e.toolId] > 0) return "running";
+          if (e.toolId === "darkweb" && state.darkwebStatus?.allOwned) return "completed";
+          return "stopped";
+        }))}
       />
       {renderPanel()}
     </div>

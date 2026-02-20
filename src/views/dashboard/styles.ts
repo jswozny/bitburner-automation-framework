@@ -132,6 +132,12 @@ export const styles = {
     border: "1px solid #ff4444",
   } as React.CSSProperties,
 
+  badgeCompleted: {
+    backgroundColor: "#001133",
+    color: "#4488ff",
+    border: "1px solid #4488ff",
+  } as React.CSSProperties,
+
   badgeError: {
     backgroundColor: "#332200",
     color: "#ffaa00",

@@ -10,11 +10,12 @@ import { styles } from "views/dashboard/styles";
 export interface StatusBadgeProps {
   running: boolean;
   error?: boolean;
+  completed?: boolean;
   onClick?: () => void;
   clickable?: boolean;
 }
 
-export function StatusBadge({ running, error, onClick, clickable }: StatusBadgeProps): React.ReactElement {
+export function StatusBadge({ running, error, completed, onClick, clickable }: StatusBadgeProps): React.ReactElement {
   const isClickable = clickable && running && onClick;
 
   const clickableStyle: React.CSSProperties = isClickable
@@ -26,6 +27,13 @@ export function StatusBadge({ running, error, onClick, clickable }: StatusBadgeP
       <span style={{ ...styles.badge, ...styles.badgeError }}>ERROR</span>
     );
   }
+
+  if (completed && !running) {
+    return (
+      <span style={{ ...styles.badge, ...styles.badgeCompleted }}>COMPLETED</span>
+    );
+  }
+
   return (
     <span
       style={{
