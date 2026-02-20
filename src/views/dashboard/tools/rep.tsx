@@ -613,7 +613,7 @@ function HighTierDetailPanel({
 
       <TierFooter
         tier={status.tier ?? 6}
-        tierName={tierLabel}
+        tierName={TIER_LABELS[status.tier ?? 6] ?? "Unknown"}
         currentRamUsage={status.currentRamUsage}
         nextTierRam={status.nextTierRam}
         canUpgrade={status.canUpgrade}

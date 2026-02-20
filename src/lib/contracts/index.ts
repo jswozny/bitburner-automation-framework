@@ -4,7 +4,7 @@
  * Imports all solvers from individual files and maps exact Bitburner
  * contract type strings to solver functions. Zero NS imports, zero RAM.
  *
- * Import with: import { solve, SOLVERS } from "/lib/contracts";
+ * Import with: import { solve, SOLVERS } from "/lib/contracts/index";
  */
 import { findLargestPrimeFactor } from "/lib/contracts/solvers/prime-factor";
 import { subarrayMaxSum } from "/lib/contracts/solvers/subarray-max-sum";

@@ -17,7 +17,7 @@ import {
   PendingContract,
   ContractsStatus,
 } from "/types/ports";
-import { solve, SOLVERS } from "/lib/contracts";
+import { solve, SOLVERS } from "/lib/contracts/index";
 
 const C = COLORS;
 
