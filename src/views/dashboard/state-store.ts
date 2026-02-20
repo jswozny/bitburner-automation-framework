@@ -9,7 +9,7 @@
  */
 import { NetscriptPort, NS } from "@ns";
 import { peekStatus } from "/lib/ports";
-import { setConfigValue } from "/lib/config";
+import { setConfigValue, getConfigString } from "/lib/config";
 import {
   ToolName,
   DashboardState,
@@ -124,6 +124,14 @@ export function buySelectedAugments(augNames: string[]): void {
 export function runBackdoors(): void {
   if (!commandPort) return;
   commandPort.write(JSON.stringify({ tool: "rep", action: "run-backdoors" }));
+}
+
+/**
+ * Claim focus priority for a daemon (work or rep).
+ */
+export function claimFocus(target: "work" | "rep"): void {
+  if (!commandPort) return;
+  commandPort.write(JSON.stringify({ tool: target, action: "claim-focus", focusTarget: target }));
 }
 
 /**
@@ -528,6 +536,12 @@ function executeCommand(ns: NS, cmd: Command): void {
         const gangCtrl = ns.getPortHandle(GANG_CONTROL_PORT);
         gangCtrl.write(JSON.stringify(cmd));
         ns.toast(`Gang: ${cmd.action.replace("gang-", "").replace(/-/g, " ")}`, "info", 2000);
+      }
+      break;
+    case "claim-focus":
+      if (cmd.focusTarget) {
+        setConfigValue(ns, "focus", "holder", cmd.focusTarget);
+        ns.toast(`Focus claimed by ${cmd.focusTarget} daemon`, "success", 2000);
       }
       break;
     case "buy-selected-augments":
@@ -945,6 +959,13 @@ function stopTool(ns: NS, tool: ToolName): void {
     ns.kill(pid);
     cachedData.pids[tool] = 0;
     clearToolStatus(tool);
+    // Clear focus holder if the stopped tool was holding focus
+    if (tool === "work" || tool === "rep") {
+      const currentHolder = getConfigString(ns, "focus", "holder", "");
+      if (currentHolder === tool) {
+        setConfigValue(ns, "focus", "holder", "");
+      }
+    }
     ns.toast(`Stopped ${tool}`, "warning", 2000);
   }
 }

@@ -19,7 +19,7 @@ import {
   WorkFocus,
   TRAVEL_COST,
 } from "/controllers/work";
-import { writeWorkFocusCommand, writeStartTrainingCommand } from "views/dashboard/state-store";
+import { writeWorkFocusCommand, writeStartTrainingCommand, claimFocus } from "views/dashboard/state-store";
 
 // === FOCUS OPTIONS ===
 
@@ -284,6 +284,37 @@ function WorkDetailPanel({
         </div>
         <ToolControl tool={toolId} running={running} pid={pid} />
       </div>
+
+      {/* Focus Yielding Banner */}
+      {status?.focusYielding && (
+        <div style={{
+          backgroundColor: "rgba(255, 170, 0, 0.1)",
+          border: "1px solid #ffaa00",
+          borderRadius: "4px",
+          padding: "8px 12px",
+          marginBottom: "8px",
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "center",
+        }}>
+          <span style={{ color: "#ffaa00", fontSize: "12px" }}>
+            Yielding to Rep daemon
+          </span>
+          <button
+            style={{
+              ...styles.buttonPlay,
+              marginLeft: 0,
+              padding: "3px 10px",
+              backgroundColor: "#554400",
+              color: "#ffaa00",
+              fontSize: "11px",
+            }}
+            onClick={() => claimFocus("work")}
+          >
+            Claim Focus
+          </button>
+        </div>
+      )}
 
       {/* Focus Selection */}
       <div style={styles.card}>

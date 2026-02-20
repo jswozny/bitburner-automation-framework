@@ -80,7 +80,7 @@ export interface QueueEntry {
 
 export interface Command {
   tool: ToolName;
-  action: "start" | "stop" | "open-tail" | "run-script" | "start-faction-work" | "set-focus" | "start-training" | "install-augments" | "run-backdoors" | "restart-rep-daemon" | "join-faction" | "restart-faction-daemon" | "restart-hack-daemon" | "restart-share-daemon" | "stop-infiltration" | "kill-infiltration" | "configure-infiltration" | "set-gang-strategy" | "pin-gang-member" | "unpin-gang-member" | "ascend-gang-member" | "toggle-gang-purchases" | "toggle-gang-warfare" | "set-gang-wanted-threshold" | "set-gang-ascension-thresholds" | "set-gang-training-threshold" | "set-gang-grow-target" | "set-gang-grow-respect-reserve" | "force-buy-equipment" | "restart-gang-daemon" | "buy-selected-augments";
+  action: "start" | "stop" | "open-tail" | "run-script" | "start-faction-work" | "set-focus" | "start-training" | "install-augments" | "run-backdoors" | "restart-rep-daemon" | "join-faction" | "restart-faction-daemon" | "restart-hack-daemon" | "restart-share-daemon" | "stop-infiltration" | "kill-infiltration" | "configure-infiltration" | "set-gang-strategy" | "pin-gang-member" | "unpin-gang-member" | "ascend-gang-member" | "toggle-gang-purchases" | "toggle-gang-warfare" | "set-gang-wanted-threshold" | "set-gang-ascension-thresholds" | "set-gang-training-threshold" | "set-gang-grow-target" | "set-gang-grow-respect-reserve" | "force-buy-equipment" | "restart-gang-daemon" | "buy-selected-augments" | "claim-focus";
   scriptPath?: string;
   scriptArgs?: string[];
   factionName?: string;
@@ -107,6 +107,7 @@ export interface Command {
   gangGrowTargetMultiplier?: number;
   gangGrowRespectReserve?: number;
   selectedAugs?: string[];
+  focusTarget?: "work" | "rep";
 }
 
 // === STATUS INTERFACES ===
@@ -263,6 +264,7 @@ export interface RepStatus {
   bestWorkType?: "hacking" | "field" | "security";
   currentWorkType?: string | null;
   isWorkable?: boolean;
+  focusYielding?: boolean;
   pendingBackdoors?: string[];
   repGainRate?: number;
   eta?: string;
@@ -431,6 +433,7 @@ export interface WorkStatus {
     bestValueFormatted: string;
     metric: string;
   } | null;
+  focusYielding?: boolean;
 }
 
 // === HACK STRATEGY ===

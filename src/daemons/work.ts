@@ -26,7 +26,7 @@ import {
 import { analyzeCrime, CrimeName } from "/controllers/crime";
 import { publishStatus } from "/lib/ports";
 import { STATUS_PORTS, WorkStatus } from "/types/ports";
-import { writeDefaultConfig, getConfigString, getConfigNumber, getConfigBool } from "/lib/config";
+import { writeDefaultConfig, getConfigString, getConfigNumber, getConfigBool, setConfigValue } from "/lib/config";
 
 // === FOCUS OPTIONS (mirrors dashboard/tools/work.tsx) ===
 
@@ -48,7 +48,7 @@ const FOCUS_OPTIONS: { value: WorkFocus; label: string }[] = [
 /**
  * Compute the formatted WorkStatus for dashboard consumption
  */
-function computeWorkStatus(ns: NS): WorkStatus {
+function computeWorkStatus(ns: NS, focusYielding = false): WorkStatus {
   const rawStatus = getWorkStatus(ns);
 
   // Check if player is focused on current work
@@ -245,6 +245,7 @@ function computeWorkStatus(ns: NS): WorkStatus {
     balanceRotation,
     crimeInfo,
     pendingCrimeSwitch,
+    focusYielding,
   };
 }
 
@@ -385,9 +386,19 @@ export async function main(ns: NS): Promise<void> {
     }
   }
 
+  // Claim focus if no current holder
+  const currentHolder = getConfigString(ns, "focus", "holder", "");
+  if (!currentHolder) {
+    setConfigValue(ns, "focus", "holder", "work");
+  }
+
   do {
     const interval = getConfigNumber(ns, "work", "interval", 5000);
     const oneShot = getConfigBool(ns, "work", "oneShot", false);
+
+    // Check focus priority
+    const focusHolder = getConfigString(ns, "focus", "holder", "");
+    const focusYielding = focusHolder === "rep";
 
     // Re-read focus each cycle for live editing
     const focus = getConfigString(ns, "work", "focus", "");
@@ -396,14 +407,18 @@ export async function main(ns: NS): Promise<void> {
     }
     ns.clearLog();
 
-    // Run training cycle (start/continue appropriate training)
-    const started = runWorkCycle(ns);
-    if (!started) {
-      ns.print(`${COLORS.yellow}Could not start training this cycle${COLORS.reset}`);
+    // Run training cycle (skip when yielding focus to rep daemon)
+    if (focusYielding) {
+      ns.print(`${COLORS.yellow}Yielding focus to Rep daemon${COLORS.reset}`);
+    } else {
+      const started = runWorkCycle(ns);
+      if (!started) {
+        ns.print(`${COLORS.yellow}Could not start training this cycle${COLORS.reset}`);
+      }
     }
 
     // Compute formatted status for dashboard
-    const workStatus = computeWorkStatus(ns);
+    const workStatus = computeWorkStatus(ns, focusYielding);
 
     // Publish to port
     publishStatus(ns, STATUS_PORTS.work, workStatus);

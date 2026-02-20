@@ -12,7 +12,7 @@ import { ToolControl } from "views/dashboard/components/ToolControl";
 import { ProgressBar } from "views/dashboard/components/ProgressBar";
 import { getRepStatus, findNextWorkableAugmentation, getNonWorkableFactionProgress, getFactionWorkStatus, getGangFaction } from "/controllers/factions";
 import { formatTime } from "lib/utils";
-import { startFactionWork, runBackdoors, restartRepDaemon } from "views/dashboard/state-store";
+import { startFactionWork, runBackdoors, restartRepDaemon, claimFocus } from "views/dashboard/state-store";
 import { peekStatus } from "lib/ports";
 import { STATUS_PORTS, RepStatus } from "types/ports";
 import { TierFooter } from "views/dashboard/components/TierFooter";
@@ -483,6 +483,37 @@ function HighTierDetailPanel({
           <ToolControl tool={toolId} running={running} pid={pid} />
         </div>
       </div>
+
+      {/* Focus Yielding Banner */}
+      {status.focusYielding && (
+        <div style={{
+          backgroundColor: "rgba(255, 170, 0, 0.1)",
+          border: "1px solid #ffaa00",
+          borderRadius: "4px",
+          padding: "8px 12px",
+          marginBottom: "8px",
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "center",
+        }}>
+          <span style={{ color: "#ffaa00", fontSize: "12px" }}>
+            Yielding to Work daemon
+          </span>
+          <button
+            style={{
+              ...styles.buttonPlay,
+              marginLeft: 0,
+              padding: "3px 10px",
+              backgroundColor: "#554400",
+              color: "#ffaa00",
+              fontSize: "11px",
+            }}
+            onClick={() => claimFocus("rep")}
+          >
+            Claim Focus
+          </button>
+        </div>
+      )}
 
       {/* Action Buttons */}
       {((status.pendingBackdoors && status.pendingBackdoors.length > 0) || showWorkButton) && (

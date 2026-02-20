@@ -120,25 +120,8 @@ function OverviewPanel({ state, onNavigate }: OverviewPanelProps): React.ReactEl
   const advisorEntry = findEntry("advisor");
   const AdvisorPanel = advisorEntry.plugin.DetailPanel;
 
-  const hasFocusConflict = state.pids.work > 0
-    && state.pids.rep > 0
-    && (state.repStatus?.tier ?? 0) >= 6;
-
   return (
     <div>
-      {hasFocusConflict && (
-        <div style={{
-          backgroundColor: "rgba(255, 0, 0, 0.12)",
-          border: "1px solid #ff4444",
-          borderRadius: "4px",
-          padding: "8px 12px",
-          marginBottom: "8px",
-          color: "#ff6666",
-          fontSize: "12px",
-        }}>
-          Focus Conflict: Both Work and Rep (auto-work) daemons are running. They will compete for player focus. Consider stopping one.
-        </div>
-      )}
       <div style={{ marginBottom: "12px" }}>
         <ErrorBoundary label="Advisor">
           <AdvisorPanel
