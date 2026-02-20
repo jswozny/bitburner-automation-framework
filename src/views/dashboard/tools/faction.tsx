@@ -19,6 +19,7 @@ import {
 import { peekStatus } from "lib/ports";
 import { STATUS_PORTS, FactionStatus } from "types/ports";
 import { CITY_FACTIONS, CITY_FACTION_CONFLICTS } from "/controllers/faction-manager";
+import { TierFooter } from "views/dashboard/components/TierFooter";
 
 const { useState } = React;
 
@@ -154,9 +155,6 @@ function FactionDetailPanel({ status, error, running, toolId, pid }: DetailPanel
       <div style={styles.row}>
         <div style={styles.rowLeft}>
           <span style={styles.statLabel}>Faction Manager</span>
-          <span style={{ color: "#888", fontSize: "11px", marginLeft: "8px" }}>
-            Tier {tier}: {status.tierName}
-          </span>
         </div>
         <ToolControl tool={toolId} running={running} pid={pid} />
       </div>
@@ -480,6 +478,14 @@ function FactionDetailPanel({ status, error, running, toolId, pid }: DetailPanel
           )}
         </div>
       )}
+
+      <TierFooter
+        tier={tier}
+        tierName={status.tierName}
+        currentRamUsage={status.currentRamUsage}
+        nextTierRam={status.nextTierRam}
+        canUpgrade={status.canUpgrade}
+      />
     </div>
   );
 }

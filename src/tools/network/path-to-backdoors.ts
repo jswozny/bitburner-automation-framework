@@ -9,6 +9,6 @@ export async function main(ns: NS): Promise<void> {
   ];
 
   for (const host of BACKDOOR) {
-    ns.run("/tools/path-to.js", 1, host);
+    ns.run("/tools/network/path-to.js", 1, host);
   }
 }

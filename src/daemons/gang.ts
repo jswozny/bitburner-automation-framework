@@ -352,6 +352,9 @@ async function runLiteMode(
     ns.clearLog();
 
     if (!ns.gang.inGang()) {
+      const karma = (ns as any).heart.break() as number;
+      const karmaRequired = 54000;
+      const karmaProgress = Math.min(1, Math.abs(karma) / karmaRequired);
       const status: GangStatus = {
         tier: 0, tierName: "lite",
         availableFeatures: getAvailableFeatures(0),
@@ -360,9 +363,12 @@ async function runLiteMode(
         nextTierRam: tierRamCosts[1] ?? null,
         canUpgrade: true,
         inGang: false,
+        karma,
+        karmaRequired,
+        karmaProgress,
       };
       publishStatus(ns, STATUS_PORTS.gang, status);
-      ns.print(`${C.yellow}Not in a gang.${C.reset}`);
+      ns.print(`${C.yellow}Not in a gang. Karma: ${ns.formatNumber(karma)}/${ns.formatNumber(-karmaRequired)} (${(karmaProgress * 100).toFixed(1)}%)${C.reset}`);
       await ns.sleep(5000);
       continue;
     }
@@ -439,6 +445,9 @@ async function runBasicMode(
     config = readControlCommands(ns, config);
 
     if (!ns.gang.inGang()) {
+      const karma = (ns as any).heart.break() as number;
+      const karmaRequired = 54000;
+      const karmaProgress = Math.min(1, Math.abs(karma) / karmaRequired);
       publishStatus(ns, STATUS_PORTS.gang, {
         tier: 1, tierName: "basic",
         availableFeatures: getAvailableFeatures(1),
@@ -447,6 +456,9 @@ async function runBasicMode(
         nextTierRam: tierRamCosts[2] ?? null,
         canUpgrade: true,
         inGang: false,
+        karma,
+        karmaRequired,
+        karmaProgress,
       } as GangStatus);
       await ns.sleep(5000);
       continue;
@@ -651,6 +663,9 @@ async function runFullMode(
     config = readControlCommands(ns, config);
 
     if (!ns.gang.inGang()) {
+      const karma = (ns as any).heart.break() as number;
+      const karmaRequired = 54000;
+      const karmaProgress = Math.min(1, Math.abs(karma) / karmaRequired);
       publishStatus(ns, STATUS_PORTS.gang, {
         tier: 2, tierName: "full",
         availableFeatures: getAvailableFeatures(2),
@@ -659,6 +674,9 @@ async function runFullMode(
         nextTierRam: null,
         canUpgrade: false,
         inGang: false,
+        karma,
+        karmaRequired,
+        karmaProgress,
       } as GangStatus);
       await ns.sleep(5000);
       continue;

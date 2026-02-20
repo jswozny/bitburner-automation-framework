@@ -10,6 +10,8 @@ import { ToolPlugin, OverviewCardProps, DetailPanelProps } from "views/dashboard
 import { styles } from "views/dashboard/styles";
 import { ToolControl } from "views/dashboard/components/ToolControl";
 import { GangStatus, GangStrategy, GangMemberStatus } from "/types/ports";
+import { ProgressBar } from "views/dashboard/components/ProgressBar";
+import { TierFooter } from "views/dashboard/components/TierFooter";
 import {
   setGangStrategy,
   pinGangMember,
@@ -256,7 +258,14 @@ function GangOverviewCard({ status, running, toolId, error, pid }: OverviewCardP
       ) : !status || !running ? (
         <div style={{ color: "#888", fontSize: "11px" }}>Offline</div>
       ) : !status.inGang ? (
-        <div style={{ color: "#888", fontSize: "11px" }}>Not in a gang</div>
+        <div style={{ fontSize: "11px" }}>
+          <div style={{ color: "#888", marginBottom: "4px" }}>Karma</div>
+          <ProgressBar
+            progress={status.karmaProgress ?? 0}
+            label={`${((status.karmaProgress ?? 0) * 100).toFixed(0)}%`}
+            fillColor="#aa0000"
+          />
+        </div>
       ) : (
         <>
           <div style={styles.stat}>
@@ -330,7 +339,36 @@ function GangDetailPanel({ status, running, toolId, error, pid }: DetailPanelPro
           <div style={styles.rowLeft}><span style={styles.statLabel}>Gang Daemon</span></div>
           <ToolControl tool={toolId} running={running} pid={pid} />
         </div>
-        <div style={styles.card}><div style={{ color: "#888" }}>Not in a gang. Join a combat gang to use this tool.</div></div>
+        <div style={{
+          ...styles.card,
+          backgroundColor: "rgba(170, 0, 0, 0.1)",
+          borderLeft: "3px solid #aa0000",
+        }}>
+          <div style={{ color: "#ff4444", fontSize: "12px", marginBottom: "8px" }}>GANG REQUIREMENTS</div>
+          <ProgressBar
+            progress={status.karmaProgress ?? 0}
+            label={`${((status.karmaProgress ?? 0) * 100).toFixed(1)}%`}
+            fillColor="#aa0000"
+          />
+          <div style={styles.stat}>
+            <span style={styles.statLabel}>Current Karma</span>
+            <span style={styles.statValue}>{formatNumber(status.karma ?? 0)}</span>
+          </div>
+          <div style={styles.stat}>
+            <span style={styles.statLabel}>Required</span>
+            <span style={{ color: "#ff4444" }}>-{formatNumber(status.karmaRequired ?? 54000)}</span>
+          </div>
+          <div style={{ color: "#888", fontSize: "10px", marginTop: "6px" }}>
+            Commit crimes via the Work daemon to accumulate karma. You need -54,000 karma to create a gang.
+          </div>
+        </div>
+        <TierFooter
+          tier={status.tier}
+          tierName={status.tierName}
+          currentRamUsage={status.currentRamUsage}
+          nextTierRam={status.nextTierRam}
+          canUpgrade={status.canUpgrade}
+        />
       </div>
     );
   }
@@ -348,11 +386,6 @@ function GangDetailPanel({ status, running, toolId, error, pid }: DetailPanelPro
           <span>
             <span style={styles.statLabel}>Faction: </span>
             <span style={styles.statValue}>{status.faction}</span>
-          </span>
-          <span style={styles.dim}>|</span>
-          <span>
-            <span style={styles.statLabel}>Tier: </span>
-            <span style={styles.statValue}>{status.tierName}</span>
           </span>
           <span style={styles.dim}>|</span>
           <StrategySelector current={status.strategy ?? "balanced"} running={running} balancedPhase={status.balancedPhase} />
@@ -642,6 +675,14 @@ function GangDetailPanel({ status, running, toolId, error, pid }: DetailPanelPro
           />
         </div>
       </div>
+
+      <TierFooter
+        tier={status.tier}
+        tierName={status.tierName}
+        currentRamUsage={status.currentRamUsage}
+        nextTierRam={status.nextTierRam}
+        canUpgrade={status.canUpgrade}
+      />
     </div>
   );
 }

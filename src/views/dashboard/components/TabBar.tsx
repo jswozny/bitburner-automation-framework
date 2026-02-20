@@ -18,6 +18,7 @@ export interface GroupedTabBarProps {
   onOverviewClick: () => void;
   onGroupClick: (groupIndex: number) => void;
   onSubClick: (subIndex: number) => void;
+  statuses?: boolean[][];
 }
 
 export function GroupedTabBar({
@@ -27,6 +28,7 @@ export function GroupedTabBar({
   onOverviewClick,
   onGroupClick,
   onSubClick,
+  statuses,
 }: GroupedTabBarProps): React.ReactElement {
   return (
     <div>
@@ -40,10 +42,32 @@ export function GroupedTabBar({
         {groups.map((g, i) => (
           <div
             key={i}
-            style={i === activeGroup ? styles.tabActive : styles.tab}
+            style={{
+              ...(i === activeGroup ? styles.tabActive : styles.tab),
+              display: "flex",
+              flexDirection: "column",
+              alignItems: "center",
+              gap: "3px",
+            }}
             onClick={() => onGroupClick(i)}
           >
-            {g.label}
+            <span>{g.label}</span>
+            {statuses && statuses[i] && (
+              <span style={{ display: "flex", gap: "3px" }}>
+                {statuses[i].map((running, j) => (
+                  <span
+                    key={j}
+                    style={{
+                      width: "5px",
+                      height: "5px",
+                      borderRadius: "50%",
+                      backgroundColor: running ? "#00ff00" : "#ff4444",
+                      display: "inline-block",
+                    }}
+                  />
+                ))}
+              </span>
+            )}
           </div>
         ))}
       </div>

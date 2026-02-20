@@ -376,7 +376,7 @@ function executeCommand(ns: NS, cmd: Command): void {
           ns.toast("Running auto-backdoors...", "success", 2000);
         } else {
           // Fallback to manual tool
-          const fallbackPid = ns.exec("tools/backdoor.js", "home", 1);
+          const fallbackPid = ns.exec("tools/network/backdoor.js", "home", 1);
           if (fallbackPid > 0) {
             ns.toast("Auto-backdoor needs more RAM. Opened manual backdoor tool.", "warning", 4000);
           } else {

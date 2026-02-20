@@ -158,6 +158,7 @@ export interface ShareStatus {
   cycleStatus: "active" | "cycle" | "idle";
   lastKnownThreads: string;
   targetPercent?: number;  // 0 or undefined = greedy, 1-100 = capped
+  interval?: number;       // daemon loop interval in ms (for grace period calc)
 }
 
 export interface NonWorkableFactionProgress {
@@ -789,6 +790,11 @@ export interface GangStatus {
   inGang: boolean;
   faction?: string;
   isHacking?: boolean;
+
+  // Pre-gang karma progress
+  karma?: number;
+  karmaRequired?: number;
+  karmaProgress?: number;
 
   // Gang aggregates
   respect?: number;

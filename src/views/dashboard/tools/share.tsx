@@ -15,21 +15,27 @@ import {
   setPluginUIState,
   getFleetAllocation,
 } from "views/dashboard/state-store";
+import { peekStatus } from "lib/ports";
+import { STATUS_PORTS, ShareStatus as PortShareStatus } from "types/ports";
 
 // === CYCLE TRACKING STATE (module-level) ===
-
-const GRACE_PERIOD_MS = 2000; // 2 second grace period between share() cycles
 
 let lastKnownThreads = 0;
 let lastKnownThreadsFormatted = "0";
 let lastSeenTime = 0;
 let lastServerStats: { hostname: string; threads: string }[] = [];
+let lastKnownInterval = 10000; // updated from daemon-published status
 
 // === STATUS FORMATTING ===
 
 function formatShareStatus(ns: NS): FormattedShareStatus {
   const raw = getShareStatus(ns, DEFAULT_SHARE_SCRIPT);
   const now = Date.now();
+
+  // Read daemon-published interval for accurate grace period
+  const portStatus = peekStatus<PortShareStatus>(ns, STATUS_PORTS.share);
+  if (portStatus?.interval) lastKnownInterval = portStatus.interval;
+  const gracePeriodMs = lastKnownInterval + 2000;
 
   // Determine cycle status
   let cycleStatus: "active" | "cycle" | "idle";
@@ -49,7 +55,7 @@ function formatShareStatus(ns: NS): FormattedShareStatus {
     cycleStatus = "active";
     displayThreads = lastKnownThreadsFormatted;
     displayLastKnown = lastKnownThreadsFormatted;
-  } else if (lastKnownThreads > 0 && (now - lastSeenTime) < GRACE_PERIOD_MS) {
+  } else if (lastKnownThreads > 0 && (now - lastSeenTime) < gracePeriodMs) {
     // Within grace period - show last known with cycle indicator
     cycleStatus = "cycle";
     displayThreads = lastKnownThreadsFormatted;
@@ -60,7 +66,7 @@ function formatShareStatus(ns: NS): FormattedShareStatus {
     displayThreads = "0";
     displayLastKnown = lastKnownThreads > 0 ? lastKnownThreadsFormatted : "0";
     // Reset tracking when truly idle for a while
-    if (now - lastSeenTime > GRACE_PERIOD_MS * 2) {
+    if (now - lastSeenTime > gracePeriodMs * 2) {
       lastKnownThreads = 0;
       lastKnownThreadsFormatted = "0";
     }

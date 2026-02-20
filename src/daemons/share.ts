@@ -26,15 +26,15 @@ import { writeDefaultConfig, getConfigNumber, getConfigBool } from "/lib/config"
 
 let lastKnownThreads = 0;
 let lastSeenTime = 0;
-const GRACE_PERIOD_MS = 2000;
 
 /**
  * Build a ShareStatus object with formatted values for the dashboard.
  * Handles the ephemeral nature of share threads with cycle-aware state.
  */
-function computeShareStatus(ns: NS, targetPercent = 0): ShareStatus {
+function computeShareStatus(ns: NS, targetPercent = 0, interval = 10000): ShareStatus {
   const raw = getShareStatus(ns, DEFAULT_SHARE_SCRIPT);
   const now = Date.now();
+  const gracePeriodMs = interval + 2000;
 
   // Determine cycle status based on current threads and grace period
   let cycleStatus: ShareStatus["cycleStatus"];
@@ -46,7 +46,7 @@ function computeShareStatus(ns: NS, targetPercent = 0): ShareStatus {
     displayThreads = raw.totalThreads;
     lastKnownThreads = raw.totalThreads;
     lastSeenTime = now;
-  } else if (now - lastSeenTime < GRACE_PERIOD_MS && lastKnownThreads > 0) {
+  } else if (now - lastSeenTime < gracePeriodMs && lastKnownThreads > 0) {
     // No threads right now, but we just had some - mid-cycle transition
     cycleStatus = "cycle";
     displayThreads = lastKnownThreads;
@@ -71,6 +71,7 @@ function computeShareStatus(ns: NS, targetPercent = 0): ShareStatus {
     cycleStatus,
     lastKnownThreads: lastKnownThreads.toLocaleString(),
     targetPercent: targetPercent > 0 ? targetPercent : undefined,
+    interval,
   };
 }
 
@@ -177,7 +178,7 @@ export async function main(ns: NS): Promise<void> {
     const cycleResult = launchShareThreads(ns, config, allowedServers);
 
     // Compute formatted status for the dashboard
-    const shareStatus = computeShareStatus(ns, config.targetPercent);
+    const shareStatus = computeShareStatus(ns, config.targetPercent, config.interval);
 
     // Publish to port for dashboard consumption
     publishStatus(ns, STATUS_PORTS.share, shareStatus);

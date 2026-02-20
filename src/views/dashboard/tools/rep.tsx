@@ -15,6 +15,7 @@ import { formatTime } from "lib/utils";
 import { startFactionWork, runBackdoors, restartRepDaemon } from "views/dashboard/state-store";
 import { peekStatus } from "lib/ports";
 import { STATUS_PORTS, RepStatus } from "types/ports";
+import { TierFooter } from "views/dashboard/components/TierFooter";
 
 // === REP TRACKING STATE (module-level) ===
 
@@ -322,9 +323,6 @@ function LowTierDetailPanel({
       <div style={styles.row}>
         <div style={styles.rowLeft}>
           <span style={styles.statLabel}>REP Daemon</span>
-          <span style={{ color: tierColor, fontSize: "11px", marginLeft: "8px" }}>
-            Tier {status.tier}: {tierLabel}
-          </span>
         </div>
         <ToolControl tool={toolId} running={running} pid={pid} />
       </div>
@@ -409,6 +407,14 @@ function LowTierDetailPanel({
           No live data available. Need SF4 (Singularity) for faction rep tracking.
         </div>
       )}
+
+      <TierFooter
+        tier={status.tier}
+        tierName={tierLabel}
+        currentRamUsage={status.currentRamUsage}
+        nextTierRam={status.nextTierRam}
+        canUpgrade={status.canUpgrade}
+      />
     </div>
   );
 }
@@ -613,6 +619,13 @@ function HighTierDetailPanel({
         </div>
       )}
 
+      <TierFooter
+        tier={status.tier ?? 6}
+        tierName={tierLabel}
+        currentRamUsage={status.currentRamUsage}
+        nextTierRam={status.nextTierRam}
+        canUpgrade={status.canUpgrade}
+      />
     </div>
   );
 }

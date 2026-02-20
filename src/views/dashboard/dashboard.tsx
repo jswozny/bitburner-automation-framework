@@ -103,16 +103,44 @@ const TAB_GROUP_PROPS: TabGroup[] = TAB_GROUPS.map(g => ({
 
 // === OVERVIEW PANEL ===
 
-interface OverviewPanelProps {
-  state: DashboardState;
+/** Find the (group, sub) tab indices for a given toolId. */
+function findTabForTool(toolId: ToolName): { group: number; sub: number } | null {
+  for (let g = 0; g < TAB_GROUPS.length; g++) {
+    for (let s = 0; s < TAB_GROUPS[g].entries.length; s++) {
+      if (TAB_GROUPS[g].entries[s].toolId === toolId) return { group: g, sub: s };
+    }
+  }
+  return null;
 }
 
-function OverviewPanel({ state }: OverviewPanelProps): React.ReactElement {
+interface OverviewPanelProps {
+  state: DashboardState;
+  onNavigate: (toolId: ToolName) => void;
+}
+
+function OverviewPanel({ state, onNavigate }: OverviewPanelProps): React.ReactElement {
   const advisorEntry = findEntry("advisor");
   const AdvisorPanel = advisorEntry.plugin.DetailPanel;
 
+  const hasFocusConflict = state.pids.work > 0
+    && state.pids.rep > 0
+    && (state.repStatus?.tier ?? 0) >= 6;
+
   return (
-    <div  >
+    <div>
+      {hasFocusConflict && (
+        <div style={{
+          backgroundColor: "rgba(255, 0, 0, 0.12)",
+          border: "1px solid #ff4444",
+          borderRadius: "4px",
+          padding: "8px 12px",
+          marginBottom: "8px",
+          color: "#ff6666",
+          fontSize: "12px",
+        }}>
+          Focus Conflict: Both Work and Rep (auto-work) daemons are running. They will compete for player focus. Consider stopping one.
+        </div>
+      )}
       <div style={{ marginBottom: "12px" }}>
         <ErrorBoundary label="Advisor">
           <AdvisorPanel
@@ -128,15 +156,21 @@ function OverviewPanel({ state }: OverviewPanelProps): React.ReactElement {
         {PLUGIN_REGISTRY.filter(e => e.toolId !== "advisor").map(entry => {
           const Card = entry.plugin.OverviewCard;
           return (
-            <ErrorBoundary key={entry.toolId} label={entry.tabLabel}>
-              <Card
-                status={entry.getStatus(state)}
-                running={state.pids[entry.toolId] > 0}
-                toolId={entry.toolId}
-                error={entry.getError(state)}
-                pid={state.pids[entry.toolId]}
-              />
-            </ErrorBoundary>
+            <div
+              key={entry.toolId}
+              style={{ cursor: "pointer" }}
+              onClick={() => onNavigate(entry.toolId)}
+            >
+              <ErrorBoundary label={entry.tabLabel}>
+                <Card
+                  status={entry.getStatus(state)}
+                  running={state.pids[entry.toolId] > 0}
+                  toolId={entry.toolId}
+                  error={entry.getError(state)}
+                  pid={state.pids[entry.toolId]}
+                />
+              </ErrorBoundary>
+            </div>
           );
         })}
       </div>
@@ -189,9 +223,18 @@ function Dashboard(): React.ReactElement {
     setTabStateLocal(next);
   };
 
+  const handleNavigate = (toolId: ToolName) => {
+    const pos = findTabForTool(toolId);
+    if (pos) {
+      const next: TabState = { group: pos.group, sub: pos.sub };
+      setActiveTab(next);
+      setTabStateLocal(next);
+    }
+  };
+
   const renderPanel = () => {
     if (tabState.group === -1) {
-      return <OverviewPanel state={state} />;
+      return <OverviewPanel state={state} onNavigate={handleNavigate} />;
     }
 
     const group = TAB_GROUPS[tabState.group];
@@ -227,6 +270,7 @@ function Dashboard(): React.ReactElement {
         onOverviewClick={handleOverviewClick}
         onGroupClick={handleGroupClick}
         onSubClick={handleSubClick}
+        statuses={TAB_GROUPS.map(g => g.entries.map(e => state.pids[e.toolId] > 0))}
       />
       {renderPanel()}
     </div>

@@ -27,6 +27,7 @@ export async function main(ns: NS): Promise<void> {
     pad("DEX/m", 8),
     pad("AGI/m", 8),
     pad("CHA/m", 8),
+    pad("KRM/m", 8),
   ].join(" ");
 
   ns.tprint(`${dim}${header}${reset}`);
@@ -47,6 +48,7 @@ export async function main(ns: NS): Promise<void> {
       pad(fmtExp(r.dexExpPerMin), 8),
       pad(fmtExp(r.agiExpPerMin), 8),
       pad(fmtExp(r.chaExpPerMin), 8),
+      pad(r.karmaPerMin.toFixed(1), 8),
     ].join(" ");
 
     ns.tprint(`${color}${row}${reset}`);
