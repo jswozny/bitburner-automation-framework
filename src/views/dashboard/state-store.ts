@@ -33,6 +33,8 @@ import {
   GangStatus,
   GangStrategy,
   AugmentsStatus,
+  AdvisorStatus,
+  ContractsStatus,
   Command,
 } from "/types/ports";
 
@@ -374,7 +376,7 @@ function executeCommand(ns: NS, cmd: Command): void {
           ns.toast("Running auto-backdoors...", "success", 2000);
         } else {
           // Fallback to manual tool
-          const fallbackPid = ns.exec("tools/backdoor.js", "home", 1);
+          const fallbackPid = ns.exec("tools/network/backdoor.js", "home", 1);
           if (fallbackPid > 0) {
             ns.toast("Auto-backdoor needs more RAM. Opened manual backdoor tool.", "warning", 4000);
           } else {
@@ -420,11 +422,13 @@ function executeCommand(ns: NS, cmd: Command): void {
           ns.kill(currentFactionPid);
           cachedData.pids.faction = 0;
         }
-        const factionArgs: string[] = [];
         if (cmd.cityFaction) {
-          factionArgs.push("--preferred-city", cmd.cityFaction);
+          // Write preferred city to config file (daemon reads from config, not flags)
+          const raw = ns.read("/config/faction.txt") || "# faction Config\ninterval=10000\noneShot=false\npreferredCity=\nnoKill=false";
+          const updated = raw.replace(/preferredCity=.*/, `preferredCity=${cmd.cityFaction}`);
+          ns.write("/config/faction.txt", updated, "w");
         }
-        const factionPid = ns.exec("daemons/faction.js", "home", 1, ...factionArgs);
+        const factionPid = ns.exec("daemons/faction.js", "home", 1);
         if (factionPid > 0) {
           cachedData.pids.faction = factionPid;
           ns.toast(cmd.cityFaction ? `Faction daemon: preferred ${cmd.cityFaction}` : "Faction daemon restarted", "success", 2000);
@@ -618,13 +622,18 @@ function executeScript(ns: NS, scriptPath: string, args: string[]): void {
 
 // === UI STATE ===
 
+export interface TabState {
+  group: number; // -1 = Overview, 0..N = index into TAB_GROUPS
+  sub: number;   // index within the group's plugins
+}
+
 interface UIState {
-  activeTab: number;
+  activeTab: TabState;
   pluginUIState: Record<ToolName, Record<string, unknown>>;
 }
 
 const uiState: UIState = {
-  activeTab: 0,
+  activeTab: { group: -1, sub: 0 },
   pluginUIState: {
     nuke: {},
     pserv: {},
@@ -637,14 +646,16 @@ const uiState: UIState = {
     infiltration: {},
     gang: {},
     augments: {},
+    advisor: {},
+    contracts: {},
   },
 };
 
-export function getActiveTab(): number {
+export function getActiveTab(): TabState {
   return uiState.activeTab;
 }
 
-export function setActiveTab(tab: number): void {
+export function setActiveTab(tab: TabState): void {
   uiState.activeTab = tab;
 }
 
@@ -745,10 +756,12 @@ interface CachedData {
   infiltrationStatus: InfiltrationStatus | null;
   gangStatus: GangStatus | null;
   augmentsStatus: AugmentsStatus | null;
+  advisorStatus: AdvisorStatus | null;
+  contractsStatus: ContractsStatus | null;
 }
 
 const cachedData: CachedData = {
-  pids: { nuke: 0, pserv: 0, share: 0, rep: 0, hack: 0, darkweb: 0, work: 0, faction: 0, infiltration: 0, gang: 0, augments: 0 },
+  pids: { nuke: 0, pserv: 0, share: 0, rep: 0, hack: 0, darkweb: 0, work: 0, faction: 0, infiltration: 0, gang: 0, augments: 0, advisor: 0, contracts: 0 },
   nukeStatus: null,
   pservStatus: null,
   shareStatus: null,
@@ -766,6 +779,8 @@ const cachedData: CachedData = {
   infiltrationStatus: null,
   gangStatus: null,
   augmentsStatus: null,
+  advisorStatus: null,
+  contractsStatus: null,
 };
 
 // === PORT-BASED STATUS READING ===
@@ -822,6 +837,10 @@ export function readStatusPorts(ns: NS): void {
   cachedData.gangStatus = peekStatus<GangStatus>(ns, STATUS_PORTS.gang, STALE_THRESHOLD_MS);
 
   cachedData.augmentsStatus = peekStatus<AugmentsStatus>(ns, STATUS_PORTS.augments, STALE_THRESHOLD_MS);
+
+  cachedData.advisorStatus = peekStatus<AdvisorStatus>(ns, STATUS_PORTS.advisor, STALE_THRESHOLD_MS);
+
+  cachedData.contractsStatus = peekStatus<ContractsStatus>(ns, STATUS_PORTS.contracts, STALE_THRESHOLD_MS);
 }
 
 // === TOOL CONTROL ===
@@ -840,6 +859,8 @@ function clearToolStatus(tool: ToolName): void {
     case "infiltration": cachedData.infiltrationStatus = null; break;
     case "gang": cachedData.gangStatus = null; break;
     case "augments": cachedData.augmentsStatus = null; break;
+    case "advisor": cachedData.advisorStatus = null; break;
+    case "contracts": cachedData.contractsStatus = null; break;
   }
 }
 
@@ -995,5 +1016,7 @@ export function getStateSnapshot(): DashboardState {
     infiltrationStatus: cachedData.infiltrationStatus,
     gangStatus: cachedData.gangStatus,
     augmentsStatus: cachedData.augmentsStatus,
+    advisorStatus: cachedData.advisorStatus,
+    contractsStatus: cachedData.contractsStatus,
   };
 }

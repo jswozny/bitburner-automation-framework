@@ -20,6 +20,7 @@ import { COLORS } from "/lib/utils";
 import { calcAvailableAfterKills, freeRamForTarget } from "/lib/ram-utils";
 import { publishStatus } from "/lib/ports";
 import { STATUS_PORTS, FactionStatus, FactionInfo } from "/types/ports";
+import { writeDefaultConfig, getConfigNumber, getConfigBool, getConfigString } from "/lib/config";
 import {
   classifyFactions,
   isSafeToAutoJoin,
@@ -281,19 +282,9 @@ function printStatus(ns: NS, status: FactionStatus): void {
 
 // === MAIN DAEMON LOOP ===
 
-function buildSpawnArgs(flags: {
-  "preferred-city": string;
-  "no-kill": boolean;
-  tier: string;
-  interval: number;
-  "one-shot": boolean;
-}): string[] {
+function buildSpawnArgs(tier: string): string[] {
   const args: string[] = [];
-  if (flags["preferred-city"]) args.push("--preferred-city", flags["preferred-city"]);
-  if (flags["no-kill"]) args.push("--no-kill");
-  if (flags.tier) args.push("--tier", flags.tier);
-  if (flags.interval !== 10000) args.push("--interval", String(flags.interval));
-  if (flags["one-shot"]) args.push("--one-shot");
+  if (tier) args.push("--tier", tier);
   return args;
 }
 
@@ -301,27 +292,23 @@ export async function main(ns: NS): Promise<void> {
   ns.ramOverride(5);
   ns.disableLog("ALL");
 
+  writeDefaultConfig(ns, "faction", {
+    interval: "10000",
+    oneShot: "false",
+    preferredCity: "",
+    noKill: "false",
+  });
+
   const flags = ns.flags([
-    ["one-shot", false],
-    ["interval", 10000],
-    ["preferred-city", ""],
     ["tier", ""],
-    ["no-kill", false],
   ]) as {
-    "one-shot": boolean;
-    interval: number;
-    "preferred-city": string;
     tier: string;
-    "no-kill": boolean;
     _: string[];
   };
 
-  const oneShot = flags["one-shot"];
-  const interval = flags.interval;
-  const preferredCity = flags["preferred-city"];
-  const noKill = flags["no-kill"];
   const forcedTierName = flags.tier as FactionTierName | "";
-  const spawnArgs = buildSpawnArgs(flags);
+  const spawnArgs = buildSpawnArgs(flags.tier);
+  const noKill = getConfigBool(ns, "faction", "noKill", false);
 
   const sf4Level = ns.getResetInfo().ownedSF.get(4) ?? 0;
   const tierRamCosts = calculateAllTierRamCosts(ns);
@@ -381,6 +368,10 @@ export async function main(ns: NS): Promise<void> {
   const UPGRADE_CHECK_INTERVAL = 10;
 
   do {
+    const oneShot = getConfigBool(ns, "faction", "oneShot", false);
+    const interval = getConfigNumber(ns, "faction", "interval", 10000);
+    const preferredCity = getConfigString(ns, "faction", "preferredCity", "");
+
     ns.clearLog();
 
     const player = ns.getPlayer();
@@ -593,5 +584,5 @@ export async function main(ns: NS): Promise<void> {
       ns.print(`\n${COLORS.dim}Next check in ${interval / 1000}s...${COLORS.reset}`);
       await ns.sleep(interval);
     }
-  } while (!oneShot);
+  } while (!getConfigBool(ns, "faction", "oneShot", false));
 }

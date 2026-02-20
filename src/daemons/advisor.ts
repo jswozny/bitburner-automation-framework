@@ -1,0 +1,405 @@
+/**
+ * Advisor Daemon
+ *
+ * Reads all status ports, scores possible player actions via rule functions,
+ * and publishes ranked recommendations to port 17. Provides a "what should I
+ * do next?" view of the game state.
+ *
+ * Usage: run daemons/advisor.js
+ */
+import { NS } from "@ns";
+import { COLORS } from "/lib/utils";
+import { peekStatus, publishStatus } from "/lib/ports";
+import { writeDefaultConfig, getConfigNumber } from "/lib/config";
+import {
+  STATUS_PORTS,
+  AdvisorCategory,
+  AdvisorStatus,
+  Recommendation,
+  NukeStatus,
+  HackStatus,
+  PservStatus,
+  ShareStatus,
+  RepStatus,
+  DarkwebStatus,
+  WorkStatus,
+  BitnodeStatus,
+  FactionStatus,
+  GangStatus,
+  GangTerritoryStatus,
+  AugmentsStatus,
+} from "/types/ports";
+
+const C = COLORS;
+
+// === ADVISOR CONTEXT ===
+
+interface AdvisorContext {
+  nuke: NukeStatus | null;
+  hack: HackStatus | null;
+  pserv: PservStatus | null;
+  share: ShareStatus | null;
+  rep: RepStatus | null;
+  darkweb: DarkwebStatus | null;
+  work: WorkStatus | null;
+  bitnode: BitnodeStatus | null;
+  faction: FactionStatus | null;
+  gang: GangStatus | null;
+  gangTerritory: GangTerritoryStatus | null;
+  augments: AugmentsStatus | null;
+}
+
+function gatherContext(ns: NS): AdvisorContext {
+  return {
+    nuke: peekStatus<NukeStatus>(ns, STATUS_PORTS.nuke),
+    hack: peekStatus<HackStatus>(ns, STATUS_PORTS.hack),
+    pserv: peekStatus<PservStatus>(ns, STATUS_PORTS.pserv),
+    share: peekStatus<ShareStatus>(ns, STATUS_PORTS.share),
+    rep: peekStatus<RepStatus>(ns, STATUS_PORTS.rep),
+    darkweb: peekStatus<DarkwebStatus>(ns, STATUS_PORTS.darkweb),
+    work: peekStatus<WorkStatus>(ns, STATUS_PORTS.work),
+    bitnode: peekStatus<BitnodeStatus>(ns, STATUS_PORTS.bitnode),
+    faction: peekStatus<FactionStatus>(ns, STATUS_PORTS.faction),
+    gang: peekStatus<GangStatus>(ns, STATUS_PORTS.gang),
+    gangTerritory: peekStatus<GangTerritoryStatus>(ns, STATUS_PORTS.gangTerritory),
+    augments: peekStatus<AugmentsStatus>(ns, STATUS_PORTS.augments),
+  };
+}
+
+// === RULE TYPE ===
+
+type AdvisorRule = (ctx: AdvisorContext) => Recommendation | null;
+
+// === RULES ===
+
+function ruleBuyTor(ctx: AdvisorContext): Recommendation | null {
+  const dw = ctx.darkweb;
+  const w = ctx.work;
+  if (!dw || dw.hasTorRouter) return null;
+  const canAfford = w ? w.playerMoney >= 200000 : false;
+  return {
+    id: "buy-tor",
+    title: "Buy TOR Router",
+    reason: canAfford
+      ? "Unlocks darkweb programs — you can afford it now"
+      : "Unlocks darkweb programs for cracking more servers",
+    category: "infrastructure",
+    score: canAfford ? 85 : 70,
+  };
+}
+
+function ruleBuyProgram(ctx: AdvisorContext): Recommendation | null {
+  const dw = ctx.darkweb;
+  if (!dw || !dw.hasTorRouter || dw.allOwned || !dw.nextProgram) return null;
+  return {
+    id: "buy-program",
+    title: `Buy ${dw.nextProgram.name}`,
+    reason: dw.canAffordNext
+      ? `You can afford ${dw.nextProgram.name} (${dw.nextProgram.costFormatted})`
+      : `Next program costs ${dw.nextProgram.costFormatted} — need ${dw.moneyUntilNextFormatted} more`,
+    category: "infrastructure",
+    score: dw.canAffordNext ? 75 : 50,
+  };
+}
+
+function ruleRootServers(ctx: AdvisorContext): Recommendation | null {
+  const nuke = ctx.nuke;
+  if (!nuke || nuke.ready.length === 0) return null;
+  return {
+    id: "root-servers",
+    title: `Root ${nuke.ready.length} Server${nuke.ready.length > 1 ? "s" : ""}`,
+    reason: `${nuke.ready.length} server(s) ready to nuke — will expand your fleet`,
+    category: "infrastructure",
+    score: 70,
+  };
+}
+
+function ruleBuyPserv(ctx: AdvisorContext): Recommendation | null {
+  const ps = ctx.pserv;
+  if (!ps || ps.serverCount >= ps.serverCap) return null;
+  return {
+    id: "buy-pserv",
+    title: "Buy Personal Server",
+    reason: `${ps.serverCount}/${ps.serverCap} slots used — more servers increase hacking income`,
+    category: "infrastructure",
+    score: ps.serverCount < 5 ? 60 : 45,
+  };
+}
+
+function ruleUpgradePserv(ctx: AdvisorContext): Recommendation | null {
+  const ps = ctx.pserv;
+  if (!ps || ps.allMaxed || !ps.nextUpgrade) return null;
+  return {
+    id: "upgrade-pserv",
+    title: "Upgrade Personal Server",
+    reason: ps.nextUpgrade.canAfford
+      ? `${ps.nextUpgrade.hostname}: ${ps.nextUpgrade.currentRam} → ${ps.nextUpgrade.nextRam} (${ps.nextUpgrade.costFormatted})`
+      : `Next upgrade: ${ps.nextUpgrade.costFormatted} for ${ps.nextUpgrade.hostname}`,
+    category: "infrastructure",
+    score: ps.nextUpgrade.canAfford ? 55 : 40,
+  };
+}
+
+function ruleTrainHackingForNuke(ctx: AdvisorContext): Recommendation | null {
+  const nuke = ctx.nuke;
+  if (!nuke || nuke.needHacking.length === 0) return null;
+  const closest = nuke.needHacking[0];
+  const gap = closest.required - closest.current;
+  if (gap <= 0) return null;
+  return {
+    id: "train-hack-nuke",
+    title: "Train Hacking (Nuke)",
+    reason: `Need ${closest.required} hacking for ${closest.hostname} (${gap} more levels)`,
+    category: "skills",
+    score: gap < 20 ? 60 : 50,
+  };
+}
+
+function ruleTrainHackingForTargets(ctx: AdvisorContext): Recommendation | null {
+  const hack = ctx.hack;
+  if (!hack || !hack.needHigherLevel) return null;
+  return {
+    id: "train-hack-targets",
+    title: "Train Hacking (Targets)",
+    reason: `${hack.needHigherLevel.count} hack target(s) need level ${hack.needHigherLevel.nextLevel}`,
+    category: "skills",
+    score: 65,
+  };
+}
+
+function ruleBalanceCombat(ctx: AdvisorContext): Recommendation | null {
+  const w = ctx.work;
+  if (!w) return null;
+  if (w.combatBalance >= 0.9) return null;
+  return {
+    id: "balance-combat",
+    title: "Balance Combat Stats",
+    reason: `Combat balance ${(w.combatBalance * 100).toFixed(0)}% — lowest: ${w.lowestCombatStat}, highest: ${w.highestCombatStat}`,
+    category: "skills",
+    score: w.combatBalance < 0.5 ? 40 : 30,
+  };
+}
+
+function ruleJoinFaction(ctx: AdvisorContext): Recommendation | null {
+  const f = ctx.faction;
+  if (!f || !f.pendingInvitations || f.pendingInvitations.length === 0) return null;
+  return {
+    id: "join-faction",
+    title: `Join ${f.pendingInvitations[0]}`,
+    reason: f.pendingInvitations.length > 1
+      ? `${f.pendingInvitations.length} faction invitation(s) pending`
+      : `Invitation from ${f.pendingInvitations[0]} — join to unlock augmentations`,
+    category: "factions",
+    score: 70,
+  };
+}
+
+function ruleBackdoorServers(ctx: AdvisorContext): Recommendation | null {
+  const f = ctx.faction;
+  if (!f || !f.pendingBackdoors) return null;
+  const ready = f.pendingBackdoors.filter(b => b.rooted && b.haveHacking);
+  if (ready.length === 0) return null;
+  return {
+    id: "backdoor-servers",
+    title: `Backdoor ${ready.length} Server${ready.length > 1 ? "s" : ""}`,
+    reason: `Ready to backdoor for: ${ready.map(b => b.faction).join(", ")}`,
+    category: "factions",
+    score: 55,
+  };
+}
+
+function ruleStartFactionWork(ctx: AdvisorContext): Recommendation | null {
+  const rep = ctx.rep;
+  if (!rep) return null;
+  if (rep.isWorkingForFaction) return null;
+  if (!rep.targetFaction || !rep.nextAugName) return null;
+  if (rep.repGapPositive) return null; // already have enough rep
+  return {
+    id: "faction-work",
+    title: `Work for ${rep.targetFaction}`,
+    reason: `Need ${rep.repGapFormatted ?? "?"} more rep for ${rep.nextAugName}`,
+    category: "factions",
+    score: rep.repProgress !== undefined && rep.repProgress > 0.8 ? 60 : 50,
+  };
+}
+
+function ruleStartShare(ctx: AdvisorContext): Recommendation | null {
+  const share = ctx.share;
+  const rep = ctx.rep;
+  if (!rep || !rep.targetFaction) return null;
+  if (rep.repGapPositive) return null;
+  if (share && Number(share.totalThreads) > 0) return null; // already sharing
+  return {
+    id: "start-share",
+    title: "Start Sharing for Rep Boost",
+    reason: "Share power multiplies faction rep gain — start share daemon",
+    category: "factions",
+    score: 35,
+  };
+}
+
+function rulePurchaseAugs(ctx: AdvisorContext): Recommendation | null {
+  const aug = ctx.augments;
+  if (!aug || aug.available.length === 0) return null;
+  const affordable = aug.available.filter(a => a.adjustedCost <= aug.playerMoney);
+  if (affordable.length === 0) return null;
+  return {
+    id: "purchase-augs",
+    title: `Purchase ${affordable.length} Augmentation${affordable.length > 1 ? "s" : ""}`,
+    reason: `${affordable.length} aug(s) affordable — buy before prices increase`,
+    category: "augmentations",
+    score: affordable.length >= 5 ? 85 : 75,
+  };
+}
+
+function ruleInstallAugs(ctx: AdvisorContext): Recommendation | null {
+  const aug = ctx.augments;
+  if (!aug || aug.pendingAugs === 0) return null;
+  // Higher score if many pending or no affordable left
+  const affordable = aug.available.filter(a => a.adjustedCost <= aug.playerMoney);
+  const nothingLeftToBuy = affordable.length === 0;
+  return {
+    id: "install-augs",
+    title: `Install ${aug.pendingAugs} Augmentation${aug.pendingAugs > 1 ? "s" : ""}`,
+    reason: nothingLeftToBuy
+      ? `${aug.pendingAugs} aug(s) pending — no more affordable augs to buy`
+      : `${aug.pendingAugs} aug(s) pending install`,
+    category: "augmentations",
+    score: nothingLeftToBuy ? 95 : aug.pendingAugs >= 10 ? 80 : 60,
+  };
+}
+
+function ruleBitnodeExit(ctx: AdvisorContext): Recommendation | null {
+  const bn = ctx.bitnode;
+  if (!bn || !bn.allComplete) return null;
+  return {
+    id: "bitnode-exit",
+    title: "Bitnode Exit Ready",
+    reason: "All FL1GHT.EXE requirements met — you can destroy the bitnode",
+    category: "augmentations",
+    score: 100,
+  };
+}
+
+function ruleGangTerritory(ctx: AdvisorContext): Recommendation | null {
+  const g = ctx.gang;
+  const gt = ctx.gangTerritory;
+  if (!g || !g.inGang || !gt) return null;
+  if (gt.recommendedAction === "hold") return null;
+  const toggle = gt.recommendedAction === "enable" ? "enable" : "disable";
+  return {
+    id: "gang-territory",
+    title: `${toggle === "enable" ? "Enable" : "Disable"} Territory Warfare`,
+    reason: toggle === "enable"
+      ? `Winning clashes — territory at ${(gt.ourTerritory * 100).toFixed(1)}%`
+      : `Losing clashes — disable to protect territory`,
+    category: "gang",
+    score: toggle === "enable" ? 50 : 45,
+  };
+}
+
+function ruleGangAscension(ctx: AdvisorContext): Recommendation | null {
+  const g = ctx.gang;
+  if (!g || !g.inGang || !g.ascensionAlerts || g.ascensionAlerts.length === 0) return null;
+  const best = g.ascensionAlerts[0];
+  return {
+    id: "gang-ascend",
+    title: `Ascend ${best.memberName}`,
+    reason: `${best.bestStat} x${best.bestGain.toFixed(2)} multiplier gain`,
+    category: "gang",
+    score: 55,
+  };
+}
+
+// === RULE REGISTRY ===
+
+const RULES: AdvisorRule[] = [
+  ruleBuyTor,
+  ruleBuyProgram,
+  ruleRootServers,
+  ruleBuyPserv,
+  ruleUpgradePserv,
+  ruleTrainHackingForNuke,
+  ruleTrainHackingForTargets,
+  ruleBalanceCombat,
+  ruleJoinFaction,
+  ruleBackdoorServers,
+  ruleStartFactionWork,
+  ruleStartShare,
+  rulePurchaseAugs,
+  ruleInstallAugs,
+  ruleBitnodeExit,
+  ruleGangTerritory,
+  ruleGangAscension,
+];
+
+// === SCORING ENGINE ===
+
+const MAX_RECOMMENDATIONS = 20;
+
+function evaluate(ctx: AdvisorContext): AdvisorStatus {
+  const start = Date.now();
+  const recommendations: Recommendation[] = [];
+
+  for (const rule of RULES) {
+    try {
+      const rec = rule(ctx);
+      if (rec) recommendations.push(rec);
+    } catch {
+      // Skip rules that throw
+    }
+  }
+
+  recommendations.sort((a, b) => b.score - a.score);
+  const trimmed = recommendations.slice(0, MAX_RECOMMENDATIONS);
+
+  const topCategory = trimmed.length > 0 ? trimmed[0].category : null;
+
+  return {
+    recommendations: trimmed,
+    totalEvaluated: RULES.length,
+    topCategory,
+    lastAnalysisMs: Date.now() - start,
+  };
+}
+
+// === MAIN ===
+
+export async function main(ns: NS): Promise<void> {
+  ns.disableLog("ALL");
+
+  writeDefaultConfig(ns, "advisor", {
+    "interval": "5000",
+  });
+
+  const interval = getConfigNumber(ns, "advisor", "interval", 5000);
+
+  ns.print(`${C.cyan}Advisor daemon started${C.reset} (interval: ${interval}ms)`);
+
+  // eslint-disable-next-line no-constant-condition
+  while (true) {
+    const ctx = gatherContext(ns);
+    const status = evaluate(ctx);
+
+    publishStatus(ns, STATUS_PORTS.advisor, status);
+
+    // Print summary
+    ns.print("");
+    ns.print(`${C.cyan}=== Advisor Analysis ===${C.reset} (${status.lastAnalysisMs}ms, ${status.recommendations.length} recs)`);
+    for (const rec of status.recommendations.slice(0, 8)) {
+      const scoreColor = rec.score >= 90 ? C.red
+        : rec.score >= 70 ? C.yellow
+        : rec.score >= 50 ? C.green
+        : C.dim;
+      ns.print(`  ${scoreColor}[${rec.score}]${C.reset} ${rec.title} ${C.dim}— ${rec.reason}${C.reset}`);
+    }
+    if (status.recommendations.length > 8) {
+      ns.print(`  ${C.dim}... +${status.recommendations.length - 8} more${C.reset}`);
+    }
+    if (status.recommendations.length === 0) {
+      ns.print(`  ${C.dim}No recommendations — all systems nominal${C.reset}`);
+    }
+
+    await ns.sleep(interval);
+  }
+}

@@ -14,6 +14,7 @@ import { COLORS } from "/lib/utils";
 import { dequeueAction } from "/lib/ports";
 import { QueueEntry, PRIORITY } from "/types/ports";
 import { walkKillTiers } from "/lib/ram-utils";
+import { writeDefaultConfig, getConfigNumber } from "/lib/config";
 
 // === ROUND-ROBIN STATUS CHECKS ===
 
@@ -100,7 +101,7 @@ function freeRamByKillTiers(
 /**
  * Wait for a script to finish running
  */
-async function waitForScript(ns: NS, pid: number, timeoutMs: number = 30_000): Promise<boolean> {
+async function waitForScript(ns: NS, pid: number, timeoutMs: number): Promise<boolean> {
   const startTime = Date.now();
   while (ns.isRunning(pid)) {
     if (Date.now() - startTime > timeoutMs) {
@@ -170,7 +171,8 @@ async function executeEntry(ns: NS, entry: QueueEntry): Promise<boolean> {
   ns.print(`${COLORS.green}Running ${entry.script} (pid ${pid})${COLORS.reset}`);
 
   // Wait for the script to complete
-  const completed = await waitForScript(ns, pid);
+  const scriptTimeout = getConfigNumber(ns, "queue", "scriptTimeout", 30000);
+  const completed = await waitForScript(ns, pid, scriptTimeout);
 
   if (!completed) {
     ns.print(`${COLORS.yellow}Script ${entry.script} did not complete in time${COLORS.reset}`);
@@ -233,19 +235,17 @@ function printStatus(
 export async function main(ns: NS): Promise<void> {
   ns.disableLog("ALL");
 
-  const flags = ns.flags([
-    ["interval", 2000],
-  ]) as {
-    interval: number;
-    _: string[];
-  };
+  writeDefaultConfig(ns, "queue", {
+    interval: "2000",
+    scriptTimeout: "30000",
+  });
 
-  const interval = flags.interval;
   let roundRobinIndex = 0;
   let lastAction = "Starting up...";
 
   // eslint-disable-next-line no-constant-condition
   while (true) {
+    const interval = getConfigNumber(ns, "queue", "interval", 2000);
     ns.clearLog();
 
     // Drain all user-triggered queue entries (higher priority first)

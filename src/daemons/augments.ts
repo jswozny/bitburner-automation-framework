@@ -26,6 +26,7 @@ import {
 } from "/controllers/factions";
 import { publishStatus } from "/lib/ports";
 import { STATUS_PORTS, AugmentsStatus } from "/types/ports";
+import { writeDefaultConfig, getConfigNumber, getConfigBool } from "/lib/config";
 
 function classifyAugTags(ns: NS, name: string, prereqs: string[]): string[] {
   const stats = ns.singularity.getAugmentationStats(name);
@@ -209,13 +210,10 @@ function printStatus(ns: NS, status: AugmentsStatus): void {
 export async function main(ns: NS): Promise<void> {
   ns.disableLog("ALL");
 
-  const flags = ns.flags([
-    ["interval", 3000],
-    ["one-shot", false],
-  ]) as { interval: number; "one-shot": boolean; _: string[] };
-
-  const interval = flags.interval;
-  const oneShot = flags["one-shot"];
+  writeDefaultConfig(ns, "augments", {
+    interval: "3000",
+    oneShot: "false",
+  });
 
   // Check SF4 level
   const sf4Level = ns.getResetInfo().ownedSF.get(4) ?? 0;
@@ -225,6 +223,8 @@ export async function main(ns: NS): Promise<void> {
   }
 
   do {
+    const interval = getConfigNumber(ns, "augments", "interval", 3000);
+    const oneShot = getConfigBool(ns, "augments", "oneShot", false);
 
     ns.clearLog();
 
@@ -236,5 +236,5 @@ export async function main(ns: NS): Promise<void> {
       ns.print(`\n${COLORS.dim}Next check in ${interval / 1000}s...${COLORS.reset}`);
       await ns.sleep(interval);
     }
-  } while (!oneShot);
+  } while (!getConfigBool(ns, "augments", "oneShot", false));
 }

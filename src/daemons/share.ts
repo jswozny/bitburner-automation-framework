@@ -17,6 +17,7 @@ import { COLORS } from "/lib/utils";
 import { getShareStatus, DEFAULT_SHARE_SCRIPT, ShareConfig, deployShareScript, launchShareThreads } from "/controllers/share";
 import { publishStatus, peekStatus } from "/lib/ports";
 import { STATUS_PORTS, ShareStatus, FleetAllocation } from "/types/ports";
+import { writeDefaultConfig, getConfigNumber, getConfigBool } from "/lib/config";
 
 // === MODULE-LEVEL CYCLE TRACKING ===
 // Share threads are ephemeral (they run share() and exit), so between cycles
@@ -25,15 +26,15 @@ import { STATUS_PORTS, ShareStatus, FleetAllocation } from "/types/ports";
 
 let lastKnownThreads = 0;
 let lastSeenTime = 0;
-const GRACE_PERIOD_MS = 2000;
 
 /**
  * Build a ShareStatus object with formatted values for the dashboard.
  * Handles the ephemeral nature of share threads with cycle-aware state.
  */
-function computeShareStatus(ns: NS, targetPercent = 0): ShareStatus {
+function computeShareStatus(ns: NS, targetPercent = 0, interval = 10000): ShareStatus {
   const raw = getShareStatus(ns, DEFAULT_SHARE_SCRIPT);
   const now = Date.now();
+  const gracePeriodMs = interval + 2000;
 
   // Determine cycle status based on current threads and grace period
   let cycleStatus: ShareStatus["cycleStatus"];
@@ -45,7 +46,7 @@ function computeShareStatus(ns: NS, targetPercent = 0): ShareStatus {
     displayThreads = raw.totalThreads;
     lastKnownThreads = raw.totalThreads;
     lastSeenTime = now;
-  } else if (now - lastSeenTime < GRACE_PERIOD_MS && lastKnownThreads > 0) {
+  } else if (now - lastSeenTime < gracePeriodMs && lastKnownThreads > 0) {
     // No threads right now, but we just had some - mid-cycle transition
     cycleStatus = "cycle";
     displayThreads = lastKnownThreads;
@@ -70,6 +71,7 @@ function computeShareStatus(ns: NS, targetPercent = 0): ShareStatus {
     cycleStatus,
     lastKnownThreads: lastKnownThreads.toLocaleString(),
     targetPercent: targetPercent > 0 ? targetPercent : undefined,
+    interval,
   };
 }
 
@@ -124,29 +126,13 @@ function printStatus(ns: NS, status: ShareStatus, launched: number, serversUsed:
 export async function main(ns: NS): Promise<void> {
   ns.disableLog("ALL");
 
-  const flags = ns.flags([
-    ["min-free", 4],
-    ["home-reserve", 32],
-    ["interval", 10000],
-    ["one-shot", false],
-    ["target-percent", 0],
-  ]) as {
-    "min-free": number;
-    "home-reserve": number;
-    interval: number;
-    "one-shot": boolean;
-    "target-percent": number;
-    _: string[];
-  };
-
-  const config: ShareConfig = {
-    minFree: Number(flags["min-free"]),
-    homeReserve: Number(flags["home-reserve"]),
-    interval: Number(flags.interval),
-    oneShot: flags["one-shot"],
-    shareScript: DEFAULT_SHARE_SCRIPT,
-    targetPercent: Number(flags["target-percent"]),
-  };
+  writeDefaultConfig(ns, "share", {
+    minFree: "4",
+    homeReserve: "32",
+    interval: "10000",
+    oneShot: "false",
+    targetPercent: "0",
+  });
 
   // Deploy share script to all servers on startup
   await deployShareScript(ns, DEFAULT_SHARE_SCRIPT);
@@ -171,6 +157,15 @@ export async function main(ns: NS): Promise<void> {
   }
 
   do {
+    const config: ShareConfig = {
+      minFree: getConfigNumber(ns, "share", "minFree", 4),
+      homeReserve: getConfigNumber(ns, "share", "homeReserve", 32),
+      interval: getConfigNumber(ns, "share", "interval", 10000),
+      oneShot: getConfigBool(ns, "share", "oneShot", false),
+      shareScript: DEFAULT_SHARE_SCRIPT,
+      targetPercent: getConfigNumber(ns, "share", "targetPercent", 0),
+    };
+
     ns.clearLog();
 
     // Read fleet allocation from hack daemon (if running)
@@ -183,7 +178,7 @@ export async function main(ns: NS): Promise<void> {
     const cycleResult = launchShareThreads(ns, config, allowedServers);
 
     // Compute formatted status for the dashboard
-    const shareStatus = computeShareStatus(ns, config.targetPercent);
+    const shareStatus = computeShareStatus(ns, config.targetPercent, config.interval);
 
     // Publish to port for dashboard consumption
     publishStatus(ns, STATUS_PORTS.share, shareStatus);
@@ -197,5 +192,5 @@ export async function main(ns: NS): Promise<void> {
       );
       await ns.sleep(config.interval);
     }
-  } while (!config.oneShot);
+  } while (!getConfigBool(ns, "share", "oneShot", false));
 }

@@ -1,15 +1,16 @@
-import { COLORS } from "/lib/utils.js";
+import { NS } from "@ns";
+import { COLORS } from "/lib/utils";
 import {
+  CrimeAnalysis,
   analyzeAllCrimes,
   fmtMoney,
   fmtExp,
   fmtPercent,
-} from "/controllers/crime.js";
+} from "/controllers/crime";
 
 const { green, yellow, cyan, dim, reset, bold } = COLORS;
 
-/** @param {NS} ns */
-export async function main(ns) {
+export async function main(ns: NS): Promise<void> {
   ns.tprint(`\n${bold}${cyan}=== Slum Work Analysis ===${reset}\n`);
 
   const rows = analyzeAllCrimes(ns, "moneyPerMin");
@@ -26,6 +27,7 @@ export async function main(ns) {
     pad("DEX/m", 8),
     pad("AGI/m", 8),
     pad("CHA/m", 8),
+    pad("KRM/m", 8),
   ].join(" ");
 
   ns.tprint(`${dim}${header}${reset}`);
@@ -46,6 +48,7 @@ export async function main(ns) {
       pad(fmtExp(r.dexExpPerMin), 8),
       pad(fmtExp(r.agiExpPerMin), 8),
       pad(fmtExp(r.chaExpPerMin), 8),
+      pad(r.karmaPerMin.toFixed(1), 8),
     ].join(" ");
 
     ns.tprint(`${color}${row}${reset}`);
@@ -95,7 +98,7 @@ export async function main(ns) {
   }
 }
 
-function pad(s, n) {
+function pad(s: string, n: number): string {
   s = String(s);
   return s.length >= n ? s.slice(0, n) : s.padEnd(n, " ");
 }

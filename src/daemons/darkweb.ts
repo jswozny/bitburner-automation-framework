@@ -17,6 +17,7 @@ import { COLORS } from "/lib/utils";
 import { analyzeDarkwebPrograms, getDarkwebStatus, purchaseTorRouter, formatMoney } from "/controllers/darkweb";
 import { publishStatus } from "/lib/ports";
 import { STATUS_PORTS, DarkwebStatus } from "/types/ports";
+import { writeDefaultConfig, getConfigNumber, getConfigBool } from "/lib/config";
 
 /**
  * Build a DarkwebStatus object with formatted values for the dashboard.
@@ -139,15 +140,14 @@ function printStatus(ns: NS, status: DarkwebStatus, purchasedThisCycle: string[]
 export async function main(ns: NS): Promise<void> {
   ns.disableLog("ALL");
 
-  const flags = ns.flags([
-    ["one-shot", false],
-    ["interval", 30000],
-  ]) as { "one-shot": boolean; interval: number; _: string[] };
-
-  const oneShot = flags["one-shot"];
-  const interval = flags.interval;
+  writeDefaultConfig(ns, "darkweb", {
+    interval: "30000",
+    oneShot: "false",
+  });
 
   do {
+    const interval = getConfigNumber(ns, "darkweb", "interval", 30000);
+    const oneShot = getConfigBool(ns, "darkweb", "oneShot", false);
     ns.clearLog();
 
     // Try to buy TOR if we don't have it
@@ -200,5 +200,5 @@ export async function main(ns: NS): Promise<void> {
       );
       await ns.sleep(interval);
     }
-  } while (!oneShot);
+  } while (!getConfigBool(ns, "darkweb", "oneShot", false));
 }

@@ -2,10 +2,7 @@
  * React Dashboard for Auto Tools
  *
  * Port-based dashboard: reads status from ports published by daemons.
- * No longer calls getFormattedStatus() — data comes from peekStatus().
- * Panel components are still imported from dashboard/tools/ for display.
- *
- * Future: extract panel components to dashboard/panels/ without controller imports.
+ * Uses a two-tier grouped tab layout and data-driven plugin registry.
  */
 import React from "lib/react";
 import { NS } from "@ns";
@@ -13,8 +10,10 @@ import { NS } from "@ns";
 const { useState, useEffect, useRef } = React;
 
 // Types and state
-import { DashboardState } from "views/dashboard/types";
+import { DashboardState, ToolName } from "views/dashboard/types";
+import { ToolPlugin } from "views/dashboard/types";
 import {
+  TabState,
   initCommandPort,
   readAndExecuteCommands,
   readStatusPorts,
@@ -28,10 +27,10 @@ import { BitnodeStatusBar } from "views/dashboard/components/BitnodeStatus";
 
 // Styles and components
 import { styles } from "views/dashboard/styles";
-import { TabBar } from "views/dashboard/components/TabBar";
+import { GroupedTabBar, TabGroup } from "views/dashboard/components/TabBar";
+import { ErrorBoundary } from "views/dashboard/components/ErrorBoundary";
 
-// Tool plugins — imported for their React components only
-// (getFormattedStatus is no longer called; data comes from ports)
+// Tool plugins
 import { nukePlugin } from "views/dashboard/tools/nuke";
 import { pservPlugin } from "views/dashboard/tools/pserv";
 import { sharePlugin } from "views/dashboard/tools/share";
@@ -43,91 +42,137 @@ import { factionPlugin } from "views/dashboard/tools/faction";
 import { infiltrationPlugin } from "views/dashboard/tools/infiltration";
 import { gangPlugin } from "views/dashboard/tools/gang";
 import { augmentsPlugin } from "views/dashboard/tools/augments";
+import { advisorPlugin } from "views/dashboard/tools/advisor";
+import { contractsPlugin } from "views/dashboard/tools/contracts";
 
-const TAB_NAMES = ["Overview", "Nuke", "Hack", "Pserv", "Share", "Faction", "Rep", "Augs", "Work", "Darkweb", "Infiltrate", "Gang"];
+// === PLUGIN REGISTRY ===
+
+/** Helper to pluck a field from DashboardState by key name. */
+function pick<K extends keyof DashboardState>(key: K): (s: DashboardState) => DashboardState[K] {
+  return (s: DashboardState) => s[key];
+}
+
+interface PluginEntry {
+  toolId: ToolName;
+  plugin: ToolPlugin<any>;
+  tabLabel: string;
+  getStatus: (s: DashboardState) => any;
+  getError: (s: DashboardState) => string | null;
+}
+
+/** Flat registry of all plugins — used by OverviewPanel. */
+const PLUGIN_REGISTRY: PluginEntry[] = [
+  { toolId: "nuke",         plugin: nukePlugin,         tabLabel: "Nuke",       getStatus: pick("nukeStatus"),         getError: () => null },
+  { toolId: "hack",         plugin: hackPlugin,         tabLabel: "Hack",       getStatus: pick("hackStatus"),         getError: () => null },
+  { toolId: "pserv",        plugin: pservPlugin,        tabLabel: "PServ",      getStatus: pick("pservStatus"),        getError: () => null },
+  { toolId: "darkweb",      plugin: darkwebPlugin,      tabLabel: "Darkweb",    getStatus: pick("darkwebStatus"),      getError: pick("darkwebError") as (s: DashboardState) => string | null },
+  { toolId: "faction",      plugin: factionPlugin,      tabLabel: "Faction",    getStatus: pick("factionStatus"),      getError: pick("factionError") as (s: DashboardState) => string | null },
+  { toolId: "rep",          plugin: repPlugin,          tabLabel: "Rep",        getStatus: pick("repStatus"),          getError: pick("repError") as (s: DashboardState) => string | null },
+  { toolId: "share",        plugin: sharePlugin,        tabLabel: "Share",      getStatus: pick("shareStatus"),        getError: () => null },
+  { toolId: "augments",     plugin: augmentsPlugin,     tabLabel: "Augs",       getStatus: pick("augmentsStatus"),     getError: () => null },
+  { toolId: "work",         plugin: workPlugin,         tabLabel: "Work",       getStatus: pick("workStatus"),         getError: pick("workError") as (s: DashboardState) => string | null },
+  { toolId: "gang",         plugin: gangPlugin,         tabLabel: "Gang",       getStatus: pick("gangStatus"),         getError: () => null },
+  { toolId: "infiltration", plugin: infiltrationPlugin, tabLabel: "Infiltrate", getStatus: pick("infiltrationStatus"), getError: () => null },
+  { toolId: "advisor",      plugin: advisorPlugin,      tabLabel: "Advisor",    getStatus: pick("advisorStatus"),       getError: () => null },
+  { toolId: "contracts",    plugin: contractsPlugin,    tabLabel: "Contracts",  getStatus: pick("contractsStatus"),    getError: () => null },
+];
+
+/** Lookup a PluginEntry by toolId. */
+function findEntry(toolId: ToolName): PluginEntry {
+  return PLUGIN_REGISTRY.find(e => e.toolId === toolId)!;
+}
+
+/** Tab groups with references to their PluginEntries. */
+interface TabGroupDef {
+  label: string;
+  entries: PluginEntry[];
+}
+
+const TAB_GROUPS: TabGroupDef[] = [
+  { label: "Servers",        entries: [findEntry("nuke"), findEntry("hack"), findEntry("pserv"), findEntry("darkweb")] },
+  { label: "Rep & Factions", entries: [findEntry("faction"), findEntry("rep"), findEntry("share"), findEntry("augments")] },
+  { label: "Growth",         entries: [findEntry("work"), findEntry("gang")] },
+  { label: "Tools",          entries: [findEntry("infiltration"), findEntry("contracts")] },
+];
+
+/** Build the TabGroup[] shape needed by GroupedTabBar. */
+const TAB_GROUP_PROPS: TabGroup[] = TAB_GROUPS.map(g => ({
+  label: g.label,
+  subLabels: g.entries.map(e => e.tabLabel),
+}));
 
 // === OVERVIEW PANEL ===
 
-interface OverviewPanelProps {
-  state: DashboardState;
+/** Find the (group, sub) tab indices for a given toolId. */
+function findTabForTool(toolId: ToolName): { group: number; sub: number } | null {
+  for (let g = 0; g < TAB_GROUPS.length; g++) {
+    for (let s = 0; s < TAB_GROUPS[g].entries.length; s++) {
+      if (TAB_GROUPS[g].entries[s].toolId === toolId) return { group: g, sub: s };
+    }
+  }
+  return null;
 }
 
-function OverviewPanel({ state }: OverviewPanelProps): React.ReactElement {
-  const { pids, repError, darkwebError, workError } = state;
+interface OverviewPanelProps {
+  state: DashboardState;
+  onNavigate: (toolId: ToolName) => void;
+}
+
+function OverviewPanel({ state, onNavigate }: OverviewPanelProps): React.ReactElement {
+  const advisorEntry = findEntry("advisor");
+  const AdvisorPanel = advisorEntry.plugin.DetailPanel;
+
+  const hasFocusConflict = state.pids.work > 0
+    && state.pids.rep > 0
+    && (state.repStatus?.tier ?? 0) >= 6;
 
   return (
-    <div style={styles.panel}>
+    <div>
+      {hasFocusConflict && (
+        <div style={{
+          backgroundColor: "rgba(255, 0, 0, 0.12)",
+          border: "1px solid #ff4444",
+          borderRadius: "4px",
+          padding: "8px 12px",
+          marginBottom: "8px",
+          color: "#ff6666",
+          fontSize: "12px",
+        }}>
+          Focus Conflict: Both Work and Rep (auto-work) daemons are running. They will compete for player focus. Consider stopping one.
+        </div>
+      )}
+      <div style={{ marginBottom: "12px" }}>
+        <ErrorBoundary label="Advisor">
+          <AdvisorPanel
+              status={advisorEntry.getStatus(state)}
+              running={state.pids[advisorEntry.toolId] > 0}
+              toolId={advisorEntry.toolId}
+              error={advisorEntry.getError(state)}
+              pid={state.pids[advisorEntry.toolId]}
+          />
+        </ErrorBoundary>
+      </div>
       <div style={styles.grid}>
-        <nukePlugin.OverviewCard
-          status={state.nukeStatus}
-          running={pids.nuke > 0}
-          toolId="nuke"
-          pid={pids.nuke}
-        />
-        <hackPlugin.OverviewCard
-            status={state.hackStatus}
-            running={pids.hack > 0}
-            toolId="hack"
-            pid={pids.hack}
-        />
-        <pservPlugin.OverviewCard
-          status={state.pservStatus}
-          running={pids.pserv > 0}
-          toolId="pserv"
-          pid={pids.pserv}
-        />
-        <sharePlugin.OverviewCard
-          status={state.shareStatus}
-          running={pids.share > 0}
-          toolId="share"
-          pid={pids.share}
-        />
-        <factionPlugin.OverviewCard
-          status={state.factionStatus}
-          running={pids.faction > 0}
-          toolId="faction"
-          error={state.factionError}
-          pid={pids.faction}
-        />
-        <repPlugin.OverviewCard
-          status={state.repStatus}
-          running={pids.rep > 0}
-          toolId="rep"
-          error={repError}
-          pid={pids.rep}
-        />
-        <augmentsPlugin.OverviewCard
-          status={state.augmentsStatus}
-          running={pids.augments > 0}
-          toolId="augments"
-          pid={pids.augments}
-        />
-        <workPlugin.OverviewCard
-          status={state.workStatus}
-          running={pids.work > 0}
-          toolId="work"
-          error={workError}
-          pid={pids.work}
-        />
-        <darkwebPlugin.OverviewCard
-          status={state.darkwebStatus}
-          running={pids.darkweb > 0}
-          toolId="darkweb"
-          error={darkwebError}
-          pid={pids.darkweb}
-        />
-        <infiltrationPlugin.OverviewCard
-          status={state.infiltrationStatus}
-          running={pids.infiltration > 0}
-          toolId="infiltration"
-          pid={pids.infiltration}
-        />
-        <gangPlugin.OverviewCard
-          status={state.gangStatus}
-          running={pids.gang > 0}
-          toolId="gang"
-          pid={pids.gang}
-        />
+        {PLUGIN_REGISTRY.filter(e => e.toolId !== "advisor").map(entry => {
+          const Card = entry.plugin.OverviewCard;
+          return (
+            <div
+              key={entry.toolId}
+              style={{ cursor: "pointer" }}
+              onClick={() => onNavigate(entry.toolId)}
+            >
+              <ErrorBoundary label={entry.tabLabel}>
+                <Card
+                  status={entry.getStatus(state)}
+                  running={state.pids[entry.toolId] > 0}
+                  toolId={entry.toolId}
+                  error={entry.getError(state)}
+                  pid={state.pids[entry.toolId]}
+                />
+              </ErrorBoundary>
+            </div>
+          );
+        })}
       </div>
     </div>
   );
@@ -137,7 +182,7 @@ function OverviewPanel({ state }: OverviewPanelProps): React.ReactElement {
 
 function Dashboard(): React.ReactElement {
   const [state, setState] = useState<DashboardState>(getStateSnapshot());
-  const [activeTab, setActiveTabLocal] = useState<number>(getActiveTab());
+  const [tabState, setTabStateLocal] = useState<TabState>(getActiveTab());
   const rootRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -160,121 +205,56 @@ function Dashboard(): React.ReactElement {
     return () => clearInterval(intervalId);
   }, []);
 
-  const handleTabClick = (index: number) => {
-    setActiveTab(index);
-    setActiveTabLocal(index);
+  const handleOverviewClick = () => {
+    const next: TabState = { group: -1, sub: 0 };
+    setActiveTab(next);
+    setTabStateLocal(next);
+  };
+
+  const handleGroupClick = (groupIndex: number) => {
+    const next: TabState = { group: groupIndex, sub: 0 };
+    setActiveTab(next);
+    setTabStateLocal(next);
+  };
+
+  const handleSubClick = (subIndex: number) => {
+    const next: TabState = { group: tabState.group, sub: subIndex };
+    setActiveTab(next);
+    setTabStateLocal(next);
+  };
+
+  const handleNavigate = (toolId: ToolName) => {
+    const pos = findTabForTool(toolId);
+    if (pos) {
+      const next: TabState = { group: pos.group, sub: pos.sub };
+      setActiveTab(next);
+      setTabStateLocal(next);
+    }
   };
 
   const renderPanel = () => {
-    switch (activeTab) {
-      case 0:
-        return <OverviewPanel state={state} />;
-      case 1:
-        return (
-          <nukePlugin.DetailPanel
-            status={state.nukeStatus}
-            running={state.pids.nuke > 0}
-            toolId="nuke"
-            pid={state.pids.nuke}
-          />
-        );
-      case 2:
-        return (
-            <hackPlugin.DetailPanel
-                status={state.hackStatus}
-                running={state.pids.hack > 0}
-                toolId="hack"
-                pid={state.pids.hack}
-            />
-        );
-      case 3:
-        return (
-          <pservPlugin.DetailPanel
-            status={state.pservStatus}
-            running={state.pids.pserv > 0}
-            toolId="pserv"
-            pid={state.pids.pserv}
-          />
-        );
-      case 4:
-        return (
-          <sharePlugin.DetailPanel
-            status={state.shareStatus}
-            running={state.pids.share > 0}
-            toolId="share"
-            pid={state.pids.share}
-          />
-        );
-      case 5:
-        return (
-          <factionPlugin.DetailPanel
-            status={state.factionStatus}
-            running={state.pids.faction > 0}
-            toolId="faction"
-            error={state.factionError}
-            pid={state.pids.faction}
-          />
-        );
-      case 6:
-        return (
-          <repPlugin.DetailPanel
-            status={state.repStatus}
-            running={state.pids.rep > 0}
-            toolId="rep"
-            error={state.repError}
-            pid={state.pids.rep}
-          />
-        );
-      case 7:
-        return (
-          <augmentsPlugin.DetailPanel
-            status={state.augmentsStatus}
-            running={state.pids.augments > 0}
-            toolId="augments"
-            pid={state.pids.augments}
-          />
-        );
-      case 8:
-        return (
-          <workPlugin.DetailPanel
-            status={state.workStatus}
-            running={state.pids.work > 0}
-            toolId="work"
-            error={state.workError}
-            pid={state.pids.work}
-          />
-        );
-      case 9:
-        return (
-          <darkwebPlugin.DetailPanel
-            status={state.darkwebStatus}
-            running={state.pids.darkweb > 0}
-            toolId="darkweb"
-            error={state.darkwebError}
-            pid={state.pids.darkweb}
-          />
-        );
-      case 10:
-        return (
-          <infiltrationPlugin.DetailPanel
-            status={state.infiltrationStatus}
-            running={state.pids.infiltration > 0}
-            toolId="infiltration"
-            pid={state.pids.infiltration}
-          />
-        );
-      case 11:
-        return (
-          <gangPlugin.DetailPanel
-            status={state.gangStatus}
-            running={state.pids.gang > 0}
-            toolId="gang"
-            pid={state.pids.gang}
-          />
-        );
-      default:
-        return <div style={styles.panel}>Unknown tab</div>;
+    if (tabState.group === -1) {
+      return <OverviewPanel state={state} onNavigate={handleNavigate} />;
     }
+
+    const group = TAB_GROUPS[tabState.group];
+    if (!group) return <div style={styles.panel}>Unknown group</div>;
+
+    const entry = group.entries[tabState.sub];
+    if (!entry) return <div style={styles.panel}>Unknown tab</div>;
+
+    const Panel = entry.plugin.DetailPanel;
+    return (
+      <ErrorBoundary label={entry.tabLabel}>
+        <Panel
+          status={entry.getStatus(state)}
+          running={state.pids[entry.toolId] > 0}
+          toolId={entry.toolId}
+          error={entry.getError(state)}
+          pid={state.pids[entry.toolId]}
+        />
+      </ErrorBoundary>
+    );
   };
 
   return (
@@ -283,7 +263,15 @@ function Dashboard(): React.ReactElement {
         <h1 style={styles.title}>AUTO TOOLS DASHBOARD</h1>
       </div>
       <BitnodeStatusBar status={state.bitnodeStatus} />
-      <TabBar activeTab={activeTab} tabs={TAB_NAMES} onTabClick={handleTabClick} />
+      <GroupedTabBar
+        groups={TAB_GROUP_PROPS}
+        activeGroup={tabState.group}
+        activeSub={tabState.sub}
+        onOverviewClick={handleOverviewClick}
+        onGroupClick={handleGroupClick}
+        onSubClick={handleSubClick}
+        statuses={TAB_GROUPS.map(g => g.entries.map(e => state.pids[e.toolId] > 0))}
+      />
       {renderPanel()}
     </div>
   );

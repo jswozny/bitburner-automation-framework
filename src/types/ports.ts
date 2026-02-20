@@ -24,6 +24,8 @@ export const STATUS_PORTS = {
   gang: 13,
   gangTerritory: 14,
   augments: 16,
+  advisor: 17,
+  contracts: 18,
 } as const;
 
 export const GANG_CONTROL_PORT = 15;
@@ -33,7 +35,7 @@ export const COMMAND_PORT = 20;
 
 // === TOOL NAMES ===
 
-export type ToolName = "nuke" | "pserv" | "share" | "rep" | "hack" | "darkweb" | "work" | "faction" | "infiltration" | "gang" | "augments";
+export type ToolName = "nuke" | "pserv" | "share" | "rep" | "hack" | "darkweb" | "work" | "faction" | "infiltration" | "gang" | "augments" | "advisor" | "contracts";
 
 // === TOOL SCRIPTS (daemon paths) ===
 
@@ -49,6 +51,8 @@ export const TOOL_SCRIPTS: Record<ToolName, string> = {
   infiltration: "daemons/infiltration.js",
   gang: "daemons/gang.js",
   augments: "daemons/augments.js",
+  advisor: "daemons/advisor.js",
+  contracts: "daemons/contracts.js",
 };
 
 // === PRIORITY CONSTANTS ===
@@ -154,6 +158,7 @@ export interface ShareStatus {
   cycleStatus: "active" | "cycle" | "idle";
   lastKnownThreads: string;
   targetPercent?: number;  // 0 or undefined = greedy, 1-100 = capped
+  interval?: number;       // daemon loop interval in ms (for grace period calc)
 }
 
 export interface NonWorkableFactionProgress {
@@ -786,6 +791,11 @@ export interface GangStatus {
   faction?: string;
   isHacking?: boolean;
 
+  // Pre-gang karma progress
+  karma?: number;
+  karmaRequired?: number;
+  karmaProgress?: number;
+
   // Gang aggregates
   respect?: number;
   respectFormatted?: string;
@@ -832,6 +842,59 @@ export interface GangStatus {
   balancedPhase?: "grow" | "respect" | "territory" | "money";
 }
 
+// === ADVISOR TYPES ===
+
+export type AdvisorCategory =
+  | "infrastructure" | "money" | "skills"
+  | "factions" | "augmentations" | "gang";
+
+export interface Recommendation {
+  id: string;
+  title: string;
+  reason: string;
+  category: AdvisorCategory;
+  score: number;
+}
+
+export interface AdvisorStatus {
+  recommendations: Recommendation[];
+  totalEvaluated: number;
+  topCategory: AdvisorCategory | null;
+  lastAnalysisMs: number;
+}
+
+// === CONTRACTS STATUS ===
+
+export interface ContractResult {
+  host: string;
+  file: string;
+  type: string;
+  reward: string;
+  success: boolean;
+  timestamp: number;
+}
+
+export interface PendingContract {
+  host: string;
+  file: string;
+  type: string;
+  triesRemaining: number;
+  reason: string;
+}
+
+export interface ContractsStatus {
+  solved: number;
+  failed: number;
+  skipped: number;
+  found: number;
+  pendingContracts: PendingContract[];
+  recentResults: ContractResult[];
+  knownTypes: number;
+  totalTypes: number;
+  lastScanTime: number;
+  serversScanned: number;
+}
+
 // === DASHBOARD STATE ===
 
 export interface DashboardState {
@@ -853,6 +916,8 @@ export interface DashboardState {
   infiltrationStatus: InfiltrationStatus | null;
   gangStatus: GangStatus | null;
   augmentsStatus: AugmentsStatus | null;
+  advisorStatus: AdvisorStatus | null;
+  contractsStatus: ContractsStatus | null;
 }
 
 // === PLUGIN INTERFACE (for dashboard) ===

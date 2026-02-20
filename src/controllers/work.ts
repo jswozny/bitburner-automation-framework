@@ -357,12 +357,11 @@ export function getBestCrimeForMoney(ns: NS): CrimeAnalysis {
 }
 
 /**
- * Find the best crime for karma loss (most negative karma per minute)
+ * Find the best crime for karma loss (highest karma per minute).
+ * stats.karma is positive — it represents how much karma the player loses per success.
  */
 export function getBestCrimeForKarma(ns: NS): CrimeAnalysis {
-  const crimes = analyzeAllCrimes(ns, "karmaPerMin");
-  // karmaPerMin is negative, so the most negative (best for grinding) is last in descending sort
-  return crimes[crimes.length - 1];
+  return findBestCrime(ns, "karmaPerMin");
 }
 
 /**

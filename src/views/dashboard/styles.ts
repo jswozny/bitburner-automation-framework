@@ -59,6 +59,32 @@ export const styles = {
     fontSize: "12px",
   } as React.CSSProperties,
 
+  subTabBar: {
+    display: "flex",
+    flexWrap: "wrap",
+    gap: "3px",
+    marginBottom: "12px",
+    paddingLeft: "4px",
+  } as React.CSSProperties,
+
+  subTab: {
+    padding: "4px 10px",
+    backgroundColor: "#151515",
+    border: "1px solid #2a2a2a",
+    color: "#666",
+    cursor: "pointer",
+    fontSize: "11px",
+  } as React.CSSProperties,
+
+  subTabActive: {
+    padding: "4px 10px",
+    backgroundColor: "#002200",
+    border: "1px solid #00aa00",
+    color: "#00cc00",
+    cursor: "pointer",
+    fontSize: "11px",
+  } as React.CSSProperties,
+
   // === PANELS & CARDS ===
   panel: {
     backgroundColor: "#111",

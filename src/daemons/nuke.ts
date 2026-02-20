@@ -15,6 +15,7 @@ import { COLORS } from "/lib/utils";
 import { getCachedServers, invalidateServerCache } from "/lib/server-cache";
 import { publishStatus } from "/lib/ports";
 import { STATUS_PORTS, NukeStatus } from "/types/ports";
+import { writeDefaultConfig, getConfigNumber, getConfigBool } from "/lib/config";
 
 /**
  * Build a NukeStatus object by scanning all servers and categorizing them.
@@ -135,15 +136,14 @@ function printStatus(ns: NS, nukedCount: number, nukedNames: string[], status: N
 export async function main(ns: NS): Promise<void> {
   ns.disableLog("ALL");
 
-  const flags = ns.flags([
-    ["one-shot", false],
-    ["interval", 30000],
-  ]) as { "one-shot": boolean; interval: number; _: string[] };
-
-  const oneShot = flags["one-shot"];
-  const interval = flags.interval;
+  writeDefaultConfig(ns, "nuke", {
+    interval: "30000",
+    oneShot: "false",
+  });
 
   do {
+    const interval = getConfigNumber(ns, "nuke", "interval", 30000);
+    const oneShot = getConfigBool(ns, "nuke", "oneShot", false);
     ns.clearLog();
 
     // Nuke any servers that are ready
@@ -190,5 +190,5 @@ export async function main(ns: NS): Promise<void> {
       );
       await ns.sleep(interval);
     }
-  } while (!oneShot);
+  } while (!getConfigBool(ns, "nuke", "oneShot", false));
 }

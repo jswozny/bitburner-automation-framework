@@ -33,7 +33,10 @@ export function ToolControl({ tool, running, error, pid }: ToolControlProps): Re
   const buttonStyle = running ? styles.buttonStop : styles.buttonPlay;
 
   return (
-    <span style={{ display: "flex", alignItems: "center", gap: "4px" }}>
+    <span
+      style={{ display: "flex", alignItems: "center", gap: "4px" }}
+      onClick={(e) => e.stopPropagation()}
+    >
       <StatusBadge
         running={running}
         error={error}

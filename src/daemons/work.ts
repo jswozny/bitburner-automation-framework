@@ -26,6 +26,7 @@ import {
 import { analyzeCrime, CrimeName } from "/controllers/crime";
 import { publishStatus } from "/lib/ports";
 import { STATUS_PORTS, WorkStatus } from "/types/ports";
+import { writeDefaultConfig, getConfigString, getConfigNumber, getConfigBool } from "/lib/config";
 
 // === FOCUS OPTIONS (mirrors dashboard/tools/work.tsx) ===
 
@@ -350,48 +351,49 @@ function printStatus(ns: NS, status: WorkStatus): void {
 export async function main(ns: NS): Promise<void> {
   ns.disableLog("ALL");
 
-  const flags = ns.flags([
-    ["focus", ""],
-    ["interval", 5000],
-    ["one-shot", false],
-  ]) as {
-    focus: string;
-    interval: number;
-    "one-shot": boolean;
-    _: string[];
-  };
+  writeDefaultConfig(ns, "work", {
+    focus: "",
+    interval: "5000",
+    oneShot: "false",
+  });
 
-  const interval = flags.interval;
-  const oneShot = flags["one-shot"];
+  const validFocuses: WorkFocus[] = [
+    "strength",
+    "defense",
+    "dexterity",
+    "agility",
+    "hacking",
+    "charisma",
+    "balance-all",
+    "balance-combat",
+    "crime-money",
+    "crime-stats",
+    "crime-karma",
+    "crime-kills",
+  ];
 
-  // Set focus if provided via flag
-  if (flags.focus) {
-    const validFocuses: WorkFocus[] = [
-      "strength",
-      "defense",
-      "dexterity",
-      "agility",
-      "hacking",
-      "charisma",
-      "balance-all",
-      "balance-combat",
-      "crime-money",
-      "crime-stats",
-      "crime-karma",
-      "crime-kills",
-    ];
-
-    if (validFocuses.includes(flags.focus as WorkFocus)) {
-      setWorkFocus(ns, flags.focus as WorkFocus);
-      ns.print(`${COLORS.green}Set focus to: ${flags.focus}${COLORS.reset}`);
+  // Set focus from config on startup
+  const initialFocus = getConfigString(ns, "work", "focus", "");
+  if (initialFocus) {
+    if (validFocuses.includes(initialFocus as WorkFocus)) {
+      setWorkFocus(ns, initialFocus as WorkFocus);
+      ns.print(`${COLORS.green}Set focus to: ${initialFocus}${COLORS.reset}`);
     } else {
-      ns.tprint(`${COLORS.red}Invalid focus: ${flags.focus}${COLORS.reset}`);
+      ns.tprint(`${COLORS.red}Invalid focus in config: ${initialFocus}${COLORS.reset}`);
       ns.tprint(`Valid options: ${validFocuses.join(", ")}`);
       return;
     }
   }
 
   do {
+    const interval = getConfigNumber(ns, "work", "interval", 5000);
+    const oneShot = getConfigBool(ns, "work", "oneShot", false);
+
+    // Re-read focus each cycle for live editing
+    const focus = getConfigString(ns, "work", "focus", "");
+    if (focus && validFocuses.includes(focus as WorkFocus)) {
+      setWorkFocus(ns, focus as WorkFocus);
+    }
     ns.clearLog();
 
     // Run training cycle (start/continue appropriate training)
@@ -413,5 +415,5 @@ export async function main(ns: NS): Promise<void> {
       ns.print(`\n${COLORS.dim}Next check in ${interval / 1000}s...${COLORS.reset}`);
       await ns.sleep(interval);
     }
-  } while (!oneShot);
+  } while (!getConfigBool(ns, "work", "oneShot", false));
 }
