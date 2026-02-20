@@ -10,6 +10,7 @@ export function squareRoot(n: number | bigint): string {
     x = y;
     y = (x + big / x) / 2n;
   }
-  if (x * x === big) return x.toString();
-  return "";
+  // x = floor(sqrt(big)); round to nearest integer
+  if (big - x * x > x) return (x + 1n).toString();
+  return x.toString();
 }
