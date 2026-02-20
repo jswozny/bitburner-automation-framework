@@ -32,6 +32,7 @@ export async function main(ns: NS): Promise<void> {
   // Config files persist across soft resets
   setConfigValue(ns, "work", "focus", "hacking");
   setConfigValue(ns, "focus", "holder", "work");
+  setConfigValue(ns, "pserv", "autoBuy", "true");
 
   ns.tprint(`Installing augmentations... Restarting with ${flags.script}`);
   ns.singularity.installAugmentations(flags.script);
