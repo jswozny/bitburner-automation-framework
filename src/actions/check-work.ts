@@ -94,6 +94,11 @@ export async function main(ns: NS): Promise<void> {
   const highestCombat = Math.max(...combatStats);
 
   const status: WorkStatus = {
+    tier: 0,
+    tierName: "monitor",
+    availableFeatures: ["status-display"],
+    unavailableFeatures: ["gym-training", "university-training", "travel", "crime"],
+    currentRamUsage: ns.getScriptRam(ns.getScriptName()),
     currentFocus,
     focusLabel: focusLabels[currentFocus] || currentFocus.toUpperCase(),
     playerCity: player.city,

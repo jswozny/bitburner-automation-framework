@@ -21,22 +21,43 @@ import {
 } from "/controllers/work";
 import { writeWorkFocusCommand, writeStartTrainingCommand, claimFocus } from "views/dashboard/state-store";
 
-// === FOCUS OPTIONS ===
+// === FOCUS OPTIONS (grouped for dropdown) ===
 
-const FOCUS_OPTIONS: { value: WorkFocus; label: string; description: string }[] = [
-  { value: "strength", label: "Strength", description: "Train strength at gym" },
-  { value: "defense", label: "Defense", description: "Train defense at gym" },
-  { value: "dexterity", label: "Dexterity", description: "Train dexterity at gym" },
-  { value: "agility", label: "Agility", description: "Train agility at gym" },
-  { value: "hacking", label: "Hacking", description: "Study algorithms at university" },
-  { value: "charisma", label: "Charisma", description: "Study leadership at university" },
-  { value: "balance-combat", label: "Balance Combat", description: "Rotate STR/DEF/DEX/AGI" },
-  { value: "balance-all", label: "Balance All", description: "Rotate all 6 skills" },
-  { value: "crime-money", label: "Crime (Money)", description: "Best crime for $/min" },
-  { value: "crime-stats", label: "Crime (Stats)", description: "Best crime for combat exp" },
-  { value: "crime-karma", label: "Crime (Karma)", description: "Best crime for karma loss" },
-  { value: "crime-kills", label: "Crime (Kills)", description: "Best crime for kills" },
+interface FocusOption { value: WorkFocus; label: string; description: string }
+interface FocusGroup { label: string; options: FocusOption[] }
+
+const FOCUS_GROUPS: FocusGroup[] = [
+  {
+    label: "Training",
+    options: [
+      { value: "hacking", label: "Training (Hacking)", description: "Algorithms at university" },
+      { value: "balance-combat", label: "Training (Combat)", description: "Rotate STR/DEF/DEX/AGI" },
+      { value: "balance-all", label: "Training (All)", description: "Rotate all 6 skills" },
+      { value: "charisma", label: "Training (Charisma)", description: "Leadership at university" },
+    ],
+  },
+  {
+    label: "Crime",
+    options: [
+      { value: "crime-money", label: "Crime ($)", description: "Best crime for $/min" },
+      { value: "crime-karma", label: "Crime (Karma)", description: "Best crime for karma" },
+      { value: "crime-kills", label: "Crime (Kills)", description: "Best crime for kills" },
+    ],
+  },
+  {
+    label: "Individual Skills",
+    options: [
+      { value: "strength", label: "Strength", description: "Train strength at gym" },
+      { value: "defense", label: "Defense", description: "Train defense at gym" },
+      { value: "dexterity", label: "Dexterity", description: "Train dexterity at gym" },
+      { value: "agility", label: "Agility", description: "Train agility at gym" },
+      { value: "crime-stats", label: "Crime (Stats)", description: "Best crime for combat exp" },
+    ],
+  },
 ];
+
+// Flat list for label lookups
+const ALL_FOCUS_OPTIONS: FocusOption[] = FOCUS_GROUPS.flatMap(g => g.options);
 
 // === STATUS FORMATTING ===
 
@@ -86,8 +107,13 @@ function formatWorkStatus(ns: NS): FormattedWorkStatus | null {
     }
 
     return {
+      tier: 0,
+      tierName: "monitor",
+      availableFeatures: ["status-display"],
+      unavailableFeatures: [],
+      currentRamUsage: 0,
       currentFocus: status.currentFocus,
-      focusLabel: FOCUS_OPTIONS.find((f) => f.value === status.currentFocus)?.label ?? status.currentFocus,
+      focusLabel: ALL_FOCUS_OPTIONS.find((f) => f.value === status.currentFocus)?.label ?? status.currentFocus,
       playerCity: status.playerCity,
       playerMoney: status.playerMoney,
       playerMoneyFormatted: ns.formatNumber(status.playerMoney),
@@ -227,8 +253,10 @@ function WorkOverviewCard({
             </span>
           </div>
           <div style={styles.stat}>
-            <span style={styles.statLabel}>City</span>
-            <span style={styles.statValue}>{status?.playerCity ?? "—"}</span>
+            <span style={styles.statLabel}>Tier</span>
+            <span style={styles.statValue}>
+              {status ? `${status.tierName} (${(status.currentRamUsage).toFixed(1)}GB)` : "—"}
+            </span>
           </div>
         </>
       )}
@@ -281,6 +309,13 @@ function WorkDetailPanel({
             <span style={styles.statLabel}>Money: </span>
             <span style={styles.statHighlight}>${status?.playerMoneyFormatted ?? "—"}</span>
           </span>
+          <span style={styles.dim}>|</span>
+          <span>
+            <span style={styles.statLabel}>Tier: </span>
+            <span style={styles.statValue}>
+              {status ? `${status.tierName} (${status.currentRamUsage.toFixed(1)}GB)` : "—"}
+            </span>
+          </span>
         </div>
         <ToolControl tool={toolId} running={running} pid={pid} />
       </div>
@@ -321,7 +356,7 @@ function WorkDetailPanel({
         <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
           <span style={styles.statLabel}>Focus:</span>
           <select
-            value={status?.currentFocus ?? "strength"}
+            value={status?.currentFocus ?? "hacking"}
             onChange={handleFocusChange}
             style={{
               backgroundColor: "#1a1a1a",
@@ -334,10 +369,14 @@ function WorkDetailPanel({
               flex: 1,
             }}
           >
-            {FOCUS_OPTIONS.map((opt) => (
-              <option key={opt.value} value={opt.value}>
-                {opt.label} - {opt.description}
-              </option>
+            {FOCUS_GROUPS.map((group) => (
+              <optgroup key={group.label} label={group.label}>
+                {group.options.map((opt) => (
+                  <option key={opt.value} value={opt.value}>
+                    {opt.label} - {opt.description}
+                  </option>
+                ))}
+              </optgroup>
             ))}
           </select>
         </div>

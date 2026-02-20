@@ -356,6 +356,13 @@ export interface DarkwebStatus {
 }
 
 export interface WorkStatus {
+  // Tier metadata
+  tier: number;
+  tierName: WorkTierName;
+  availableFeatures: string[];
+  unavailableFeatures: string[];
+  currentRamUsage: number;
+
   currentFocus: string;
   focusLabel: string;
   playerCity: string;
@@ -733,6 +740,8 @@ export const INFILTRATION_CONTROL_PORT = 12;
 export type GangStrategy = "respect" | "money" | "territory" | "balanced" | "grow";
 
 export type GangTierName = "lite" | "basic" | "full";
+
+export type WorkTierName = "monitor" | "training" | "crime";
 
 export interface GangMemberStatus {
   name: string;
