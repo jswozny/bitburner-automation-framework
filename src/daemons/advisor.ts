@@ -184,12 +184,22 @@ function ruleBalanceCombat(ctx: AdvisorContext): Recommendation | null {
 function ruleJoinFaction(ctx: AdvisorContext): Recommendation | null {
   const f = ctx.faction;
   if (!f || !f.pendingInvitations || f.pendingInvitations.length === 0) return null;
+
+  // Filter to factions that still have augments we don't own
+  const worthJoining = f.pendingInvitations.filter(name => {
+    const info = f.factions.find(fi => fi.name === name);
+    // If we don't have aug info, assume worth joining
+    if (!info || info.availableAugCount === undefined) return true;
+    return info.availableAugCount > 0;
+  });
+
+  if (worthJoining.length === 0) return null;
   return {
     id: "join-faction",
-    title: `Join ${f.pendingInvitations[0]}`,
-    reason: f.pendingInvitations.length > 1
-      ? `${f.pendingInvitations.length} faction invitation(s) pending`
-      : `Invitation from ${f.pendingInvitations[0]} — join to unlock augmentations`,
+    title: `Join ${worthJoining[0]}`,
+    reason: worthJoining.length > 1
+      ? `${worthJoining.length} faction invitation(s) with available augments`
+      : `Invitation from ${worthJoining[0]} — ${f.factions.find(fi => fi.name === worthJoining[0])?.availableAugCount ?? "?"} augment(s) available`,
     category: "factions",
     score: 70,
   };
