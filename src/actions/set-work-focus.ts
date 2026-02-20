@@ -1,7 +1,8 @@
 /**
  * Set Work Focus Action
  *
- * Writes work focus configuration to /data/work-config.json.
+ * Writes work focus to the daemon config (/config/work.txt) so the
+ * work daemon picks it up on its next cycle.
  * Does NOT use any Singularity functions — always works regardless of RAM.
  * Target RAM: ~2 GB (no Singularity)
  *
@@ -10,6 +11,7 @@
  *        run actions/set-work-focus.js --focus crime-money
  */
 import { NS } from "@ns";
+import { setConfigValue } from "/lib/config";
 
 export const MANUAL_COMMAND = 'N/A (config-only, no Singularity)';
 
@@ -20,8 +22,6 @@ const VALID_FOCUSES = [
   "crime-money", "crime-stats",
   "crime-karma", "crime-kills",
 ] as const;
-
-const WORK_CONFIG_PATH = "/data/work-config.json";
 
 export async function main(ns: NS): Promise<void> {
   ns.disableLog("ALL");
@@ -45,17 +45,8 @@ export async function main(ns: NS): Promise<void> {
     return;
   }
 
-  // Read existing config, merge, write
-  let config: Record<string, unknown> = {};
-  try {
-    const raw = ns.read(WORK_CONFIG_PATH);
-    if (raw) {
-      config = JSON.parse(raw);
-    }
-  } catch { /* start fresh */ }
-
-  config.focus = focus;
-
-  ns.write(WORK_CONFIG_PATH, JSON.stringify(config, null, 2), "w");
+  // Write to daemon config — the daemon reads this each cycle and
+  // propagates it to /data/work-config.json via setWorkFocus()
+  setConfigValue(ns, "work", "focus", focus);
   ns.tprint(`SUCCESS: Work focus set to "${focus}"`);
 }
