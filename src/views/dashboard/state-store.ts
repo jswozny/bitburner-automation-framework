@@ -836,7 +836,7 @@ export function readStatusPorts(ns: NS): void {
 
   cachedData.advisorStatus = peekStatus<AdvisorStatus>(ns, STATUS_PORTS.advisor, STALE_THRESHOLD_MS);
 
-  cachedData.contractsStatus = peekStatus<ContractsStatus>(ns, STATUS_PORTS.contracts, STALE_THRESHOLD_MS);
+  cachedData.contractsStatus = peekStatus<ContractsStatus>(ns, STATUS_PORTS.contracts, 120_000);
 }
 
 // === TOOL CONTROL ===
