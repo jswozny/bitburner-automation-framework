@@ -233,6 +233,88 @@ export function shouldSell(
   return false;
 }
 
+// === STOP-LOSS / TRAILING STOP ===
+
+export interface StopLossParams {
+  hardStopPercent: number;    // e.g. 0.05 = 5% hard stop from entry
+  trailingStopPercent: number; // e.g. 0.08 = 8% trailing stop from peak
+  maxHoldTicks: number;        // e.g. 60 = sell after 60 ticks
+}
+
+export interface PositionTracking {
+  entryPrice: number;
+  peakPrice: number;
+  ticksHeld: number;
+  direction: "long" | "short";
+}
+
+export interface StopLossResult {
+  shouldExit: boolean;
+  reason: string;
+}
+
+/**
+ * Check if a position should be exited due to stop-loss conditions.
+ */
+export function shouldStopLoss(
+  currentPrice: number,
+  tracking: PositionTracking,
+  params: StopLossParams,
+): StopLossResult {
+  // Time limit check first
+  if (params.maxHoldTicks > 0 && tracking.ticksHeld >= params.maxHoldTicks) {
+    return { shouldExit: true, reason: "time-limit" };
+  }
+
+  if (tracking.direction === "long") {
+    // Hard stop: price dropped hardStopPercent from entry
+    if (params.hardStopPercent > 0) {
+      const stopPrice = tracking.entryPrice * (1 - params.hardStopPercent);
+      if (currentPrice <= stopPrice) {
+        return { shouldExit: true, reason: "hard-stop" };
+      }
+    }
+    // Trailing stop: price dropped trailingStopPercent from peak
+    if (params.trailingStopPercent > 0) {
+      const trailPrice = tracking.peakPrice * (1 - params.trailingStopPercent);
+      if (currentPrice <= trailPrice) {
+        return { shouldExit: true, reason: "trailing-stop" };
+      }
+    }
+  } else {
+    // Short positions: inverse logic (price rising is bad)
+    if (params.hardStopPercent > 0) {
+      const stopPrice = tracking.entryPrice * (1 + params.hardStopPercent);
+      if (currentPrice >= stopPrice) {
+        return { shouldExit: true, reason: "hard-stop" };
+      }
+    }
+    if (params.trailingStopPercent > 0) {
+      const trailPrice = tracking.peakPrice * (1 + params.trailingStopPercent);
+      if (currentPrice >= trailPrice) {
+        return { shouldExit: true, reason: "trailing-stop" };
+      }
+    }
+  }
+
+  return { shouldExit: false, reason: "" };
+}
+
+/**
+ * Update the peak price for a tracked position.
+ * For longs: peak = max seen price. For shorts: peak = min seen price.
+ */
+export function updatePeakPrice(
+  currentPrice: number,
+  tracking: PositionTracking,
+): number {
+  if (tracking.direction === "long") {
+    return Math.max(tracking.peakPrice, currentPrice);
+  } else {
+    return Math.min(tracking.peakPrice, currentPrice);
+  }
+}
+
 // === HACK AWARENESS (SMART MODE) ===
 
 export interface HackAdjustment {
