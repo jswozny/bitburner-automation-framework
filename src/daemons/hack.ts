@@ -1115,8 +1115,8 @@ async function runXpMode(ns: NS): Promise<void> {
       lastDeployTime = now;
     }
 
-    // 4. Launch weaken on all AVAILABLE RAM (previous waves that finished free up RAM)
-    const weakenRam = ns.getScriptRam("/workers/weaken.js");
+    // 4. Launch hack on all AVAILABLE RAM (previous waves that finished free up RAM)
+    const hackRam = ns.getScriptRam("/workers/hack.js");
     let launchedThreads = 0;
     let totalFleetRam = 0;
     let usedRam = 0;
@@ -1127,17 +1127,17 @@ async function runXpMode(ns: NS): Promise<void> {
       totalFleetRam += sObj.maxRam;
       usedRam += sObj.ramUsed;
 
-      if (avail < weakenRam) continue;
-      const threads = Math.floor(avail / weakenRam);
+      if (avail < hackRam) continue;
+      const threads = Math.floor(avail / hackRam);
       if (threads <= 0) continue;
 
       const pid = ns.exec(
-        "/workers/weaken.js", server.hostname, threads,
+        "/workers/hack.js", server.hostname, threads,
         xpTarget, 0, Date.now(), "xp",
       );
       if (pid > 0) {
         launchedThreads += threads;
-        usedRam += threads * weakenRam;
+        usedRam += threads * hackRam;
       }
     }
 
@@ -1147,7 +1147,7 @@ async function runXpMode(ns: NS): Promise<void> {
     const elapsed = Math.max(now - startTime, 1000);
     const xpRate = xpGained / (elapsed / 1000);
 
-    const weakenTime = ns.getWeakenTime(xpTarget);
+    const hackTime = ns.getHackTime(xpTarget);
     const utilization = totalFleetRam > 0 ? (usedRam / totalFleetRam) * 100 : 0;
 
     // 6. Publish status
@@ -1158,11 +1158,11 @@ async function runXpMode(ns: NS): Promise<void> {
       activeTargets: 1,
       totalTargets: 1,
       saturationPercent: Math.round(utilization),
-      shortestWait: formatTimeCondensed(weakenTime),
-      longestWait: formatTimeCondensed(weakenTime),
-      hackingCount: 0,
+      shortestWait: formatTimeCondensed(hackTime),
+      longestWait: formatTimeCondensed(hackTime),
+      hackingCount: launchedThreads,
       growingCount: 0,
-      weakeningCount: launchedThreads,
+      weakeningCount: 0,
       targets: [],
       totalExpectedMoney: 0,
       totalExpectedMoneyFormatted: "$0",
@@ -1183,7 +1183,7 @@ async function runXpMode(ns: NS): Promise<void> {
     ns.print(`${C.white}Target: ${C.cyan}${xpTarget}${C.reset} (min sec: ${ns.getServer(xpTarget).minDifficulty?.toFixed(1)})`);
     ns.print(`${C.white}Launched: ${C.green}${ns.formatNumber(launchedThreads)}${C.reset} threads this tick | Servers: ${servers.length}`);
     ns.print(`${C.white}Fleet RAM: ${ns.formatRam(totalFleetRam)} | Utilization: ${C.green}${utilization.toFixed(0)}%${C.reset}`);
-    ns.print(`${C.white}Weaken Time: ${formatTimeCondensed(weakenTime)}${C.reset}`);
+    ns.print(`${C.white}Hack Time: ${formatTimeCondensed(hackTime)}${C.reset}`);
     ns.print(`${C.white}XP Rate: ${C.green}${ns.formatNumber(xpRate)} XP/s${C.reset} (${ns.formatNumber(xpGained)} total)`);
 
     // 8. Sleep for tick interval (short — waves pipeline automatically)

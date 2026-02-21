@@ -597,7 +597,7 @@ async function runTrainingMode(
     if (focusYielding) {
       ns.print(`${C.yellow}Yielding focus to Rep daemon${C.reset}`);
     } else {
-      const started = runWorkCycle(ns);
+      const started = runWorkCycle(ns, 1);
       if (!started) {
         ns.print(`${C.yellow}Could not start training this cycle${C.reset}`);
       }
@@ -635,7 +635,7 @@ async function runCrimeMode(
     if (focusYielding) {
       ns.print(`${COLORS.yellow}Yielding focus to Rep daemon${COLORS.reset}`);
     } else {
-      const started = runWorkCycle(ns);
+      const started = runWorkCycle(ns, 2);
       if (!started) {
         ns.print(`${COLORS.yellow}Could not start training this cycle${COLORS.reset}`);
       }

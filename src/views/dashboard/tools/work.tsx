@@ -13,6 +13,7 @@ import {
 } from "views/dashboard/types";
 import { styles } from "views/dashboard/styles";
 import { ToolControl } from "views/dashboard/components/ToolControl";
+import { TierFooter } from "views/dashboard/components/TierFooter";
 import {
   getWorkStatus,
   getSkillDisplayName,
@@ -253,10 +254,8 @@ function WorkOverviewCard({
             </span>
           </div>
           <div style={styles.stat}>
-            <span style={styles.statLabel}>Tier</span>
-            <span style={styles.statValue}>
-              {status ? `${status.tierName} (${(status.currentRamUsage).toFixed(1)}GB)` : "—"}
-            </span>
+            <span style={styles.statLabel}>City</span>
+            <span style={styles.statValue}>{status?.playerCity ?? "—"}</span>
           </div>
         </>
       )}
@@ -303,18 +302,6 @@ function WorkDetailPanel({
           <span>
             <span style={styles.statLabel}>City: </span>
             <span style={styles.statValue}>{status?.playerCity ?? "—"}</span>
-          </span>
-          <span style={styles.dim}>|</span>
-          <span>
-            <span style={styles.statLabel}>Money: </span>
-            <span style={styles.statHighlight}>${status?.playerMoneyFormatted ?? "—"}</span>
-          </span>
-          <span style={styles.dim}>|</span>
-          <span>
-            <span style={styles.statLabel}>Tier: </span>
-            <span style={styles.statValue}>
-              {status ? `${status.tierName} (${status.currentRamUsage.toFixed(1)}GB)` : "—"}
-            </span>
           </span>
         </div>
         <ToolControl tool={toolId} running={running} pid={pid} />
@@ -638,6 +625,15 @@ function WorkDetailPanel({
             ))}
           </div>
         </div>
+      )}
+
+      {/* Tier Footer */}
+      {status && (
+        <TierFooter
+          tier={status.tier}
+          tierName={status.tierName}
+          currentRamUsage={status.currentRamUsage}
+        />
       )}
     </div>
   );
