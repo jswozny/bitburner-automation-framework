@@ -140,7 +140,7 @@ export async function main(ns: NS): Promise<void> {
 }
 
 // Descending wager amounts to try when we predict a win.
-const MAX_WAGERS = [100e6, 75e6, 50e6, 25e6, 10e6, 5e6, 1e6];
+const MAX_WAGERS = [100e6, 75e6, 50e6, 25e6, 10e6, 5e6, 1e6, 500000, 100000];
 
 /** Try to set a wager and start a hand. For predicted wins, cascade to find max affordable bet. */
 async function tryStartHand(dom: typeof domUtils, predictedWin: boolean): Promise<number> {
