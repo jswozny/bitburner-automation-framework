@@ -534,6 +534,7 @@ function executeCommand(ns: NS, cmd: Command): void {
           rewardMode: cmd.infiltrationRewardMode,
         }));
         if (cmd.infiltrationRewardMode) {
+          setConfigValue(ns, "infiltration", "rewardMode", cmd.infiltrationRewardMode);
           saveDashboardSettings(ns);
         }
         ns.toast("Infiltration config updated", "info", 2000);
@@ -1011,6 +1012,11 @@ function startTool(ns: NS, tool: ToolName): void {
     const targetPercent = (shareState.targetPercent as number) || 0;
     setConfigValue(ns, "share", "targetPercent", String(targetPercent));
     pid = ns.exec(script, "home", 1);
+  } else if (tool === "infiltration") {
+    const infState = uiState.pluginUIState.infiltration;
+    const rewardMode = (infState.rewardMode as string) || "rep";
+    setConfigValue(ns, "infiltration", "rewardMode", rewardMode);
+    pid = ns.exec(script, "home");
   } else if (tool === "gang") {
     const gangState = uiState.pluginUIState.gang;
     const strategy = (gangState.strategy as string) || "";

@@ -9,6 +9,7 @@
  */
 import { NS } from "@ns";
 import { publishStatus, peekStatus } from "/lib/ports";
+import { getConfigString } from "/lib/config";
 import {
   STATUS_PORTS,
   INFILTRATION_CONTROL_PORT,
@@ -70,6 +71,9 @@ let totalVerifiedRep = 0;
 // Reward efficiency tracking
 let observedMultiplier: number | null = null;
 
+// Cached reward label for overlay (updated each publishCurrentStatus)
+let overlayRewardLabel = "";
+
 // Error state
 let errorInfo: { message: string; solver?: string; timestamp: number } | undefined;
 
@@ -86,6 +90,16 @@ function log(level: InfiltrationLogEntry["level"], message: string): void {
     const prefix = level === "error" ? "ERROR" : level === "warn" ? "WARN " : "INFO ";
     _ns.print(`[${prefix}] ${message}`);
   }
+}
+
+// === FORMATTING ===
+
+function formatCompact(n: number): string {
+  if (n >= 1e12) return (n / 1e12).toFixed(1) + "t";
+  if (n >= 1e9) return (n / 1e9).toFixed(1) + "b";
+  if (n >= 1e6) return (n / 1e6).toFixed(1) + "m";
+  if (n >= 1e3) return (n / 1e3).toFixed(1) + "k";
+  return n.toFixed(0);
 }
 
 // === STATUS PUBLISHING ===
@@ -108,6 +122,25 @@ function publishCurrentStatus(ns: NS): void {
         faction: faction || undefined,
       };
     }
+  }
+
+  // Cache reward label for overlay
+  if (expectedReward) {
+    if (config.rewardMode === "money") {
+      overlayRewardLabel = `$${ formatCompact(expectedReward.sellCash) } / run`;
+    } else if (config.rewardMode === "rep" && expectedReward.faction) {
+      overlayRewardLabel = `${formatCompact(expectedReward.tradeRep)} rep → ${expectedReward.faction}`;
+    } else if (config.rewardMode === "rep") {
+      overlayRewardLabel = `$${ formatCompact(expectedReward.sellCash) } / run (no faction)`;
+    } else {
+      overlayRewardLabel = "Manual reward";
+    }
+  } else if (config.rewardMode === "manual") {
+    overlayRewardLabel = "Manual reward";
+  } else if (config.rewardMode === "money") {
+    overlayRewardLabel = "Farming: money";
+  } else {
+    overlayRewardLabel = "Farming: rep";
   }
 
   const status: InfiltrationStatus = {
@@ -310,7 +343,12 @@ function createOverlay(): void {
     btn.disabled = true;
   });
 
+  const rewardLine = doc.createElement("div");
+  rewardLine.id = `${OVERLAY_ID}-reward`;
+  rewardLine.style.cssText = "margin-bottom: 8px; color: #90d080; font-size: 11px;";
+
   overlay.appendChild(progressLine);
+  overlay.appendChild(rewardLine);
   overlay.appendChild(btn);
   doc.body.appendChild(overlay);
 }
@@ -341,6 +379,13 @@ function updateOverlay(): void {
 
   progress.textContent = text;
   progress.style.whiteSpace = "pre-line";
+
+  // Update reward info line
+  const rewardEl = doc.getElementById(`${OVERLAY_ID}-reward`);
+  if (rewardEl) {
+    rewardEl.textContent = overlayRewardLabel;
+    rewardEl.style.color = config.rewardMode === "money" ? "#e0d080" : "#90d080";
+  }
 
   // Reset button between runs if not stopping
   const btn = doc.getElementById(`${OVERLAY_ID}-btn`) as HTMLButtonElement | null;
@@ -739,6 +784,7 @@ export async function main(ns: NS): Promise<void> {
   lastExpectedDelta = 0;
   totalVerifiedRep = 0;
   observedMultiplier = null;
+  overlayRewardLabel = "";
   errorInfo = undefined;
 
   // Install the isTrusted bypass before the game registers its keydown handler
@@ -749,6 +795,12 @@ export async function main(ns: NS): Promise<void> {
     ...DEFAULT_CONFIG,
     enabledSolvers: new Set(SOLVERS.map(s => s.id)),
   };
+
+  // Read saved config from dashboard
+  const savedMode = getConfigString(ns, "infiltration", "rewardMode", DEFAULT_CONFIG.rewardMode);
+  if (savedMode === "money" || savedMode === "manual" || savedMode === "rep") {
+    config.rewardMode = savedMode;
+  }
 
   // Clear control port
   const controlHandle = ns.getPortHandle(INFILTRATION_CONTROL_PORT);
