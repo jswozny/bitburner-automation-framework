@@ -1058,6 +1058,5 @@ export const KILL_TIERS: string[][] = [
     "workers/weaken.js",
   ],
   ["daemons/share.js"],
-  ["daemons/hack.js"],
   ["views/dashboard/dashboard.js"],
 ];
