@@ -871,7 +871,11 @@ export function readStatusPorts(ns: NS): void {
     }
   }
 
-  cachedData.pservStatus = peekStatus<PservStatus>(ns, STATUS_PORTS.pserv, STALE_THRESHOLD_MS);
+  const pserv = peekStatus<PservStatus>(ns, STATUS_PORTS.pserv, STALE_THRESHOLD_MS);
+  // Preserve last status when daemon exited after completing (all servers maxed)
+  if (pserv || !(cachedData.pservStatus?.allMaxed && cachedData.pservStatus.serverCount >= cachedData.pservStatus.serverCap)) {
+    cachedData.pservStatus = pserv;
+  }
   cachedData.shareStatus = peekStatus<ShareStatus>(ns, STATUS_PORTS.share, STALE_THRESHOLD_MS);
 
   const rep = peekStatus<RepStatus>(ns, STATUS_PORTS.rep, STALE_THRESHOLD_MS);
@@ -883,7 +887,10 @@ export function readStatusPorts(ns: NS): void {
   if (work) cachedData.workError = null;
 
   const darkweb = peekStatus<DarkwebStatus>(ns, STATUS_PORTS.darkweb, STALE_THRESHOLD_MS);
-  cachedData.darkwebStatus = darkweb;
+  // Preserve last status when daemon exited after completing (all programs owned)
+  if (darkweb || !cachedData.darkwebStatus?.allOwned) {
+    cachedData.darkwebStatus = darkweb;
+  }
   if (darkweb) cachedData.darkwebError = null;
 
   cachedData.bitnodeStatus = peekStatus<BitnodeStatus>(ns, STATUS_PORTS.bitnode, STALE_THRESHOLD_MS);
@@ -916,11 +923,22 @@ function clearToolStatus(tool: ToolName): void {
   switch (tool) {
     case "nuke":    cachedData.nukeStatus = null; break;
     case "hack":    cachedData.hackStatus = null; break;
-    case "pserv":   cachedData.pservStatus = null; break;
+    case "pserv":
+      // Preserve status if daemon exited after completing (all servers maxed)
+      if (!(cachedData.pservStatus?.allMaxed && cachedData.pservStatus.serverCount >= cachedData.pservStatus.serverCap)) {
+        cachedData.pservStatus = null;
+      }
+      break;
     case "share":   cachedData.shareStatus = null; break;
     case "rep":     cachedData.repStatus = null; cachedData.repError = null; break;
     case "work":    cachedData.workStatus = null; cachedData.workError = null; break;
-    case "darkweb": cachedData.darkwebStatus = null; cachedData.darkwebError = null; break;
+    case "darkweb":
+      // Preserve status if daemon exited after completing (all programs owned)
+      if (!cachedData.darkwebStatus?.allOwned) {
+        cachedData.darkwebStatus = null;
+      }
+      cachedData.darkwebError = null;
+      break;
     case "faction": cachedData.factionStatus = null; cachedData.factionError = null; break;
     case "infiltration": cachedData.infiltrationStatus = null; break;
     case "gang": cachedData.gangStatus = null; break;
