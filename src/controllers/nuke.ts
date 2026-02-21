@@ -42,9 +42,13 @@ export function analyzeNukableServers(ns: NS): NukeResult {
   const alreadyRooted: string[] = [];
   const notReady: { hostname: string; reason: string }[] = [];
   let rootedCount = 0;
+  let serverCount = 0;
 
   for (const hostname of allServers) {
-    const server = ns.getServer(hostname);
+    let server;
+    try { server = ns.getServer(hostname); } catch { continue; }
+    if (server.purchasedByPlayer) continue;
+    serverCount++;
 
     if (server.hasAdminRights) {
       alreadyRooted.push(hostname);
@@ -87,7 +91,7 @@ export function analyzeNukableServers(ns: NS): NukeResult {
     nuked,
     alreadyRooted,
     notReady,
-    totalServers: allServers.length,
+    totalServers: serverCount,
     rootedCount,
     toolCount: numHackTools,
   };
@@ -103,7 +107,9 @@ export function getPotentialTargets(ns: NS): ServerNukeInfo[] {
   const targets: ServerNukeInfo[] = [];
 
   for (const hostname of allServers) {
-    const server = ns.getServer(hostname);
+    let server;
+    try { server = ns.getServer(hostname); } catch { continue; }
+    if (server.purchasedByPlayer) continue;
     if (server.hasAdminRights) continue;
 
     const requiredPorts = server.numOpenPortsRequired ?? 0;
@@ -136,9 +142,13 @@ export function getNukeStatus(ns: NS): Omit<NukeResult, "nuked"> & { nuked: neve
   const alreadyRooted: string[] = [];
   const notReady: { hostname: string; reason: string }[] = [];
   let rootedCount = 0;
+  let serverCount = 0;
 
   for (const hostname of allServers) {
-    const server = ns.getServer(hostname);
+    let server;
+    try { server = ns.getServer(hostname); } catch { continue; }
+    if (server.purchasedByPlayer) continue;
+    serverCount++;
 
     if (server.hasAdminRights) {
       alreadyRooted.push(hostname);
@@ -172,7 +182,7 @@ export function getNukeStatus(ns: NS): Omit<NukeResult, "nuked"> & { nuked: neve
     nuked: [],
     alreadyRooted,
     notReady,
-    totalServers: allServers.length,
+    totalServers: serverCount,
     rootedCount,
     toolCount: numHackTools,
   };

@@ -26,17 +26,21 @@ export const STATUS_PORTS = {
   augments: 16,
   advisor: 17,
   contracts: 18,
+  budget: 22,
+  stocks: 24,
 } as const;
 
 export const GANG_CONTROL_PORT = 15;
 export const CONTRACTS_CONTROL_PORT = 21;
+export const BUDGET_CONTROL_PORT = 23;
+export const STOCKS_CONTROL_PORT = 25;
 
 export const QUEUE_PORT = 19;
 export const COMMAND_PORT = 20;
 
 // === TOOL NAMES ===
 
-export type ToolName = "nuke" | "pserv" | "share" | "rep" | "hack" | "darkweb" | "work" | "faction" | "infiltration" | "gang" | "augments" | "advisor" | "contracts";
+export type ToolName = "nuke" | "pserv" | "share" | "rep" | "hack" | "darkweb" | "work" | "faction" | "infiltration" | "gang" | "augments" | "advisor" | "contracts" | "budget" | "stocks";
 
 // === TOOL SCRIPTS (daemon paths) ===
 
@@ -54,6 +58,8 @@ export const TOOL_SCRIPTS: Record<ToolName, string> = {
   augments: "daemons/augments.js",
   advisor: "daemons/advisor.js",
   contracts: "daemons/contracts.js",
+  budget: "daemons/budget.js",
+  stocks: "daemons/stocks.js",
 };
 
 // === PRIORITY CONSTANTS ===
@@ -81,7 +87,7 @@ export interface QueueEntry {
 
 export interface Command {
   tool: ToolName;
-  action: "start" | "stop" | "open-tail" | "run-script" | "start-faction-work" | "set-focus" | "start-training" | "install-augments" | "run-backdoors" | "restart-rep-daemon" | "join-faction" | "restart-faction-daemon" | "restart-hack-daemon" | "restart-share-daemon" | "stop-infiltration" | "kill-infiltration" | "configure-infiltration" | "set-gang-strategy" | "pin-gang-member" | "unpin-gang-member" | "ascend-gang-member" | "toggle-gang-purchases" | "toggle-gang-warfare" | "set-gang-wanted-threshold" | "set-gang-ascension-thresholds" | "set-gang-training-threshold" | "set-gang-grow-target" | "set-gang-grow-respect-reserve" | "force-buy-equipment" | "restart-gang-daemon" | "buy-selected-augments" | "claim-focus" | "toggle-pserv-autobuy" | "force-contract-attempt";
+  action: "start" | "stop" | "open-tail" | "run-script" | "start-faction-work" | "set-focus" | "start-training" | "install-augments" | "run-backdoors" | "restart-rep-daemon" | "join-faction" | "restart-faction-daemon" | "restart-hack-daemon" | "restart-share-daemon" | "stop-infiltration" | "kill-infiltration" | "configure-infiltration" | "set-gang-strategy" | "pin-gang-member" | "unpin-gang-member" | "ascend-gang-member" | "toggle-gang-purchases" | "toggle-gang-warfare" | "set-gang-wanted-threshold" | "set-gang-ascension-thresholds" | "set-gang-training-threshold" | "set-gang-grow-target" | "set-gang-grow-respect-reserve" | "force-buy-equipment" | "restart-gang-daemon" | "buy-selected-augments" | "claim-focus" | "toggle-pserv-autobuy" | "force-contract-attempt" | "restart-stocks-daemon";
   scriptPath?: string;
   scriptArgs?: string[];
   factionName?: string;
@@ -911,6 +917,92 @@ export interface ContractsStatus {
   serversScanned: number;
 }
 
+// === BUDGET STATUS ===
+
+export interface BucketAllocation {
+  bucket: string;
+  tier: 1 | 2 | 3;
+  allocated: number;
+  weight: number;
+  estimatedROI: number;
+  pendingRequests: number;
+}
+
+export interface BudgetStatus {
+  totalCash: number;
+  totalCashFormatted: string;
+  reserve: number;
+  reserveFormatted: string;
+  allocations: Record<string, BucketAllocation>;
+  tierBreakdown: { tier1: number; tier2: number; tier3: number };
+  lastUpdated: number;
+}
+
+// === STOCKS STATUS ===
+
+export type StocksMode = "disabled" | "monitor" | "pre4s" | "4s";
+
+export interface StockPosition {
+  symbol: string;
+  shares: number;
+  avgPrice: number;
+  currentPrice: number;
+  direction: "long" | "short";
+  profit: number;
+  profitFormatted: string;
+  confidence: number;
+  server?: string;
+  hackAdjustment?: string;
+}
+
+export interface StockSignal {
+  symbol: string;
+  direction: "long" | "short" | "neutral";
+  strength: number;
+  forecast?: number;
+  maRatio?: number;
+}
+
+export interface StocksStatus {
+  mode: StocksMode;
+  tier: number;
+  tierName: string;
+
+  // API access
+  hasWSE: boolean;
+  hasTIX: boolean;
+  has4S: boolean;
+
+  // Portfolio summary
+  portfolioValue: number;
+  portfolioValueFormatted: string;
+  totalProfit: number;
+  totalProfitFormatted: string;
+  realizedProfit: number;
+  realizedProfitFormatted: string;
+  profitPerSec: number;
+  profitPerSecFormatted: string;
+
+  // Positions
+  longPositions: number;
+  shortPositions: number;
+  positions: StockPosition[];
+
+  // Signals (non-held stocks)
+  signals: StockSignal[];
+
+  // Budget
+  budgetAllocation: number;
+  budgetAllocationFormatted: string;
+
+  // Config
+  smartMode: boolean;
+  pollInterval: number;
+
+  // Tick counter
+  tickCount: number;
+}
+
 // === DASHBOARD STATE ===
 
 export interface DashboardState {
@@ -934,6 +1026,8 @@ export interface DashboardState {
   augmentsStatus: AugmentsStatus | null;
   advisorStatus: AdvisorStatus | null;
   contractsStatus: ContractsStatus | null;
+  budgetStatus: BudgetStatus | null;
+  stocksStatus: StocksStatus | null;
 }
 
 // === PLUGIN INTERFACE (for dashboard) ===

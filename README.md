@@ -94,6 +94,8 @@ Started by `start.js` or launched manually. All publish status to ports for the 
 | `daemons/augments.js` | Track available/affordable augmentations |
 | `daemons/advisor.js` | Analyze game state and rank recommended actions |
 | `daemons/contracts.js` | Find and auto-solve coding contracts on all servers |
+| `daemons/budget.js` | Capital allocation across spending systems (pserv, stocks, etc.) |
+| `daemons/stocks.js` | Stock market trading (tiered: monitor, pre-4S MA, 4S forecast) |
 
 ## Dashboard
 
@@ -103,7 +105,7 @@ The React dashboard (`views/dashboard/dashboard.js`) provides live monitoring an
 |-------|------|
 | Servers | Nuke, Hack, PServ, Darkweb |
 | Rep & Factions | Faction, Rep, Share, Augs |
-| Growth | Work, Gang |
+| Money | Work, Budget, Stocks, Gang |
 | Tools | Infiltrate, Contracts |
 
 The Overview tab shows all tools at a glance with the Advisor's recommendations at the top. Each plugin has an OverviewCard (summary) and a DetailPanel (full view). Error boundaries wrap every plugin so a crash in one panel won't take down the dashboard.
@@ -140,6 +142,32 @@ homeReserve=64
 # Max simultaneous targets
 maxTargets=8
 ```
+
+### Stocks Config (`/config/stocks.txt`)
+
+| Key | Default | Description |
+|-----|---------|-------------|
+| `enabled` | `true` | Enable/disable trading |
+| `pollInterval` | `6000` | Price poll interval (ms) |
+| `smartMode` | `true` | Adjust confidence based on hack daemon targets |
+| `preThreshold` | `0.03` | MA deviation threshold for pre-4S signals |
+| `forecastThreshold` | `0.01` | Forecast deviation threshold for 4S signals |
+| `maWindow` | `12` | Moving average window size |
+| `minConfidence` | `0.55` | Minimum forecast confidence for 4S trades |
+| `stopLossPercent` | `0.05` | Hard stop-loss (5% from entry) |
+| `trailingStopPercent` | `0.08` | Trailing stop (8% from peak) |
+| `maxHoldTicks` | `60` | Max ticks to hold a position (0 = unlimited) |
+
+### Budget Config (`/config/budget.txt`)
+
+| Key | Default | Description |
+|-----|---------|-------------|
+| `interval` | `2000` | Status update interval (ms) |
+| `reserveFraction` | `0.01` | Emergency reserve fraction |
+| `weight.stocks` | `50` | T2 weight for stock investments |
+| `weight.servers` | `25` | T2 weight for personal servers |
+| `weight.gang` | `15` | T2 weight for gang equipment |
+| `weight.hacknet` | `10` | T2 weight for hacknet (no consumer yet) |
 
 ## Contracts
 

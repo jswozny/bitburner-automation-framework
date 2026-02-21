@@ -18,6 +18,8 @@ import { analyzeDarkwebPrograms, getDarkwebStatus, purchaseTorRouter, formatMone
 import { publishStatus } from "/lib/ports";
 import { STATUS_PORTS, DarkwebStatus } from "/types/ports";
 import { writeDefaultConfig, getConfigNumber, getConfigBool } from "/lib/config";
+import { canSpend, requestBudget, notifyPurchase } from "/lib/budget";
+import { estimateProgramROI } from "/controllers/budget";
 
 /**
  * Build a DarkwebStatus object with formatted values for the dashboard.
@@ -150,6 +152,19 @@ export async function main(ns: NS): Promise<void> {
     const oneShot = getConfigBool(ns, "darkweb", "oneShot", false);
     ns.clearLog();
 
+    // Budget check closure: gates purchases through the budget system
+    const ownedCount = (() => {
+      try { return ns.singularity.getDarkwebPrograms().filter(p => ns.fileExists(p, "home")).length; } catch { return 0; }
+    })();
+    const budgetCheck = (cost: number, name: string): boolean => {
+      if (!canSpend(ns, "programs", cost)) {
+        const roi = estimateProgramROI(name, ownedCount);
+        requestBudget(ns, "programs", cost, name, roi);
+        return false;
+      }
+      return true;
+    };
+
     // Try to buy TOR if we don't have it
     let hasTor = false;
     try {
@@ -159,8 +174,9 @@ export async function main(ns: NS): Promise<void> {
     }
 
     if (!hasTor) {
-      const bought = purchaseTorRouter(ns);
+      const bought = purchaseTorRouter(ns, budgetCheck);
       if (bought) {
+        notifyPurchase(ns, "programs", 200_000, "TOR Router");
         ns.tprint(`${COLORS.green}Purchased TOR Router!${COLORS.reset}`);
         hasTor = true;
       }
@@ -169,13 +185,26 @@ export async function main(ns: NS): Promise<void> {
     // Run purchase cycle (buys affordable programs)
     let purchasedThisCycle: string[] = [];
     if (hasTor) {
-      const result = analyzeDarkwebPrograms(ns);
+      const result = analyzeDarkwebPrograms(ns, true, budgetCheck);
       purchasedThisCycle = result.purchased.map((p) => p.name);
+
+      for (const p of result.purchased) {
+        notifyPurchase(ns, "programs", p.cost, p.name);
+      }
 
       if (result.purchased.length > 0) {
         ns.tprint(
           `${COLORS.green}Purchased ${result.purchased.length} program(s): ${purchasedThisCycle.join(", ")}${COLORS.reset}`,
         );
+      }
+    }
+
+    // Register budget requests for programs we still need
+    if (hasTor) {
+      const status = getDarkwebStatus(ns);
+      for (const p of status.cannotAfford) {
+        const roi = estimateProgramROI(p.name, ownedCount + purchasedThisCycle.length);
+        requestBudget(ns, "programs", p.cost, p.name, roi);
       }
     }
 

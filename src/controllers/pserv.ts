@@ -35,6 +35,55 @@ export interface PservCycleResult {
   waitingFor: string | null;
 }
 
+/** Callbacks for budget integration. All optional for backward compatibility. */
+export interface PservCallbacks {
+  /** Returns the spending budget (may be less than raw money). */
+  budgetFn?: () => number;
+  /** Called after each purchase/upgrade with cost and description. */
+  onPurchase?: (cost: number, desc: string) => void;
+}
+
+export interface BatchPurchasePlan {
+  ramPerServer: number;
+  count: number;
+  totalRam: number;
+  totalCost: number;
+}
+
+/**
+ * Calculate the optimal batch of servers to purchase in empty slots.
+ * For each RAM tier (minRam..maxRam), compute how many we can afford
+ * within budget and empty slots, then pick the combo with highest totalRam.
+ */
+export function calculateBatchPurchasePlan(
+  ns: NS,
+  budget: number,
+  emptySlots: number,
+  minRam: number,
+  maxRam: number,
+): BatchPurchasePlan | null {
+  if (emptySlots <= 0 || budget <= 0) return null;
+
+  let best: BatchPurchasePlan | null = null;
+
+  for (let ram = minRam; ram <= maxRam; ram *= 2) {
+    const costPer = ns.getPurchasedServerCost(ram);
+    if (costPer > budget) break;
+
+    const count = Math.min(emptySlots, Math.floor(budget / costPer));
+    if (count <= 0) continue;
+
+    const totalRam = ram * count;
+    const totalCost = costPer * count;
+
+    if (!best || totalRam > best.totalRam) {
+      best = { ramPerServer: ram, count, totalRam, totalCost };
+    }
+  }
+
+  return best;
+}
+
 // === CORE LOGIC ===
 
 /**
@@ -147,52 +196,65 @@ export function getNextUpgradeInfo(ns: NS, reserve: number): string | null {
 }
 
 /**
- * Run one cycle of purchase/upgrade logic
+ * Run one cycle of purchase/upgrade logic.
+ * If callbacks.budgetFn is provided, it constrains spending.
+ * callbacks.onPurchase is called after each successful buy/upgrade.
  */
 export async function runPservCycle(
   ns: NS,
-  config: PservConfig
+  config: PservConfig,
+  callbacks?: PservCallbacks,
 ): Promise<PservCycleResult> {
   const C = COLORS;
   const { prefix, minRam, reserve } = config;
   const MAX_RAM = ns.getPurchasedServerMaxRam();
   const SERVER_CAP = ns.getPurchasedServerLimit();
 
+  const getBudget = () => {
+    const raw = ns.getServerMoneyAvailable("home") - reserve;
+    if (callbacks?.budgetFn) return Math.min(raw, callbacks.budgetFn());
+    return raw;
+  };
+
   let bought = 0;
   let upgraded = 0;
   let waitingFor: string | null = null;
 
-  // === PHASE 1: FILL EMPTY SLOTS ===
-  while (ns.getPurchasedServers().length < SERVER_CAP) {
-    const budget = ns.getServerMoneyAvailable("home") - reserve;
-    const bestRam = getBestAffordableRam(ns, budget, minRam, MAX_RAM);
+  // === PHASE 1: FILL EMPTY SLOTS (batch) ===
+  const emptySlots = SERVER_CAP - ns.getPurchasedServers().length;
+  if (emptySlots > 0) {
+    const plan = calculateBatchPurchasePlan(ns, getBudget(), emptySlots, minRam, MAX_RAM);
 
-    if (bestRam <= 0) {
+    if (plan) {
+      ns.print(`${C.cyan}BATCH: ${plan.count} servers @ ${ns.formatRam(plan.ramPerServer)} (${ns.formatNumber(plan.totalCost)} total)${C.reset}`);
+
+      for (let i = 0; i < plan.count; i++) {
+        const cost = ns.getPurchasedServerCost(plan.ramPerServer);
+        const name = `${prefix}-${Date.now().toString(36)}`;
+
+        if (ns.purchaseServer(name, plan.ramPerServer)) {
+          ns.print(
+            `${C.green}BOUGHT: ${name} @ ${ns.formatRam(plan.ramPerServer)} for ${ns.formatNumber(cost)}${C.reset}`
+          );
+          bought++;
+          callbacks?.onPurchase?.(cost, `${name} @ ${ns.formatRam(plan.ramPerServer)}`);
+        } else {
+          ns.print(`${C.red}FAILED: Could not purchase ${name}${C.reset}`);
+          break;
+        }
+        await ns.sleep(5);
+      }
+    } else {
       const needed = ns.getPurchasedServerCost(minRam);
       waitingFor = `Need ${ns.formatNumber(needed)} for ${ns.formatRam(minRam)} server`;
       ns.print(`${C.yellow}WAITING: ${waitingFor}${C.reset}`);
-      break;
     }
-
-    const cost = ns.getPurchasedServerCost(bestRam);
-    const name = `${prefix}-${Date.now().toString(36)}`;
-
-    if (ns.purchaseServer(name, bestRam)) {
-      ns.print(
-        `${C.green}BOUGHT: ${name} @ ${ns.formatRam(bestRam)} for ${ns.formatNumber(cost)}${C.reset}`
-      );
-      bought++;
-    } else {
-      ns.print(`${C.red}FAILED: Could not purchase ${name}${C.reset}`);
-      break;
-    }
-    await ns.sleep(5);
   }
 
   // === PHASE 2: UPGRADE SMALLEST SERVERS ===
   let keepUpgrading = ns.getPurchasedServers().length >= SERVER_CAP;
   while (keepUpgrading) {
-    const budget = ns.getServerMoneyAvailable("home") - reserve;
+    const budget = getBudget();
 
     // Find the actual smallest server each iteration
     const servers = ns.getPurchasedServers();
@@ -235,6 +297,7 @@ export async function runPservCycle(
         `${C.green}UPGRADED: ${smallest.hostname} ${ns.formatRam(smallest.ram)} → ${ns.formatRam(targetRam)} for ${ns.formatNumber(cost)}${C.reset}`
       );
       upgraded++;
+      callbacks?.onPurchase?.(cost, `upgrade ${smallest.hostname} → ${ns.formatRam(targetRam)}`);
     } else {
       ns.print(`${C.red}FAILED: Could not upgrade ${smallest.hostname}${C.reset}`);
       keepUpgrading = false;

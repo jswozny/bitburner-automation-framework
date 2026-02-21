@@ -609,7 +609,7 @@ export function getWorkStatus(ns: NS): WorkStatus {
  * Run one cycle of work training
  * Returns true if training was started/continued
  */
-export function runWorkCycle(ns: NS): boolean {
+export function runWorkCycle(ns: NS, currentTier = 2): boolean {
   const config = readWorkConfig(ns);
   const status = getWorkStatus(ns);
   const preserveFocus = ns.singularity.isFocused();
@@ -618,6 +618,10 @@ export function runWorkCycle(ns: NS): boolean {
   const isCrimeMode = config.focus === "crime-money" || config.focus === "crime-stats"
     || config.focus === "crime-karma" || config.focus === "crime-kills";
   if (isCrimeMode) {
+    if (currentTier < 2) {
+      ns.print("Crime mode requires Tier 2 — waiting for RAM...");
+      return false;
+    }
     const getBest = () => {
       switch (config.focus) {
         case "crime-money": return getBestCrimeForMoney(ns);

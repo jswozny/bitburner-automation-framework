@@ -168,11 +168,6 @@ function AugmentsDetailPanel({ status, running, toolId, pid }: DetailPanelProps<
       <div style={styles.row}>
         <div style={styles.rowLeft}>
           <span style={styles.statLabel}>Augments</span>
-          <span style={styles.dim}>|</span>
-          <span>
-            <span style={styles.statLabel}>Money: </span>
-            <span style={styles.statHighlight}>${status.playerMoneyFormatted}</span>
-          </span>
         </div>
         <ToolControl tool={toolId} running={running} pid={pid} />
       </div>

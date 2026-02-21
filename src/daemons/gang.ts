@@ -44,6 +44,8 @@ import {
   type AscensionResult,
   type TerritoryContext,
 } from "/controllers/gang";
+import { requestBudget, notifyPurchase, getBudgetAllocation } from "/lib/budget";
+import { estimateGangEquipmentROI } from "/controllers/budget";
 
 // === TIER DEFINITIONS ===
 
@@ -783,14 +785,15 @@ async function runFullMode(
     // 2. EQUIPMENT PURCHASING (after ascension, scaled with income)
     let availableUpgrades = 0;
     const purchasableEquipment: { member: string; name: string; cost: number; type: string }[] = [];
-    const shouldBuy = config.purchasingEnabled || pendingForceBuy;
+    const isForceBuy = pendingForceBuy;
+    const shouldBuy = config.purchasingEnabled || isForceBuy;
     if (shouldBuy) {
       const equipNames = ns.gang.getEquipmentNames();
       const player = ns.getPlayer();
 
       // Scale spending cap with income (or Infinity for force-buy)
       let spendingCap: number;
-      if (pendingForceBuy) {
+      if (isForceBuy) {
         spendingCap = Infinity;
         pendingForceBuy = false;
       } else {
@@ -802,6 +805,18 @@ async function runFullMode(
         if (incomePerSec > 1_000_000) {
           spendingCap = Math.max(spendingCap, player.money * 0.5);
         }
+
+        // Constrain by budget allocation (unless force-buy)
+        const gangAlloc = getBudgetAllocation(ns, "gang");
+        if (gangAlloc !== null) {
+          spendingCap = Math.min(spendingCap, gangAlloc.allocated);
+        }
+      }
+
+      // Request budget for estimated equipment spend
+      if (!isForceBuy) {
+        const roi = estimateGangEquipmentROI(memberNames.length, info.moneyGainRate * 5);
+        requestBudget(ns, "gang", spendingCap, "gang equipment", roi);
       }
 
       for (const name of memberNames) {
@@ -829,6 +844,7 @@ async function runFullMode(
         for (const item of ranked) {
           if (item.cost <= spendingCap) {
             if (ns.gang.purchaseEquipment(name, item.name)) {
+              notifyPurchase(ns, "gang", item.cost, `${item.name} for ${name}`);
               ns.tprint(`INFO: Gang: bought ${item.name} for ${name} (-$${ns.formatNumber(item.cost)})`);
             }
           }

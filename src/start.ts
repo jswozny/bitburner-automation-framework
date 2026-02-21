@@ -33,9 +33,11 @@ const OPTIONAL_SCRIPTS: { path: string; args: (string | number | boolean)[] }[] 
   { path: "daemons/pserv.js", args: [] },
   { path: "daemons/faction.js", args: [] },
   { path: "daemons/augments.js", args: [] },
-  { path: "daemons/gang.js", args: [] },
   { path: "daemons/advisor.js", args: [] },
   { path: "daemons/contracts.js", args: [] },
+  { path: "daemons/budget.js", args: [] },
+  { path: "daemons/stocks.js", args: [] },
+  { path: "daemons/gang.js", args: [] },
 ];
 
 export async function main(ns: NS): Promise<void> {

@@ -713,7 +713,7 @@ function HackDetailPanel({ status, running, toolId, pid }: DetailPanelProps<Form
               <span style={{ color: "#00ffff", fontWeight: "bold" }}>{status.xpTarget ?? "none"}</span>
             </div>
             <div style={styles.stat}>
-              <span style={styles.statLabel}>Weaken Threads</span>
+              <span style={styles.statLabel}>Hack Threads</span>
               <span style={styles.statValue}>{status.xpThreads ?? 0}</span>
             </div>
           </div>

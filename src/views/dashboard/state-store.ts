@@ -37,6 +37,8 @@ import {
   AugmentsStatus,
   AdvisorStatus,
   ContractsStatus,
+  BudgetStatus,
+  StocksStatus,
   Command,
 } from "/types/ports";
 
@@ -615,6 +617,22 @@ function executeCommand(ns: NS, cmd: Command): void {
         }
       }
       break;
+    case "restart-stocks-daemon":
+      {
+        const currentStocksPid = cachedData.pids.stocks;
+        if (currentStocksPid > 0) {
+          ns.kill(currentStocksPid);
+          cachedData.pids.stocks = 0;
+        }
+        const stocksPid = ns.exec("daemons/stocks.js", "home", 1);
+        if (stocksPid > 0) {
+          cachedData.pids.stocks = stocksPid;
+          ns.toast("Stocks daemon restarted", "success", 2000);
+        } else {
+          ns.toast("Failed to restart stocks daemon (not enough RAM)", "error", 3000);
+        }
+      }
+      break;
     case "restart-gang-daemon":
       {
         const currentGangPid = cachedData.pids.gang;
@@ -686,6 +704,8 @@ const uiState: UIState = {
     augments: {},
     advisor: {},
     contracts: {},
+    budget: {},
+    stocks: {},
   },
 };
 
@@ -796,10 +816,12 @@ interface CachedData {
   augmentsStatus: AugmentsStatus | null;
   advisorStatus: AdvisorStatus | null;
   contractsStatus: ContractsStatus | null;
+  budgetStatus: BudgetStatus | null;
+  stocksStatus: StocksStatus | null;
 }
 
 const cachedData: CachedData = {
-  pids: { nuke: 0, pserv: 0, share: 0, rep: 0, hack: 0, darkweb: 0, work: 0, faction: 0, infiltration: 0, gang: 0, augments: 0, advisor: 0, contracts: 0 },
+  pids: { nuke: 0, pserv: 0, share: 0, rep: 0, hack: 0, darkweb: 0, work: 0, faction: 0, infiltration: 0, gang: 0, augments: 0, advisor: 0, contracts: 0, budget: 0, stocks: 0 },
   nukeStatus: null,
   pservStatus: null,
   shareStatus: null,
@@ -819,6 +841,8 @@ const cachedData: CachedData = {
   augmentsStatus: null,
   advisorStatus: null,
   contractsStatus: null,
+  budgetStatus: null,
+  stocksStatus: null,
 };
 
 // === PORT-BASED STATUS READING ===
@@ -847,7 +871,11 @@ export function readStatusPorts(ns: NS): void {
     }
   }
 
-  cachedData.pservStatus = peekStatus<PservStatus>(ns, STATUS_PORTS.pserv, STALE_THRESHOLD_MS);
+  const pserv = peekStatus<PservStatus>(ns, STATUS_PORTS.pserv, STALE_THRESHOLD_MS);
+  // Preserve last status when daemon exited after completing (all servers maxed)
+  if (pserv || !(cachedData.pservStatus?.allMaxed && cachedData.pservStatus.serverCount >= cachedData.pservStatus.serverCap)) {
+    cachedData.pservStatus = pserv;
+  }
   cachedData.shareStatus = peekStatus<ShareStatus>(ns, STATUS_PORTS.share, STALE_THRESHOLD_MS);
 
   const rep = peekStatus<RepStatus>(ns, STATUS_PORTS.rep, STALE_THRESHOLD_MS);
@@ -859,7 +887,10 @@ export function readStatusPorts(ns: NS): void {
   if (work) cachedData.workError = null;
 
   const darkweb = peekStatus<DarkwebStatus>(ns, STATUS_PORTS.darkweb, STALE_THRESHOLD_MS);
-  cachedData.darkwebStatus = darkweb;
+  // Preserve last status when daemon exited after completing (all programs owned)
+  if (darkweb || !cachedData.darkwebStatus?.allOwned) {
+    cachedData.darkwebStatus = darkweb;
+  }
   if (darkweb) cachedData.darkwebError = null;
 
   cachedData.bitnodeStatus = peekStatus<BitnodeStatus>(ns, STATUS_PORTS.bitnode, STALE_THRESHOLD_MS);
@@ -879,6 +910,10 @@ export function readStatusPorts(ns: NS): void {
   cachedData.advisorStatus = peekStatus<AdvisorStatus>(ns, STATUS_PORTS.advisor, STALE_THRESHOLD_MS);
 
   cachedData.contractsStatus = peekStatus<ContractsStatus>(ns, STATUS_PORTS.contracts, 120_000);
+
+  cachedData.budgetStatus = peekStatus<BudgetStatus>(ns, STATUS_PORTS.budget, STALE_THRESHOLD_MS);
+
+  cachedData.stocksStatus = peekStatus<StocksStatus>(ns, STATUS_PORTS.stocks, STALE_THRESHOLD_MS);
 }
 
 // === TOOL CONTROL ===
@@ -888,17 +923,30 @@ function clearToolStatus(tool: ToolName): void {
   switch (tool) {
     case "nuke":    cachedData.nukeStatus = null; break;
     case "hack":    cachedData.hackStatus = null; break;
-    case "pserv":   cachedData.pservStatus = null; break;
+    case "pserv":
+      // Preserve status if daemon exited after completing (all servers maxed)
+      if (!(cachedData.pservStatus?.allMaxed && cachedData.pservStatus.serverCount >= cachedData.pservStatus.serverCap)) {
+        cachedData.pservStatus = null;
+      }
+      break;
     case "share":   cachedData.shareStatus = null; break;
     case "rep":     cachedData.repStatus = null; cachedData.repError = null; break;
     case "work":    cachedData.workStatus = null; cachedData.workError = null; break;
-    case "darkweb": cachedData.darkwebStatus = null; cachedData.darkwebError = null; break;
+    case "darkweb":
+      // Preserve status if daemon exited after completing (all programs owned)
+      if (!cachedData.darkwebStatus?.allOwned) {
+        cachedData.darkwebStatus = null;
+      }
+      cachedData.darkwebError = null;
+      break;
     case "faction": cachedData.factionStatus = null; cachedData.factionError = null; break;
     case "infiltration": cachedData.infiltrationStatus = null; break;
     case "gang": cachedData.gangStatus = null; break;
     case "augments": cachedData.augmentsStatus = null; break;
     case "advisor": cachedData.advisorStatus = null; break;
     case "contracts": cachedData.contractsStatus = null; break;
+    case "budget": cachedData.budgetStatus = null; break;
+    case "stocks": cachedData.stocksStatus = null; break;
   }
 }
 
@@ -1062,5 +1110,7 @@ export function getStateSnapshot(): DashboardState {
     augmentsStatus: cachedData.augmentsStatus,
     advisorStatus: cachedData.advisorStatus,
     contractsStatus: cachedData.contractsStatus,
+    budgetStatus: cachedData.budgetStatus,
+    stocksStatus: cachedData.stocksStatus,
   };
 }
