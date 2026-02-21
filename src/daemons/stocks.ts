@@ -154,6 +154,7 @@ const priceHistories: Map<string, PriceHistory> = new Map();
 const positionTracking: Map<string, PositionTracking> = new Map();
 const profitHistory: number[] = []; // Track portfolio value for $/s calc
 const MAX_PROFIT_HISTORY = 30;
+const sellCooldowns: Map<string, number> = new Map(); // symbol → tick when sold
 
 // === CONTROL PORT ===
 
@@ -302,13 +303,14 @@ async function daemon(ns: NS, maxTier: number, tierName: string): Promise<void> 
     pollInterval: "6000",
     smartMode: "true",
     preThreshold: "0.03",
-    forecastThreshold: "0.01",
+    forecastThreshold: "0.00",
     maWindow: "12",
-    minConfidence: "0.55",
-    maxPositions: "0",
-    stopLossPercent: "0.05",
-    trailingStopPercent: "0.08",
-    maxHoldTicks: "60",
+    minConfidence: "0.60",
+    maxPositions: "8",
+    stopLossPercent: "0",
+    trailingStopPercent: "0",
+    maxHoldTicks: "0",
+    sellCooldownTicks: "3",
   });
 
   const enabled = getConfigBool(ns, "stocks", "enabled", true);
@@ -335,10 +337,12 @@ async function daemon(ns: NS, maxTier: number, tierName: string): Promise<void> 
   const forecastThreshold = getConfigNumber(ns, "stocks", "forecastThreshold", 0.01);
   const maWindow = getConfigNumber(ns, "stocks", "maWindow", 12);
   const minConfidence = getConfigNumber(ns, "stocks", "minConfidence", 0.55);
+  const maxPositions = getConfigNumber(ns, "stocks", "maxPositions", 8);
+  const sellCooldownTicks = getConfigNumber(ns, "stocks", "sellCooldownTicks", 3);
   const stopLossParams: StopLossParams = {
-    hardStopPercent: getConfigNumber(ns, "stocks", "stopLossPercent", 0.05),
-    trailingStopPercent: getConfigNumber(ns, "stocks", "trailingStopPercent", 0.08),
-    maxHoldTicks: getConfigNumber(ns, "stocks", "maxHoldTicks", 60),
+    hardStopPercent: getConfigNumber(ns, "stocks", "stopLossPercent", 0),
+    trailingStopPercent: getConfigNumber(ns, "stocks", "trailingStopPercent", 0),
+    maxHoldTicks: getConfigNumber(ns, "stocks", "maxHoldTicks", 0),
   };
 
   // Short selling availability (requires BN8 or SF8.2) — detected on first trade tick
@@ -430,6 +434,7 @@ async function daemon(ns: NS, maxTier: number, tierName: string): Promise<void> 
 
     const positions: StockPosition[] = [];
     const signals: StockSignal[] = [];
+    const buyCandidates: { sym: string; dir: "long" | "short"; strength: number; price: number }[] = [];
     let portfolioValue = 0;
     let unrealizedProfit = 0;
     let longCount = 0;
@@ -519,8 +524,9 @@ async function daemon(ns: NS, maxTier: number, tierName: string): Promise<void> 
           if (stopCheck.shouldExit) {
             const saleProfit = ns.stock.sellStock(sym, longShares);
             if (saleProfit > 0) {
-              realizedProfit += (saleProfit - longAvg * longShares);
+              realizedProfit += longShares * (saleProfit - longAvg);
               positionTracking.delete(longKey);
+              sellCooldowns.set(sym, tickCount);
               notifyPurchase(ns, "stocks", 0, `Sold ${sym} LONG (${stopCheck.reason})`);
               ns.print(`  ${C.red}STOP ${stopCheck.reason.toUpperCase()}${C.reset} ${sym} LONG: ${ns.formatNumber(saleProfit)}`);
               sold = true;
@@ -530,8 +536,9 @@ async function daemon(ns: NS, maxTier: number, tierName: string): Promise<void> 
           if (!sold && shouldSell("long", forecast, maRatio ?? null, forecastThreshold, preThreshold)) {
             const saleProfit = ns.stock.sellStock(sym, longShares);
             if (saleProfit > 0) {
-              realizedProfit += (saleProfit - longAvg * longShares);
+              realizedProfit += longShares * (saleProfit - longAvg);
               positionTracking.delete(longKey);
+              sellCooldowns.set(sym, tickCount);
               notifyPurchase(ns, "stocks", 0, `Sold ${sym} LONG`);
               ns.print(`  ${C.green}SELL LONG${C.reset} ${sym}: ${ns.formatNumber(saleProfit)}`);
             }
@@ -577,8 +584,9 @@ async function daemon(ns: NS, maxTier: number, tierName: string): Promise<void> 
           if (stopCheck.shouldExit) {
             const saleProfit = ns.stock.sellShort(sym, shortShares);
             if (saleProfit > 0) {
-              realizedProfit += (shortAvg * shortShares - saleProfit);
+              realizedProfit += shortShares * (shortAvg - saleProfit);
               positionTracking.delete(shortKey);
+              sellCooldowns.set(sym, tickCount);
               notifyPurchase(ns, "stocks", 0, `Sold ${sym} SHORT (${stopCheck.reason})`);
               ns.print(`  ${C.red}STOP ${stopCheck.reason.toUpperCase()}${C.reset} ${sym} SHORT: ${ns.formatNumber(saleProfit)}`);
               sold = true;
@@ -588,8 +596,9 @@ async function daemon(ns: NS, maxTier: number, tierName: string): Promise<void> 
           if (!sold && shouldSell("short", forecast, maRatio ?? null, forecastThreshold, preThreshold)) {
             const saleProfit = ns.stock.sellShort(sym, shortShares);
             if (saleProfit > 0) {
-              realizedProfit += (shortAvg * shortShares - saleProfit);
+              realizedProfit += shortShares * (shortAvg - saleProfit);
               positionTracking.delete(shortKey);
+              sellCooldowns.set(sym, tickCount);
               notifyPurchase(ns, "stocks", 0, `Sold ${sym} SHORT`);
               ns.print(`  ${C.yellow}SELL SHORT${C.reset} ${sym}: ${ns.formatNumber(saleProfit)}`);
             }
@@ -597,38 +606,12 @@ async function daemon(ns: NS, maxTier: number, tierName: string): Promise<void> 
         }
       }
 
-      // Open new positions
+      // Collect buy candidates (executed after loop, sorted by strength)
       if (canTrade && signalDir !== "neutral" && signalStrength > 0.1) {
-        const maxShares = ns.stock.getMaxShares(sym);
-        const availCash = Math.min(ns.getPlayer().money * 0.5, budgetAllocation);
-        const sharesToBuy = calculatePositionSize(signalStrength, availCash, maxShares, price);
-
-        if (sharesToBuy > 0) {
-          if (signalDir === "long" && longShares === 0) {
-            const cost = ns.stock.buyStock(sym, sharesToBuy);
-            if (cost > 0) {
-              positionTracking.set(`${sym}-long`, {
-                entryPrice: cost,
-                peakPrice: cost,
-                ticksHeld: 0,
-                direction: "long",
-              });
-              notifyPurchase(ns, "stocks", cost * sharesToBuy, `Buy ${sym} LONG`);
-              ns.print(`  ${C.green}BUY LONG${C.reset} ${sym}: ${sharesToBuy} @ ${ns.formatNumber(cost)}`);
-            }
-          } else if (signalDir === "short" && shortShares === 0 && canShort) {
-            const cost = ns.stock.buyShort(sym, sharesToBuy);
-            if (cost > 0) {
-              positionTracking.set(`${sym}-short`, {
-                entryPrice: cost,
-                peakPrice: cost,
-                ticksHeld: 0,
-                direction: "short",
-              });
-              notifyPurchase(ns, "stocks", cost * sharesToBuy, `Buy ${sym} SHORT`);
-              ns.print(`  ${C.cyan}BUY SHORT${C.reset} ${sym}: ${sharesToBuy} @ ${ns.formatNumber(cost)}`);
-            }
-          }
+        if (signalDir === "long" && longShares === 0) {
+          buyCandidates.push({ sym, dir: "long", strength: signalStrength, price });
+        } else if (signalDir === "short" && shortShares === 0 && canShort) {
+          buyCandidates.push({ sym, dir: "short", strength: signalStrength, price });
         }
       }
 
@@ -641,6 +624,53 @@ async function daemon(ns: NS, maxTier: number, tierName: string): Promise<void> 
           forecast: forecastVal,
           maRatio,
         });
+      }
+    }
+
+    // Execute buy candidates sorted by signal strength, respecting maxPositions and cooldowns
+    buyCandidates.sort((a, b) => b.strength - a.strength);
+    const currentPositionCount = longCount + shortCount;
+    let newPositions = 0;
+    for (const cand of buyCandidates) {
+      if (maxPositions > 0 && currentPositionCount + newPositions >= maxPositions) break;
+
+      // Check sell cooldown
+      if (sellCooldownTicks > 0) {
+        const lastSoldTick = sellCooldowns.get(cand.sym);
+        if (lastSoldTick !== undefined && tickCount - lastSoldTick < sellCooldownTicks) continue;
+      }
+
+      const maxShares = ns.stock.getMaxShares(cand.sym);
+      const availCash = Math.min(ns.getPlayer().money * 0.5, budgetAllocation);
+      const sharesToBuy = calculatePositionSize(cand.strength, availCash, maxShares, cand.price);
+      if (sharesToBuy <= 0) continue;
+
+      if (cand.dir === "long") {
+        const cost = ns.stock.buyStock(cand.sym, sharesToBuy);
+        if (cost > 0) {
+          positionTracking.set(`${cand.sym}-long`, {
+            entryPrice: cost,
+            peakPrice: cost,
+            ticksHeld: 0,
+            direction: "long",
+          });
+          notifyPurchase(ns, "stocks", cost * sharesToBuy, `Buy ${cand.sym} LONG`);
+          ns.print(`  ${C.green}BUY LONG${C.reset} ${cand.sym}: ${sharesToBuy} @ ${ns.formatNumber(cost)}`);
+          newPositions++;
+        }
+      } else {
+        const cost = ns.stock.buyShort(cand.sym, sharesToBuy);
+        if (cost > 0) {
+          positionTracking.set(`${cand.sym}-short`, {
+            entryPrice: cost,
+            peakPrice: cost,
+            ticksHeld: 0,
+            direction: "short",
+          });
+          notifyPurchase(ns, "stocks", cost * sharesToBuy, `Buy ${cand.sym} SHORT`);
+          ns.print(`  ${C.cyan}BUY SHORT${C.reset} ${cand.sym}: ${sharesToBuy} @ ${ns.formatNumber(cost)}`);
+          newPositions++;
+        }
       }
     }
 

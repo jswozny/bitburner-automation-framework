@@ -178,9 +178,8 @@ export function calculatePositionSize(
 ): number {
   if (pricePerShare <= 0 || availableCash <= 0) return 0;
 
-  // Scale allocation by signal strength (20% to 100% of available)
-  const allocationFraction = 0.2 + signalStrength * 0.8;
-  const cashToSpend = availableCash * allocationFraction;
+  // Full allocation — edge is binary (above threshold or not)
+  const cashToSpend = availableCash;
 
   // Ensure expected profit > commission (need at least 0.5% expected return)
   const minInvestment = COMMISSION * 2 / 0.005;
