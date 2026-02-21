@@ -66,6 +66,7 @@ export function computeReserve(totalCash: number): number {
 export function computeAllocations(
   totalCash: number,
   requests: SpendRequest[],
+  weights: Record<string, number> = {},
 ): BudgetStatus {
   const reserve = computeReserve(totalCash);
   let available = Math.max(0, totalCash - reserve);
@@ -103,6 +104,7 @@ export function computeAllocations(
       bucket,
       tier,
       allocated: 0,
+      weight: tier === 2 ? (weights[bucket] ?? 0) : 0,
       estimatedROI: demand?.bestROI ?? 0,
       pendingRequests: demand?.count ?? 0,
     };
@@ -121,14 +123,16 @@ export function computeAllocations(
     available -= grant;
   }
 
-  // Phase 2: Fund Tier 2 by ROI proportion
+  // Phase 2: Fund Tier 2 by configured weight
   const tier2 = [...allBuckets].filter(b => getBucketTier(b) === 2);
-  const tier2Demands = tier2.map(b => ({ bucket: b, demand: bucketDemand.get(b)! })).filter(d => d.demand);
-  const totalROI = tier2Demands.reduce((sum, d) => sum + Math.max(d.demand.bestROI, 0.01), 0);
+  const tier2Active = tier2
+    .filter(b => (bucketDemand.get(b)?.count ?? 0) > 0 && (weights[b] ?? 0) > 0)
+    .map(b => ({ bucket: b, demand: bucketDemand.get(b)!, weight: weights[b] ?? 0 }));
+  const totalWeight = tier2Active.reduce((sum, d) => sum + d.weight, 0);
 
-  if (totalROI > 0 && available > 0) {
-    for (const { bucket, demand } of tier2Demands) {
-      const share = Math.max(demand.bestROI, 0.01) / totalROI;
+  if (totalWeight > 0 && available > 0) {
+    for (const { bucket, demand, weight } of tier2Active) {
+      const share = weight / totalWeight;
       const grant = Math.min(demand.total, available * share);
       allocations[bucket].allocated = grant;
       available -= grant;

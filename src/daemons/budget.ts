@@ -107,6 +107,10 @@ async function daemon(ns: NS): Promise<void> {
   writeDefaultConfig(ns, "budget", {
     interval: "2000",
     reserveFraction: "0.01",
+    "weight.stocks": "50",
+    "weight.servers": "25",
+    "weight.gang": "15",
+    "weight.hacknet": "10",
   });
 
   const interval = getConfigNumber(ns, "budget", "interval", 2000);
@@ -121,7 +125,14 @@ async function daemon(ns: NS): Promise<void> {
     const totalCash = ns.getPlayer().money;
     const requests = [...pendingRequests.values()];
 
-    const status: BudgetStatus = computeAllocations(totalCash, requests);
+    const weights: Record<string, number> = {
+      stocks: getConfigNumber(ns, "budget", "weight.stocks", 50),
+      servers: getConfigNumber(ns, "budget", "weight.servers", 25),
+      gang: getConfigNumber(ns, "budget", "weight.gang", 15),
+      hacknet: getConfigNumber(ns, "budget", "weight.hacknet", 10),
+    };
+
+    const status: BudgetStatus = computeAllocations(totalCash, requests, weights);
     status.totalCashFormatted = ns.formatNumber(totalCash);
     status.reserveFormatted = ns.formatNumber(status.reserve);
 

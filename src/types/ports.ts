@@ -923,6 +923,7 @@ export interface BucketAllocation {
   bucket: string;
   tier: 1 | 2 | 3;
   allocated: number;
+  weight: number;
   estimatedROI: number;
   pendingRequests: number;
 }

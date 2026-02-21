@@ -105,7 +105,7 @@ function BudgetDetailPanel({
   }
 
   const allocations = Object.values(status.allocations) as BucketAllocation[];
-  allocations.sort((a, b) => a.tier - b.tier || b.estimatedROI - a.estimatedROI);
+  allocations.sort((a, b) => a.tier - b.tier || b.weight - a.weight);
 
   const tb = status.tierBreakdown;
 
@@ -155,31 +155,39 @@ function BudgetDetailPanel({
                 <th style={styles.tableHeader}>Bucket</th>
                 <th style={{ ...styles.tableHeader, width: "60px" }}>Tier</th>
                 <th style={{ ...styles.tableHeader, width: "100px", textAlign: "right" }}>Allocated</th>
-                <th style={{ ...styles.tableHeader, width: "60px", textAlign: "right" }}>ROI</th>
+                <th style={{ ...styles.tableHeader, width: "60px", textAlign: "right" }}>Weight</th>
                 <th style={{ ...styles.tableHeader, width: "60px", textAlign: "right" }}>Pending</th>
               </tr>
             </thead>
             <tbody>
-              {allocations.map((a: BucketAllocation, i: number) => {
-                const rowStyle = i % 2 === 0 ? styles.tableRow : styles.tableRowAlt;
-                return (
-                  <tr key={a.bucket} style={rowStyle}>
-                    <td style={{ ...styles.tableCell, color: "#0088ff" }}>{a.bucket}</td>
-                    <td style={{ ...styles.tableCell, color: tierColors[a.tier] || "#888" }}>
-                      {formatTier(a.tier)}
-                    </td>
-                    <td style={{ ...styles.tableCell, textAlign: "right", color: a.allocated > 0 ? "#00ff00" : "#888" }}>
-                      ${formatNum(a.allocated)}
-                    </td>
-                    <td style={{ ...styles.tableCell, textAlign: "right" }}>
-                      {a.estimatedROI.toFixed(1)}
-                    </td>
-                    <td style={{ ...styles.tableCell, textAlign: "right" }}>
-                      {a.pendingRequests}
-                    </td>
-                  </tr>
-                );
-              })}
+              {(() => {
+                const totalWeight = allocations
+                  .filter((a: BucketAllocation) => a.tier === 2 && a.weight > 0)
+                  .reduce((sum: number, a: BucketAllocation) => sum + a.weight, 0);
+                return allocations.map((a: BucketAllocation, i: number) => {
+                  const rowStyle = i % 2 === 0 ? styles.tableRow : styles.tableRowAlt;
+                  const weightDisplay = a.tier === 2 && totalWeight > 0
+                    ? Math.round((a.weight / totalWeight) * 100) + "%"
+                    : "\u2014";
+                  return (
+                    <tr key={a.bucket} style={rowStyle}>
+                      <td style={{ ...styles.tableCell, color: "#0088ff" }}>{a.bucket}</td>
+                      <td style={{ ...styles.tableCell, color: tierColors[a.tier] || "#888" }}>
+                        {formatTier(a.tier)}
+                      </td>
+                      <td style={{ ...styles.tableCell, textAlign: "right", color: a.allocated > 0 ? "#00ff00" : "#888" }}>
+                        ${formatNum(a.allocated)}
+                      </td>
+                      <td style={{ ...styles.tableCell, textAlign: "right" }}>
+                        {weightDisplay}
+                      </td>
+                      <td style={{ ...styles.tableCell, textAlign: "right" }}>
+                        {a.pendingRequests}
+                      </td>
+                    </tr>
+                  );
+                });
+              })()}
             </tbody>
           </table>
         </div>

@@ -158,6 +158,17 @@ maxTargets=8
 | `trailingStopPercent` | `0.08` | Trailing stop (8% from peak) |
 | `maxHoldTicks` | `60` | Max ticks to hold a position (0 = unlimited) |
 
+### Budget Config (`/config/budget.txt`)
+
+| Key | Default | Description |
+|-----|---------|-------------|
+| `interval` | `2000` | Status update interval (ms) |
+| `reserveFraction` | `0.01` | Emergency reserve fraction |
+| `weight.stocks` | `50` | T2 weight for stock investments |
+| `weight.servers` | `25` | T2 weight for personal servers |
+| `weight.gang` | `15` | T2 weight for gang equipment |
+| `weight.hacknet` | `10` | T2 weight for hacknet (no consumer yet) |
+
 ## Contracts
 
 The contracts daemon scans all servers for `.cct` files and solves them automatically using 28 built-in solvers covering all known contract types. Solved contracts are logged to the dashboard.
