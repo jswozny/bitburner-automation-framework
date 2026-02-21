@@ -1065,15 +1065,28 @@ async function runBatchMode(ns: NS): Promise<void> {
 
 async function runXpMode(ns: NS): Promise<void> {
   const C = COLORS;
-  let xpGainedTotal = 0;
   const startTime = Date.now();
+  const startXp = ns.getPlayer().exp.hacking;
+  let lastDeployTime = 0;
+  let lastTargetSelectTime = 0;
+  let xpTarget: string | null = null;
+
+  const DEPLOY_INTERVAL = 30_000; // re-deploy workers every 30s
+  const TARGET_INTERVAL = 30_000; // re-select target every 30s
 
   do {
     const cfg = readHackConfig(ns);
+    const tickInterval = getConfigNumber(ns, "hack", "xpInterval", 2000);
     ns.clearLog();
 
-    // 1. Select XP target (lowest minDifficulty)
-    const xpTarget = selectXpTarget(ns);
+    const now = Date.now();
+
+    // 1. Re-select XP target periodically (catches hacking level-ups)
+    if (!xpTarget || now - lastTargetSelectTime >= TARGET_INTERVAL) {
+      xpTarget = selectXpTarget(ns);
+      lastTargetSelectTime = now;
+    }
+
     if (!xpTarget) {
       ns.print("ERROR: No valid XP targets found!");
       const emptyStatus: HackStatus = {
@@ -1082,31 +1095,40 @@ async function runXpMode(ns: NS): Promise<void> {
         shortestWait: "N/A", longestWait: "N/A",
         hackingCount: 0, growingCount: 0, weakeningCount: 0,
         targets: [], totalExpectedMoney: 0, totalExpectedMoneyFormatted: "$0",
-        needHigherLevel: null, strategy: "xp", sharePercent: getSharePercentFromPort(ns),
+        needHigherLevel: null, strategy: "xp", sharePercent: 0,
       };
       publishStatus(ns, STATUS_PORTS.hack, emptyStatus);
       if (!cfg.oneShot) await ns.sleep(5000);
       continue;
     }
 
-    // 2. Get usable servers (fleet allocation for share coordination)
+    // 2. Get usable servers — force share to 0 (XP mode uses everything)
     const allServers = getUsableServers(ns, cfg.homeReserve);
-    const sharePercent = getSharePercentFromPort(ns);
-    const allocation = computeFleetAllocation(allServers, "xp", sharePercent);
+    const allocation = computeFleetAllocation(allServers, "xp", 0);
     publishStatus(ns, STATUS_PORTS.fleet, allocation);
     const hackServerSet = new Set(allocation.hackServers);
     const servers = allServers.filter(s => hackServerSet.has(s.hostname));
 
-    // 3. Deploy workers
-    await deployWorkers(ns, allServers);
+    // 3. Deploy workers periodically (not every tick)
+    if (now - lastDeployTime >= DEPLOY_INTERVAL) {
+      await deployWorkers(ns, allServers);
+      lastDeployTime = now;
+    }
 
-    // 4. Launch weaken on all servers targeting the XP target
+    // 4. Launch weaken on all AVAILABLE RAM (previous waves that finished free up RAM)
     const weakenRam = ns.getScriptRam("/workers/weaken.js");
-    let totalThreads = 0;
+    let launchedThreads = 0;
+    let totalFleetRam = 0;
+    let usedRam = 0;
 
     for (const server of servers) {
-      if (server.availableRam < weakenRam) continue;
-      const threads = Math.floor(server.availableRam / weakenRam);
+      const sObj = ns.getServer(server.hostname);
+      const avail = sObj.maxRam - sObj.ramUsed;
+      totalFleetRam += sObj.maxRam;
+      usedRam += sObj.ramUsed;
+
+      if (avail < weakenRam) continue;
+      const threads = Math.floor(avail / weakenRam);
       if (threads <= 0) continue;
 
       const pid = ns.exec(
@@ -1114,41 +1136,41 @@ async function runXpMode(ns: NS): Promise<void> {
         xpTarget, 0, Date.now(), "xp",
       );
       if (pid > 0) {
-        totalThreads += threads;
+        launchedThreads += threads;
+        usedRam += threads * weakenRam;
       }
     }
 
-    // 5. Compute XP rate estimate
-    const weakenTime = ns.getWeakenTime(xpTarget);
-    // Each weaken thread grants 1 hacking XP (base) * multipliers
-    const xpPerThread = ns.hackAnalyze(xpTarget) > 0 ? 1 : 1; // weaken always gives 1 base XP
-    const elapsed = Math.max(Date.now() - startTime, 1000);
-    xpGainedTotal += totalThreads * xpPerThread;
-    const xpRate = xpGainedTotal / (elapsed / 1000);
+    // 5. Compute real XP rate from actual player XP
+    const currentXp = ns.getPlayer().exp.hacking;
+    const xpGained = currentXp - startXp;
+    const elapsed = Math.max(now - startTime, 1000);
+    const xpRate = xpGained / (elapsed / 1000);
 
-    const totalRam = servers.reduce((sum, s) => sum + s.availableRam, 0);
+    const weakenTime = ns.getWeakenTime(xpTarget);
+    const utilization = totalFleetRam > 0 ? (usedRam / totalFleetRam) * 100 : 0;
 
     // 6. Publish status
     const hackStatus: HackStatus = {
-      totalRam: ns.formatRam(totalRam),
+      totalRam: ns.formatRam(totalFleetRam),
       serverCount: servers.length,
-      totalThreads: ns.formatNumber(totalThreads),
+      totalThreads: ns.formatNumber(launchedThreads),
       activeTargets: 1,
       totalTargets: 1,
-      saturationPercent: 100,
+      saturationPercent: Math.round(utilization),
       shortestWait: formatTimeCondensed(weakenTime),
       longestWait: formatTimeCondensed(weakenTime),
       hackingCount: 0,
       growingCount: 0,
-      weakeningCount: totalThreads,
+      weakeningCount: launchedThreads,
       targets: [],
       totalExpectedMoney: 0,
       totalExpectedMoneyFormatted: "$0",
       needHigherLevel: null,
       strategy: "xp",
-      sharePercent,
+      sharePercent: 0,
       xpTarget,
-      xpThreads: totalThreads,
+      xpThreads: launchedThreads,
       xpRate,
       xpRateFormatted: `${ns.formatNumber(xpRate)} XP/s`,
     };
@@ -1159,18 +1181,14 @@ async function runXpMode(ns: NS): Promise<void> {
     ns.print(`${C.cyan}  XP MODE - ${new Date().toLocaleTimeString()}${C.reset}`);
     ns.print(`${C.cyan}════════════════════════════════════════════════════${C.reset}`);
     ns.print(`${C.white}Target: ${C.cyan}${xpTarget}${C.reset} (min sec: ${ns.getServer(xpTarget).minDifficulty?.toFixed(1)})`);
-    ns.print(`${C.white}Threads: ${C.green}${ns.formatNumber(totalThreads)}${C.reset} | RAM: ${ns.formatRam(totalRam)} | Servers: ${servers.length}`);
+    ns.print(`${C.white}Launched: ${C.green}${ns.formatNumber(launchedThreads)}${C.reset} threads this tick | Servers: ${servers.length}`);
+    ns.print(`${C.white}Fleet RAM: ${ns.formatRam(totalFleetRam)} | Utilization: ${C.green}${utilization.toFixed(0)}%${C.reset}`);
     ns.print(`${C.white}Weaken Time: ${formatTimeCondensed(weakenTime)}${C.reset}`);
-    ns.print(`${C.white}XP Rate: ${C.green}${ns.formatNumber(xpRate)} XP/s${C.reset}`);
-    if (sharePercent > 0) {
-      ns.print(`${C.yellow}Share Reserve: ${sharePercent}%${C.reset}`);
-    }
+    ns.print(`${C.white}XP Rate: ${C.green}${ns.formatNumber(xpRate)} XP/s${C.reset} (${ns.formatNumber(xpGained)} total)`);
 
-    // 8. Sleep until weaken completes (or 30s max)
+    // 8. Sleep for tick interval (short — waves pipeline automatically)
     if (!cfg.oneShot) {
-      const sleepTime = Math.min(weakenTime + 500, 30000);
-      ns.print(`\nWaiting ${formatTimeCondensed(sleepTime)}...`);
-      await ns.sleep(sleepTime);
+      await ns.sleep(tickInterval);
     }
   } while (!getConfigBool(ns, "hack", "oneShot", false));
 }
