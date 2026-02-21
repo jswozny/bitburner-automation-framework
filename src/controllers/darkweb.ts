@@ -80,9 +80,10 @@ export function getNextProgramToSaveFor(ns: NS): DarkwebProgram | null {
 }
 
 /**
- * Analyze darkweb programs and optionally purchase affordable ones
+ * Analyze darkweb programs and optionally purchase affordable ones.
+ * If budgetCheck is provided, each purchase is gated by the callback.
  */
-export function analyzeDarkwebPrograms(ns: NS, purchase = true): ProgramPurchaseResult {
+export function analyzeDarkwebPrograms(ns: NS, purchase = true, budgetCheck?: (cost: number, name: string) => boolean): ProgramPurchaseResult {
   const playerMoney = ns.getServerMoneyAvailable("home");
   const hasTor = hasTorRouter(ns);
 
@@ -114,6 +115,10 @@ export function analyzeDarkwebPrograms(ns: NS, purchase = true): ProgramPurchase
     }
 
     if (currentMoney >= program.cost && purchase) {
+      if (budgetCheck && !budgetCheck(program.cost, program.name)) {
+        cannotAfford.push(program);
+        continue;
+      }
       const success = ns.singularity.purchaseProgram(program.name);
       if (success) {
         purchased.push(program);
@@ -151,9 +156,11 @@ export function getDarkwebStatus(ns: NS): ProgramPurchaseResult {
 }
 
 /**
- * Try to purchase the TOR router
+ * Try to purchase the TOR router.
+ * If budgetCheck is provided, the purchase is gated by the callback.
  */
-export function purchaseTorRouter(ns: NS): boolean {
+export function purchaseTorRouter(ns: NS, budgetCheck?: (cost: number, name: string) => boolean): boolean {
+  if (budgetCheck && !budgetCheck(200_000, "TOR Router")) return false;
   return ns.singularity.purchaseTor();
 }
 

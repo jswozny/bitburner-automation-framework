@@ -27,6 +27,8 @@ import {
 import { publishStatus } from "/lib/ports";
 import { STATUS_PORTS, AugmentsStatus } from "/types/ports";
 import { writeDefaultConfig, getConfigNumber, getConfigBool } from "/lib/config";
+import { requestBudget } from "/lib/budget";
+import { estimateDonationROI } from "/controllers/budget";
 
 function classifyAugTags(ns: NS, name: string, prereqs: string[]): string[] {
   const stats = ns.singularity.getAugmentationStats(name);
@@ -229,6 +231,14 @@ export async function main(ns: NS): Promise<void> {
     ns.clearLog();
 
     const status = computeAugmentsStatus(ns);
+
+    // Register donation plan with budget daemon if applicable
+    if (status.neuroFlux?.donationPlan && status.neuroFlux.donationPlan.purchases > 0) {
+      const dp = status.neuroFlux.donationPlan;
+      const roi = estimateDonationROI(dp.purchases, dp.totalDonationCost, dp.totalPurchaseCost);
+      requestBudget(ns, "donations", dp.totalCost, `NFG x${dp.purchases} via donation`, roi);
+    }
+
     publishStatus(ns, STATUS_PORTS.augments, status);
     printStatus(ns, status);
 

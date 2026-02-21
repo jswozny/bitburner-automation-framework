@@ -18,6 +18,7 @@ const BUCKET_TIERS: Record<string, 1 | 2 | 3> = {
   stocks: 2,
   servers: 2,
   hacknet: 2,
+  gang: 2,
   donations: 3,
 };
 
@@ -200,4 +201,30 @@ export function estimateStockROI(portfolioValue: number, profitPerSec: number): 
   if (portfolioValue <= 0) return 0.5;
   // Annualized return rate, scaled down
   return Math.max(0.1, (profitPerSec / portfolioValue) * 100);
+}
+
+/**
+ * Estimate ROI for gang equipment purchases.
+ * More members and higher income indicate the gang is productive and
+ * equipment investments compound across all members.
+ */
+export function estimateGangEquipmentROI(memberCount: number, incomePerSec: number): number {
+  if (memberCount <= 0) return 1;
+  // Equipment benefits all members, so ROI scales with member count.
+  // Income indicates how productive the gang is (higher = better investment).
+  const memberFactor = Math.min(memberCount / 12, 1) * 10;
+  const incomeFactor = incomePerSec > 0 ? Math.log10(Math.max(incomePerSec, 1)) : 0;
+  return Math.max(1, memberFactor + incomeFactor);
+}
+
+/**
+ * Estimate ROI for NeuroFlux Governor donations.
+ * Models NFG value (~$1B per level equivalent) vs total cost (donation + purchase).
+ */
+export function estimateDonationROI(nfgLevels: number, donationCost: number, purchaseCost: number): number {
+  const totalCost = donationCost + purchaseCost;
+  if (totalCost <= 0 || nfgLevels <= 0) return 0.1;
+  // Each NFG level gives ~1% boost to all stats, valued at roughly $1B
+  const estimatedValue = nfgLevels * 1e9;
+  return Math.max(0.1, (estimatedValue / totalCost) * 10);
 }

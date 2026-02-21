@@ -13,10 +13,12 @@
  */
 import { NS } from "@ns";
 import { COLORS } from "/lib/utils";
-import { getPservStatus, PservConfig, runPservCycle } from "/controllers/pserv";
+import { getPservStatus, PservConfig, PservCallbacks, runPservCycle } from "/controllers/pserv";
 import { publishStatus } from "/lib/ports";
 import { STATUS_PORTS, PservStatus } from "/types/ports";
 import { writeDefaultConfig, getConfigString, getConfigNumber, getConfigBool } from "/lib/config";
+import { requestBudget, notifyPurchase, getBudgetAllocation } from "/lib/budget";
+import { estimateServerROI } from "/controllers/budget";
 
 /**
  * Build a PservStatus object with formatted values for the dashboard.
@@ -145,9 +147,39 @@ export async function main(ns: NS): Promise<void> {
     };
     ns.clearLog();
 
+    // Budget integration: constrain spending by allocation if daemon is running
+    const budgetFn = (): number => {
+      const alloc = getBudgetAllocation(ns, "servers");
+      const raw = ns.getServerMoneyAvailable("home") - config.reserve;
+      if (alloc === null) return raw; // No budget daemon → unlimited
+      return Math.min(raw, alloc.allocated);
+    };
+    const onPurchase = (cost: number, desc: string): void => {
+      notifyPurchase(ns, "servers", cost, desc);
+    };
+
+    // Request budget for the next expected purchase
+    const pstat = getPservStatus(ns);
+    if (pstat.serverCount < pstat.serverCap) {
+      const minCost = ns.getPurchasedServerCost(config.minRam);
+      const roi = estimateServerROI(0, config.minRam, 0);
+      requestBudget(ns, "servers", minCost, `new server @ ${ns.formatRam(config.minRam)}`, roi);
+    } else if (!pstat.allMaxed && pstat.servers.length > 0) {
+      const smallest = pstat.servers.reduce((m, h) => ns.getServerMaxRam(h) < ns.getServerMaxRam(m) ? h : m);
+      const smallestRam = ns.getServerMaxRam(smallest);
+      const nextRam = smallestRam * 2;
+      if (nextRam <= pstat.maxPossibleRam) {
+        const cost = ns.getPurchasedServerUpgradeCost(smallest, nextRam);
+        const roi = estimateServerROI(smallestRam, nextRam, 0);
+        requestBudget(ns, "servers", cost, `upgrade ${smallest} → ${ns.formatRam(nextRam)}`, roi);
+      }
+    }
+
+    const callbacks: PservCallbacks = { budgetFn, onPurchase };
+
     // Run the purchase/upgrade cycle (or skip if monitor-only)
     const result = config.autoBuy
-      ? await runPservCycle(ns, config)
+      ? await runPservCycle(ns, config, callbacks)
       : { bought: 0, upgraded: 0, waitingFor: null };
 
     // Compute formatted status for the dashboard
