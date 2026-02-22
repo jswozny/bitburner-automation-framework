@@ -28,6 +28,7 @@ export const STATUS_PORTS = {
   contracts: 18,
   budget: 22,
   stocks: 24,
+  casino: 26,
 } as const;
 
 export const GANG_CONTROL_PORT = 15;
@@ -40,7 +41,7 @@ export const COMMAND_PORT = 20;
 
 // === TOOL NAMES ===
 
-export type ToolName = "nuke" | "pserv" | "share" | "rep" | "hack" | "darkweb" | "work" | "faction" | "infiltration" | "gang" | "augments" | "advisor" | "contracts" | "budget" | "stocks";
+export type ToolName = "nuke" | "pserv" | "share" | "rep" | "hack" | "darkweb" | "work" | "faction" | "infiltration" | "gang" | "augments" | "advisor" | "contracts" | "budget" | "stocks" | "casino";
 
 // === TOOL SCRIPTS (daemon paths) ===
 
@@ -60,6 +61,7 @@ export const TOOL_SCRIPTS: Record<ToolName, string> = {
   contracts: "daemons/contracts.js",
   budget: "daemons/budget.js",
   stocks: "daemons/stocks.js",
+  casino: "casino.js",
 };
 
 // === PRIORITY CONSTANTS ===
@@ -1003,6 +1005,13 @@ export interface StocksStatus {
   tickCount: number;
 }
 
+// === CASINO STATUS ===
+
+export interface CasinoStatus {
+  // Casino has no daemon — this is a placeholder for the type system
+  running: boolean;
+}
+
 // === DASHBOARD STATE ===
 
 export interface DashboardState {
@@ -1028,6 +1037,7 @@ export interface DashboardState {
   contractsStatus: ContractsStatus | null;
   budgetStatus: BudgetStatus | null;
   stocksStatus: StocksStatus | null;
+  casinoStatus: CasinoStatus | null;
 }
 
 // === PLUGIN INTERFACE (for dashboard) ===

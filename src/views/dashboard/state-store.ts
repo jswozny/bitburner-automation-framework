@@ -39,6 +39,7 @@ import {
   ContractsStatus,
   BudgetStatus,
   StocksStatus,
+  CasinoStatus,
   Command,
 } from "/types/ports";
 
@@ -704,6 +705,7 @@ const uiState: UIState = {
     contracts: {},
     budget: {},
     stocks: {},
+    casino: {},
   },
 };
 
@@ -816,10 +818,11 @@ interface CachedData {
   contractsStatus: ContractsStatus | null;
   budgetStatus: BudgetStatus | null;
   stocksStatus: StocksStatus | null;
+  casinoStatus: CasinoStatus | null;
 }
 
 const cachedData: CachedData = {
-  pids: { nuke: 0, pserv: 0, share: 0, rep: 0, hack: 0, darkweb: 0, work: 0, faction: 0, infiltration: 0, gang: 0, augments: 0, advisor: 0, contracts: 0, budget: 0, stocks: 0 },
+  pids: { nuke: 0, pserv: 0, share: 0, rep: 0, hack: 0, darkweb: 0, work: 0, faction: 0, infiltration: 0, gang: 0, augments: 0, advisor: 0, contracts: 0, budget: 0, stocks: 0, casino: 0 },
   nukeStatus: null,
   pservStatus: null,
   shareStatus: null,
@@ -841,6 +844,7 @@ const cachedData: CachedData = {
   contractsStatus: null,
   budgetStatus: null,
   stocksStatus: null,
+  casinoStatus: null,
 };
 
 // === PORT-BASED STATUS READING ===
@@ -945,6 +949,7 @@ function clearToolStatus(tool: ToolName): void {
     case "contracts": cachedData.contractsStatus = null; break;
     case "budget": cachedData.budgetStatus = null; break;
     case "stocks": cachedData.stocksStatus = null; break;
+    case "casino": cachedData.casinoStatus = null; break;
   }
 }
 
@@ -1115,5 +1120,6 @@ export function getStateSnapshot(): DashboardState {
     contractsStatus: cachedData.contractsStatus,
     budgetStatus: cachedData.budgetStatus,
     stocksStatus: cachedData.stocksStatus,
+    casinoStatus: cachedData.casinoStatus,
   };
 }
