@@ -9,7 +9,7 @@
  */
 import { NS } from "@ns";
 import { publishStatus, peekStatus } from "/lib/ports";
-import { getConfigString } from "/lib/config";
+import { getConfigString, setConfigValue } from "/lib/config";
 import {
   STATUS_PORTS,
   INFILTRATION_CONTROL_PORT,
@@ -348,8 +348,40 @@ function createOverlay(): void {
   rewardLine.id = `${OVERLAY_ID}-reward`;
   rewardLine.style.cssText = "margin-bottom: 8px; color: #90d080; font-size: 11px;";
 
+  const modeSelect = doc.createElement("select");
+  modeSelect.id = `${OVERLAY_ID}-mode`;
+  modeSelect.style.cssText = [
+    "width: 100%",
+    "margin-bottom: 8px",
+    "padding: 3px 4px",
+    "background: rgba(30, 30, 50, 0.9)",
+    "border: 1px solid rgba(100, 200, 255, 0.3)",
+    "border-radius: 4px",
+    "color: #c8e6ff",
+    "font-family: monospace",
+    "font-size: 11px",
+    "cursor: pointer",
+  ].join("; ");
+  for (const [value, label] of [["rep", "Rep"], ["money", "Money"], ["manual", "Manual"]] as const) {
+    const opt = doc.createElement("option");
+    opt.value = value;
+    opt.textContent = label;
+    opt.style.background = "#1e1e32";
+    modeSelect.appendChild(opt);
+  }
+  modeSelect.value = config.rewardMode;
+  modeSelect.addEventListener("change", () => {
+    const val = modeSelect.value as "rep" | "money" | "manual";
+    config.rewardMode = val;
+    if (_ns) {
+      setConfigValue(_ns, "infiltration", "rewardMode", val);
+      publishCurrentStatus(_ns);
+    }
+  });
+
   overlay.appendChild(progressLine);
   overlay.appendChild(rewardLine);
+  overlay.appendChild(modeSelect);
   overlay.appendChild(btn);
   doc.body.appendChild(overlay);
 }
@@ -386,6 +418,12 @@ function updateOverlay(): void {
   if (rewardEl) {
     rewardEl.textContent = overlayRewardLabel;
     rewardEl.style.color = config.rewardMode === "money" ? "#e0d080" : "#90d080";
+  }
+
+  // Sync mode dropdown (may have been changed via dashboard control port)
+  const modeSelect = doc.getElementById(`${OVERLAY_ID}-mode`) as HTMLSelectElement | null;
+  if (modeSelect && modeSelect.value !== config.rewardMode) {
+    modeSelect.value = config.rewardMode;
   }
 
   // Reset button between runs if not stopping
