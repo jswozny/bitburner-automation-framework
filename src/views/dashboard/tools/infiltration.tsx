@@ -101,7 +101,7 @@ function InfiltrationControls({ running }: { running: boolean }): React.ReactEle
             }
           }}
         >
-          <option value="rep">Rep (auto){!hasFaction ? " - no faction" : ""}</option>
+          <option value="rep">Rep{hasFaction ? ` → ${repStatus.targetFaction}` : " (auto) - no faction"}</option>
           <option value="money">Money</option>
           <option value="manual">Manual (stop on win)</option>
         </select>
@@ -509,7 +509,7 @@ function InfiltrationDetailPanel({ status, running, toolId, pid }: DetailPanelPr
         </div>
         <div style={styles.stat}>
           <span style={styles.statLabel}>Reward</span>
-          <span style={styles.statValue}>{status.config.rewardMode === "money" ? "Money" : status.config.rewardMode === "manual" ? "Manual (stop on win)" : "Rep (auto)"}</span>
+          <span style={styles.statValue}>{status.config.rewardMode === "money" ? "Money" : status.config.rewardMode === "manual" ? "Manual (stop on win)" : `Rep → ${status.expectedReward?.faction || "no faction"}`}</span>
         </div>
         <div style={styles.stat}>
           <span style={styles.statLabel}>Solvers</span>

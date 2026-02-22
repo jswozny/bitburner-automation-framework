@@ -420,11 +420,8 @@ function executeCommand(ns: NS, cmd: Command): void {
           ns.kill(currentRepPid);
           cachedData.pids.rep = 0;
         }
-        const args: string[] = [];
-        if (cmd.factionFocus) {
-          args.push("--faction", cmd.factionFocus);
-        }
-        const newPid = ns.exec("daemons/rep.js", "home", 1, ...args);
+        setConfigValue(ns, "rep", "faction", cmd.factionFocus ?? "");
+        const newPid = ns.exec("daemons/rep.js", "home", 1);
         if (newPid > 0) {
           cachedData.pids.rep = newPid;
           ns.toast(cmd.factionFocus ? `Rep daemon: focusing ${cmd.factionFocus}` : "Rep daemon: auto-select mode", "success", 2000);

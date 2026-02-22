@@ -39,6 +39,7 @@ import {
 let state: InfiltrationState = "IDLE";
 let config: InfiltrationConfig = { ...DEFAULT_CONFIG };
 let stopRequested = false;
+let manualRewardPending = false;
 
 // Current run tracking
 let currentTarget: string | undefined;
@@ -609,10 +610,11 @@ async function runSingleInfiltration(ns: NS): Promise<boolean> {
   if (isOnVictoryScreen()) {
     // Manual mode: stop the daemon and let the user pick the reward
     if (config.rewardMode === "manual") {
-      log("info", "Victory! Manual reward mode — stopping daemon.");
+      log("info", "Victory! Manual reward mode — stopping daemon. Pick your reward.");
       companyStats[target.name].successes++;
       runsCompleted++;
       stopRequested = true;
+      manualRewardPending = true;
       state = "COMPLETING";
       publishCurrentStatus(ns);
       return true;
@@ -822,12 +824,16 @@ export async function main(ns: NS): Promise<void> {
     if (stopRequested) {
       state = "STOPPING";
       publishCurrentStatus(ns);
-      log("info", "Stopping daemon...");
 
-      try {
-        await navigateToCity(domUtils);
-      } catch {
-        // Best effort
+      if (manualRewardPending) {
+        log("info", "Daemon stopped — victory screen left open for manual reward selection.");
+      } else {
+        log("info", "Stopping daemon...");
+        try {
+          await navigateToCity(domUtils);
+        } catch {
+          // Best effort
+        }
       }
 
       log("info", "Daemon stopped");
