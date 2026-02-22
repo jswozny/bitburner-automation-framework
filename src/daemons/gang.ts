@@ -94,6 +94,7 @@ const GANG_TIERS: GangTierConfig[] = [
       "gang.setMemberTask",
       "gang.recruitMember",
       "gang.renameMember",
+      "gang.setTerritoryWarfare",
     ],
     features: ["task-assignment", "recruitment", "wanted-management"],
     description: "Task assignment, recruitment, wanted management",
@@ -178,6 +179,7 @@ interface GangConfig {
   trainingThreshold: number;
   growTargetMultiplier: number;
   growRespectReserve: number;
+  territoryAutoThreshold: number;
 }
 
 const DEFAULT_CONFIG: GangConfig = {
@@ -190,6 +192,7 @@ const DEFAULT_CONFIG: GangConfig = {
   trainingThreshold: 500,
   growTargetMultiplier: 30,
   growRespectReserve: 2,
+  territoryAutoThreshold: 101,
 };
 
 function loadConfig(ns: NS): GangConfig {
@@ -277,6 +280,12 @@ function readControlCommands(ns: NS, config: GangConfig): GangConfig {
             changed = true;
           }
           break;
+        case "set-gang-territory-threshold":
+          if (cmd.gangTerritoryAutoThreshold !== undefined) {
+            config.territoryAutoThreshold = cmd.gangTerritoryAutoThreshold;
+            changed = true;
+          }
+          break;
         case "ascend-gang-member":
           // Store the ascend request to be handled in the main loop
           if (cmd.gangMemberName) {
@@ -292,6 +301,23 @@ function readControlCommands(ns: NS, config: GangConfig): GangConfig {
 
   if (changed) saveConfig(ns, config);
   return config;
+}
+
+// === TERRITORY AUTO-TOGGLE ===
+
+function autoToggleTerritoryWarfare(
+  ns: NS, config: GangConfig,
+  territoryData: GangTerritoryStatus | null,
+  currentlyEngaged: boolean,
+): void {
+  if (config.territoryAutoThreshold > 100 || !territoryData) return;
+  const checked = territoryData.rivals.filter(r => r.clashChance >= 0);
+  if (checked.length === 0) return;
+  const avgChance = checked.reduce((s, r) => s + r.clashChance, 0) / checked.length;
+  const shouldEngage = avgChance >= config.territoryAutoThreshold / 100;
+  if (shouldEngage !== currentlyEngaged) {
+    ns.gang.setTerritoryWarfare(shouldEngage);
+  }
 }
 
 // === TASK STATS HELPERS ===
@@ -513,6 +539,7 @@ async function runBasicMode(
 
     // Build territory context for smart warfare splits
     const territoryData_peek = peekStatus<GangTerritoryStatus>(ns, STATUS_PORTS.gangTerritory);
+    autoToggleTerritoryWarfare(ns, config, territoryData_peek, info.territoryWarfareEngaged);
     let territoryContext: TerritoryContext | null = null;
     if (territoryData_peek && territoryData_peek.rivals) {
       territoryContext = {
@@ -614,6 +641,7 @@ async function runBasicMode(
       ascendAutoThreshold: config.ascendAutoThreshold,
       ascendReviewThreshold: config.ascendReviewThreshold,
       trainingThreshold: config.trainingThreshold,
+      territoryAutoThreshold: config.territoryAutoThreshold,
       growTargetMultiplier: config.growTargetMultiplier,
       growRespectReserve: config.growRespectReserve,
       balancedPhase,
@@ -902,6 +930,7 @@ async function runFullMode(
     });
 
     const territoryData = peekStatus<GangTerritoryStatus>(ns, STATUS_PORTS.gangTerritory);
+    autoToggleTerritoryWarfare(ns, config, territoryData, info.territoryWarfareEngaged);
 
     const canRecruit = ns.gang.canRecruitMember();
     const recruitsAvailable = ns.gang.getRecruitsAvailable();
@@ -950,6 +979,7 @@ async function runFullMode(
       ascendAutoThreshold: config.ascendAutoThreshold,
       ascendReviewThreshold: config.ascendReviewThreshold,
       trainingThreshold: config.trainingThreshold,
+      territoryAutoThreshold: config.territoryAutoThreshold,
       growTargetMultiplier: config.growTargetMultiplier,
       growRespectReserve: config.growRespectReserve,
       balancedPhase,

@@ -24,6 +24,7 @@ import {
   setGangWantedThreshold,
   setGangGrowTarget,
   setGangGrowRespectReserve,
+  setGangTerritoryThreshold,
   getStateSnapshot,
 } from "views/dashboard/state-store";
 import { formatTime } from "lib/utils";
@@ -581,6 +582,19 @@ function GangDetailPanel({ status, running, toolId, pid }: DetailPanelProps<Gang
             <span style={{ color: status.territoryWarfareEngaged ? "#00ff00" : "#888" }}>
               {status.territoryWarfareEngaged ? "ENGAGED" : "OFF"}
             </span>
+          </div>
+          <div style={{ ...styles.stat, display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+            <span style={styles.statLabel}>
+              Auto Threshold{(status.territoryAutoThreshold ?? 101) > 100 ? " (OFF)" : ""}
+            </span>
+            <EditableNumber
+              value={status.territoryAutoThreshold ?? 101}
+              onCommit={(v) => { if (running) setGangTerritoryThreshold(v); }}
+              prefix="%"
+              min={0}
+              max={101}
+              step={5}
+            />
           </div>
           <div style={styles.stat}>
             <span style={styles.statLabel}>Our Power</span>

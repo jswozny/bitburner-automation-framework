@@ -294,6 +294,14 @@ export function setGangGrowRespectReserve(count: number): void {
 }
 
 /**
+ * Set gang territory auto-enable threshold (0-101).
+ */
+export function setGangTerritoryThreshold(threshold: number): void {
+  if (!commandPort) return;
+  commandPort.write(JSON.stringify({ tool: "gang", action: "set-gang-territory-threshold", gangTerritoryAutoThreshold: threshold }));
+}
+
+/**
  * Force-buy all affordable gang equipment (ignores spending cap).
  */
 export function forceGangEquipmentBuy(): void {
@@ -548,6 +556,7 @@ function executeCommand(ns: NS, cmd: Command): void {
     case "set-gang-training-threshold":
     case "set-gang-grow-target":
     case "set-gang-grow-respect-reserve":
+    case "set-gang-territory-threshold":
     case "force-buy-equipment":
       {
         // Forward gang commands to the gang control port
