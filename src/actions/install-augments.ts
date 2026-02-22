@@ -28,8 +28,9 @@ export async function main(ns: NS): Promise<void> {
     return;
   }
 
-  // Pre-configure work focus and focus holder for post-reset
+  // Pre-configure defaults for post-reset
   // Config files persist across soft resets
+  setConfigValue(ns, "hack", "strategy", "money");
   setConfigValue(ns, "work", "focus", "hacking");
   setConfigValue(ns, "focus", "holder", "work");
   setConfigValue(ns, "pserv", "autoBuy", "true");
