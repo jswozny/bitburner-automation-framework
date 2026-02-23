@@ -11,6 +11,7 @@
  */
 import { NS } from "@ns";
 import { ensureRamAndExec } from "/lib/launcher";
+import { setConfigValue } from "/lib/config";
 
 /** Check if any instance of a script is running, regardless of arguments. */
 function isScriptRunning(ns: NS, path: string, host: string): boolean {
@@ -59,6 +60,10 @@ export async function main(ns: NS): Promise<void> {
 
   // Brief pause to let dashboard initialize
   await ns.sleep(500);
+
+  // Set default strategies for fresh bootstrap
+  setConfigValue(ns, "hack", "strategy", "money");
+  setConfigValue(ns, "pserv", "autoBuy", "true");
 
   // 2. Launch core daemons
   for (const { path, args } of CORE_SCRIPTS) {
