@@ -33,7 +33,7 @@ function hasNeededSourceFiles(ns: NS, SFArray: Array<number>): boolean {
     return true;
   }
   for (const SF of SFArray) {
-    if (!ns.getResetInfo().sourceFiles.some(s => s.n === SF)) {
+    if (!ns.getResetInfo().sourceFiles.has(SF)) {
       return false;
     }
   }
