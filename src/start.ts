@@ -85,9 +85,15 @@ export async function main(ns: NS): Promise<void> {
   setConfigValue(ns, "pserv", "autoBuy", "true");
 
   // 2. Launch core daemons
-  for (const { path, args } of CORE_SCRIPTS) {
+  for (const { path, args, neededSF } of CORE_SCRIPTS) {
     if (isScriptRunning(ns, path, "home")) {
       ns.tprint(`INFO: ${path} already running`);
+      continue;
+    }
+    if(hasNeededSourceFiles(ns,neededSF || [])){
+      ns.tprint(`INFO: All SF requirements met for ${path}`);
+    } else {
+      ns.tprint(`INFO: Skipping ${path} — missing required Source Files: ${neededSF?.join(", ")}`);
       continue;
     }
     const pid = ensureRamAndExec(ns, path, "home", 1, ...args);
@@ -99,7 +105,13 @@ export async function main(ns: NS): Promise<void> {
   }
 
   // 3. Launch optional daemons if RAM available
-  for (const { path, args } of OPTIONAL_SCRIPTS) {
+  for (const { path, args, neededSF } of OPTIONAL_SCRIPTS) {
+      if(hasNeededSourceFiles(ns,neededSF || [])){
+        ns.tprint(`INFO: All SF requirements met for ${path}`);
+      } else {
+        ns.tprint(`INFO: Skipping ${path} — missing required Source Files: ${neededSF?.join(", ")}`);
+        continue;
+      }  
     if (isScriptRunning(ns, path, "home")) {
       ns.tprint(`INFO: ${path} already running`);
       continue;
