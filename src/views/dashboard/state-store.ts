@@ -20,6 +20,7 @@ import {
   INFILTRATION_CONTROL_PORT,
   GANG_CONTROL_PORT,
   CONTRACTS_CONTROL_PORT,
+  BUDGET_CONTROL_PORT,
   NukeStatus,
   PservStatus,
   ShareStatus,
@@ -40,6 +41,7 @@ import {
   BudgetStatus,
   StocksStatus,
   CasinoStatus,
+  HomeStatus,
   Command,
 } from "/types/ports";
 
@@ -315,6 +317,46 @@ export function forceGangEquipmentBuy(): void {
 export function forceContractAttempt(host: string, file: string): void {
   if (!commandPort) return;
   commandPort.write(JSON.stringify({ tool: "contracts", action: "force-contract-attempt", contractHost: host, contractFile: file }));
+}
+
+/**
+ * Rush a budget bucket — 100% of income goes to this bucket.
+ */
+export function rushBudgetBucket(bucket: string): void {
+  if (!commandPort) return;
+  commandPort.write(JSON.stringify({ tool: "budget", action: "rush-budget-bucket", budgetBucket: bucket }));
+}
+
+/**
+ * Cancel budget rush mode.
+ */
+export function cancelBudgetRush(): void {
+  if (!commandPort) return;
+  commandPort.write(JSON.stringify({ tool: "budget", action: "cancel-budget-rush" }));
+}
+
+/**
+ * Update weight for a budget bucket.
+ */
+export function updateBudgetWeight(bucket: string, weight: number): void {
+  if (!commandPort) return;
+  commandPort.write(JSON.stringify({ tool: "budget", action: "update-budget-weight", budgetBucket: bucket, budgetWeight: weight }));
+}
+
+/**
+ * Reset all budget weights to defaults.
+ */
+export function resetBudgetWeights(): void {
+  if (!commandPort) return;
+  commandPort.write(JSON.stringify({ tool: "budget", action: "reset-budget-weights" }));
+}
+
+/**
+ * Toggle home server auto-buy mode.
+ */
+export function toggleHomeAutoBuy(enabled: boolean): void {
+  if (!commandPort) return;
+  commandPort.write(JSON.stringify({ tool: "home", action: "toggle-home-autobuy", homeAutoBuy: enabled }));
 }
 
 /**
@@ -659,6 +701,38 @@ function executeCommand(ns: NS, cmd: Command): void {
         }
       }
       break;
+    case "rush-budget-bucket":
+      {
+        const budgetCtrl = ns.getPortHandle(BUDGET_CONTROL_PORT);
+        budgetCtrl.write(JSON.stringify({ action: "rush", bucket: cmd.budgetBucket }));
+        ns.toast(`Budget: rushing ${cmd.budgetBucket}`, "info", 2000);
+      }
+      break;
+    case "cancel-budget-rush":
+      {
+        const budgetCtrl = ns.getPortHandle(BUDGET_CONTROL_PORT);
+        budgetCtrl.write(JSON.stringify({ action: "cancel-rush", bucket: "" }));
+        ns.toast("Budget: rush cancelled", "info", 2000);
+      }
+      break;
+    case "update-budget-weight":
+      {
+        const budgetCtrl = ns.getPortHandle(BUDGET_CONTROL_PORT);
+        budgetCtrl.write(JSON.stringify({ action: "update-weight", bucket: cmd.budgetBucket, weight: cmd.budgetWeight }));
+        ns.toast(`Budget: ${cmd.budgetBucket} weight → ${cmd.budgetWeight}`, "info", 2000);
+      }
+      break;
+    case "reset-budget-weights":
+      {
+        const budgetCtrl = ns.getPortHandle(BUDGET_CONTROL_PORT);
+        budgetCtrl.write(JSON.stringify({ action: "reset-weights", bucket: "" }));
+        ns.toast("Budget: weights reset to defaults", "info", 2000);
+      }
+      break;
+    case "toggle-home-autobuy":
+      setConfigValue(ns, "home", "autoBuy", cmd.homeAutoBuy ? "true" : "false");
+      ns.toast(`Home: ${cmd.homeAutoBuy ? "auto-buy ON" : "monitor only"}`, "info", 2000);
+      break;
   }
 }
 
@@ -715,6 +789,7 @@ const uiState: UIState = {
     budget: {},
     stocks: {},
     casino: {},
+    home: {},
   },
 };
 
@@ -828,10 +903,11 @@ interface CachedData {
   budgetStatus: BudgetStatus | null;
   stocksStatus: StocksStatus | null;
   casinoStatus: CasinoStatus | null;
+  homeStatus: HomeStatus | null;
 }
 
 const cachedData: CachedData = {
-  pids: { nuke: 0, pserv: 0, share: 0, rep: 0, hack: 0, darkweb: 0, work: 0, faction: 0, infiltration: 0, gang: 0, augments: 0, advisor: 0, contracts: 0, budget: 0, stocks: 0, casino: 0 },
+  pids: { nuke: 0, pserv: 0, share: 0, rep: 0, hack: 0, darkweb: 0, work: 0, faction: 0, infiltration: 0, gang: 0, augments: 0, advisor: 0, contracts: 0, budget: 0, stocks: 0, casino: 0, home: 0 },
   nukeStatus: null,
   pservStatus: null,
   shareStatus: null,
@@ -854,6 +930,7 @@ const cachedData: CachedData = {
   budgetStatus: null,
   stocksStatus: null,
   casinoStatus: null,
+  homeStatus: null,
 };
 
 // === PORT-BASED STATUS READING ===
@@ -925,6 +1002,8 @@ export function readStatusPorts(ns: NS): void {
   cachedData.budgetStatus = peekStatus<BudgetStatus>(ns, STATUS_PORTS.budget, STALE_THRESHOLD_MS);
 
   cachedData.stocksStatus = peekStatus<StocksStatus>(ns, STATUS_PORTS.stocks, STALE_THRESHOLD_MS);
+
+  cachedData.homeStatus = peekStatus<HomeStatus>(ns, STATUS_PORTS.home, STALE_THRESHOLD_MS);
 }
 
 // === TOOL CONTROL ===
@@ -959,6 +1038,7 @@ function clearToolStatus(tool: ToolName): void {
     case "budget": cachedData.budgetStatus = null; break;
     case "stocks": cachedData.stocksStatus = null; break;
     case "casino": cachedData.casinoStatus = null; break;
+    case "home": cachedData.homeStatus = null; break;
   }
 }
 
@@ -1130,5 +1210,6 @@ export function getStateSnapshot(): DashboardState {
     budgetStatus: cachedData.budgetStatus,
     stocksStatus: cachedData.stocksStatus,
     casinoStatus: cachedData.casinoStatus,
+    homeStatus: cachedData.homeStatus,
   };
 }

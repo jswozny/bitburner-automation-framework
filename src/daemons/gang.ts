@@ -44,8 +44,7 @@ import {
   type AscensionResult,
   type TerritoryContext,
 } from "/controllers/gang";
-import { requestBudget, notifyPurchase, getBudgetAllocation } from "/lib/budget";
-import { estimateGangEquipmentROI } from "/controllers/budget";
+import { getBudgetBalance, notifyPurchase, signalDone } from "/lib/budget";
 
 // === TIER DEFINITIONS ===
 
@@ -810,41 +809,21 @@ async function runFullMode(
       }
     }
 
-    // 2. EQUIPMENT PURCHASING (after ascension, scaled with income)
+    // 2. EQUIPMENT PURCHASING (after ascension, budget-constrained)
     let availableUpgrades = 0;
     const purchasableEquipment: { member: string; name: string; cost: number; type: string }[] = [];
     const isForceBuy = pendingForceBuy;
     const shouldBuy = config.purchasingEnabled || isForceBuy;
     if (shouldBuy) {
       const equipNames = ns.gang.getEquipmentNames();
-      const player = ns.getPlayer();
 
-      // Scale spending cap with income (or Infinity for force-buy)
+      // Spending cap: budget balance (or Infinity for force-buy)
       let spendingCap: number;
       if (isForceBuy) {
         spendingCap = Infinity;
         pendingForceBuy = false;
       } else {
-        const incomePerSec = info.moneyGainRate * 5;
-        const incomeBased = incomePerSec * 60; // 1 minute of income
-        const percentBased = player.money * 0.1;
-        spendingCap = Math.max(incomeBased, percentBased);
-        // At high income, unlock more aggressive spending
-        if (incomePerSec > 1_000_000) {
-          spendingCap = Math.max(spendingCap, player.money * 0.5);
-        }
-
-        // Constrain by budget allocation (unless force-buy)
-        const gangAlloc = getBudgetAllocation(ns, "gang");
-        if (gangAlloc !== null) {
-          spendingCap = Math.min(spendingCap, gangAlloc.allocated);
-        }
-      }
-
-      // Request budget for estimated equipment spend
-      if (!isForceBuy) {
-        const roi = estimateGangEquipmentROI(memberNames.length, info.moneyGainRate * 5);
-        requestBudget(ns, "gang", spendingCap, "gang equipment", roi);
+        spendingCap = getBudgetBalance(ns, "gang");
       }
 
       for (const name of memberNames) {

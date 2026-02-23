@@ -180,7 +180,7 @@ function StocksDetailPanel({
         </span>
         <span style={styles.dim}>|</span>
         <span>
-          Budget: <span style={styles.statValue}>{status.budgetAllocationFormatted}</span>
+          Capital: <span style={styles.statValue}>{status.tradingCapitalFormatted}</span>
         </span>
         <span style={styles.dim}>|</span>
         <span style={styles.dim}>Tick #{status.tickCount}</span>

@@ -1,234 +1,190 @@
 /**
  * Budget Controller (Pure Logic)
  *
- * ROI estimation, allocation algorithm, tier sorting.
+ * Income-splitting algorithm: tracks income deltas, splits incoming money
+ * across weighted buckets, each with a running balance consumers spend from.
+ *
  * Zero NS imports — safe to import without RAM cost.
  *
- * Import with: import { computeAllocations, ... } from "/controllers/budget";
+ * Import with: import { splitIncome, ... } from "/controllers/budget";
  */
 
-import { BucketAllocation, BudgetStatus } from "/types/ports";
+// === DEFAULT WEIGHTS ===
 
-// === BUCKET TIER DEFINITIONS ===
-
-/** Tier assignments for known buckets. */
-const BUCKET_TIERS: Record<string, 1 | 2 | 3> = {
-  programs: 1,       // TOR, BruteSSH, etc.
-  "wse-access": 1,   // WSE + TIX API access
-  stocks: 2,
-  servers: 2,
-  hacknet: 2,
-  gang: 2,
-  donations: 3,
+export const DEFAULT_WEIGHTS: Record<string, number> = {
+  stocks: 50,
+  servers: 25,
+  gang: 15,
+  home: 10,
+  hacknet: 10,
+  programs: 5,
+  "wse-access": 5,
 };
 
-/** Get the tier for a bucket, defaulting to 2. */
-export function getBucketTier(bucket: string): 1 | 2 | 3 {
-  return BUCKET_TIERS[bucket] ?? 2;
+// === PERSISTED STATE ===
+
+export interface PersistedBudgetState {
+  balances: Record<string, number>;
+  lifetimeSpent: Record<string, number>;
+  weights: Record<string, number>;
+  activeFlags: Record<string, boolean>;
+  caps: Record<string, number | null>;
+  rushBucket: string | null;
 }
 
-// === SPEND REQUEST ===
+export function createDefaultPersistedState(): PersistedBudgetState {
+  const balances: Record<string, number> = {};
+  const lifetimeSpent: Record<string, number> = {};
+  const activeFlags: Record<string, boolean> = {};
+  const caps: Record<string, number | null> = {};
 
-export interface SpendRequest {
-  bucket: string;
-  amount: number;
-  estimatedROI?: number;
-  reason: string;
-  timestamp: number;
-}
-
-export interface PurchaseNotification {
-  bucket: string;
-  amount: number;
-  reason: string;
-  timestamp: number;
-}
-
-// === ALLOCATION LOGIC ===
-
-/** Emergency reserve: keep at least this fraction of cash unallocated. */
-const RESERVE_FRACTION = 0.01;
-const MIN_RESERVE = 100_000; // $100k
-
-export function computeReserve(totalCash: number): number {
-  return Math.max(MIN_RESERVE, totalCash * RESERVE_FRACTION);
-}
-
-/**
- * Compute per-bucket allocations from pending requests.
- *
- * Algorithm:
- * 1. Subtract reserve from available cash
- * 2. Fund Tier 1 first (sorted by ROI descending)
- * 3. Remaining goes to Tier 2 (proportional to ROI)
- * 4. Any leftover goes to Tier 3
- */
-export function computeAllocations(
-  totalCash: number,
-  requests: SpendRequest[],
-  weights: Record<string, number> = {},
-): BudgetStatus {
-  const reserve = computeReserve(totalCash);
-  let available = Math.max(0, totalCash - reserve);
-
-  // Group requests by bucket
-  const bucketRequests = new Map<string, SpendRequest[]>();
-  for (const req of requests) {
-    const list = bucketRequests.get(req.bucket) || [];
-    list.push(req);
-    bucketRequests.set(req.bucket, list);
-  }
-
-  // Compute per-bucket demand and best ROI
-  const bucketDemand = new Map<string, { total: number; bestROI: number; count: number }>();
-  for (const [bucket, reqs] of bucketRequests) {
-    let total = 0;
-    let bestROI = 0;
-    for (const r of reqs) {
-      total += r.amount;
-      if (r.estimatedROI !== undefined && r.estimatedROI > bestROI) {
-        bestROI = r.estimatedROI;
-      }
-    }
-    bucketDemand.set(bucket, { total, bestROI, count: reqs.length });
-  }
-
-  const allocations: Record<string, BucketAllocation> = {};
-
-  // Initialize all known buckets
-  const allBuckets = new Set([...bucketDemand.keys()]);
-  for (const bucket of allBuckets) {
-    const tier = getBucketTier(bucket);
-    const demand = bucketDemand.get(bucket);
-    allocations[bucket] = {
-      bucket,
-      tier,
-      allocated: 0,
-      weight: tier === 2 ? (weights[bucket] ?? 0) : 0,
-      estimatedROI: demand?.bestROI ?? 0,
-      pendingRequests: demand?.count ?? 0,
-    };
-  }
-
-  // Phase 1: Fund Tier 1
-  const tier1 = [...allBuckets]
-    .filter(b => getBucketTier(b) === 1)
-    .sort((a, b) => (bucketDemand.get(b)?.bestROI ?? 0) - (bucketDemand.get(a)?.bestROI ?? 0));
-
-  for (const bucket of tier1) {
-    const demand = bucketDemand.get(bucket);
-    if (!demand) continue;
-    const grant = Math.min(demand.total, available);
-    allocations[bucket].allocated = grant;
-    available -= grant;
-  }
-
-  // Phase 2: Fund Tier 2 by configured weight
-  const tier2 = [...allBuckets].filter(b => getBucketTier(b) === 2);
-  const tier2Active = tier2
-    .filter(b => (bucketDemand.get(b)?.count ?? 0) > 0 && (weights[b] ?? 0) > 0)
-    .map(b => ({ bucket: b, demand: bucketDemand.get(b)!, weight: weights[b] ?? 0 }));
-  const totalWeight = tier2Active.reduce((sum, d) => sum + d.weight, 0);
-
-  if (totalWeight > 0 && available > 0) {
-    for (const { bucket, demand, weight } of tier2Active) {
-      const share = weight / totalWeight;
-      const grant = Math.min(demand.total, available * share);
-      allocations[bucket].allocated = grant;
-      available -= grant;
-    }
-  }
-
-  // Phase 3: Fund Tier 3 with leftovers
-  const tier3 = [...allBuckets]
-    .filter(b => getBucketTier(b) === 3)
-    .sort((a, b) => (bucketDemand.get(b)?.bestROI ?? 0) - (bucketDemand.get(a)?.bestROI ?? 0));
-
-  for (const bucket of tier3) {
-    const demand = bucketDemand.get(bucket);
-    if (!demand) continue;
-    const grant = Math.min(demand.total, available);
-    allocations[bucket].allocated = grant;
-    available -= grant;
-  }
-
-  // Compute tier breakdown
-  const tierBreakdown = { tier1: 0, tier2: 0, tier3: 0 };
-  for (const alloc of Object.values(allocations)) {
-    if (alloc.tier === 1) tierBreakdown.tier1 += alloc.allocated;
-    else if (alloc.tier === 2) tierBreakdown.tier2 += alloc.allocated;
-    else tierBreakdown.tier3 += alloc.allocated;
+  for (const bucket of Object.keys(DEFAULT_WEIGHTS)) {
+    balances[bucket] = 0;
+    lifetimeSpent[bucket] = 0;
+    activeFlags[bucket] = true;
+    caps[bucket] = null;
   }
 
   return {
-    totalCash,
-    totalCashFormatted: "",  // Filled by daemon (needs ns.formatNumber)
-    reserve,
-    reserveFormatted: "",
-    allocations,
-    tierBreakdown,
-    lastUpdated: Date.now(),
+    balances,
+    lifetimeSpent,
+    weights: { ...DEFAULT_WEIGHTS },
+    activeFlags,
+    caps,
+    rushBucket: null,
   };
 }
 
-// === FALLBACK ROI HEURISTICS ===
+// === INCOME CALCULATION ===
 
 /**
- * Estimate ROI for a program purchase (unlocks hacking capabilities).
- * Programs have very high ROI early game.
+ * Calculate income delta for this tick.
+ * income = (currentCash - prevCash) + purchasesThisTick
+ * Purchases add back what was spent so we see gross income, not net.
  */
-export function estimateProgramROI(programName: string, currentTools: number): number {
-  // Each new port opener dramatically increases hack target pool
-  const portOpeners = ["BruteSSH.exe", "FTPCrack.exe", "relaySMTP.exe", "HTTPWorm.exe", "SQLInject.exe"];
-  if (portOpeners.includes(programName)) {
-    // Higher ROI when you have fewer tools (each new tool opens more servers)
-    return 100 - currentTools * 15;
+export function calculateIncome(
+  prevCash: number,
+  currentCash: number,
+  purchasesThisTick: number,
+): number {
+  const delta = currentCash - prevCash + purchasesThisTick;
+  // Only distribute positive income (don't claw back on spending)
+  return Math.max(0, delta);
+}
+
+/**
+ * Detect augmentation reset: cash drops >90% between ticks.
+ */
+export function isAugReset(prevCash: number, currentCash: number): boolean {
+  if (prevCash <= 0) return false;
+  return currentCash < prevCash * 0.1;
+}
+
+// === EFFECTIVE WEIGHTS ===
+
+/**
+ * Compute effective weights considering active flags and rush mode.
+ * Rush mode: 100% to rushed bucket, 0% to everything else.
+ * Normal mode: distribute among active buckets by weight.
+ */
+export function computeEffectiveWeights(
+  weights: Record<string, number>,
+  activeFlags: Record<string, boolean>,
+  rushBucket: string | null,
+): Record<string, number> {
+  const effective: Record<string, number> = {};
+
+  if (rushBucket && activeFlags[rushBucket]) {
+    for (const bucket of Object.keys(weights)) {
+      effective[bucket] = bucket === rushBucket ? 1 : 0;
+    }
+    return effective;
   }
-  // DeepscanV1/V2, AutoLink, ServerProfiler — nice but not income-generating
-  return 5;
+
+  let totalWeight = 0;
+  for (const bucket of Object.keys(weights)) {
+    if (activeFlags[bucket]) {
+      totalWeight += weights[bucket];
+    }
+  }
+
+  for (const bucket of Object.keys(weights)) {
+    if (activeFlags[bucket] && totalWeight > 0) {
+      effective[bucket] = weights[bucket] / totalWeight;
+    } else {
+      effective[bucket] = 0;
+    }
+  }
+
+  return effective;
 }
 
-/**
- * Estimate ROI for a server upgrade (more RAM = more hack threads).
- */
-export function estimateServerROI(currentRam: number, nextRam: number, incomePerSec: number): number {
-  if (currentRam <= 0 || incomePerSec <= 0) return 1;
-  // Rough: doubling RAM roughly doubles hack capacity
-  const multiplier = nextRam / currentRam;
-  return multiplier * 10;
-}
+// === INCOME SPLITTING ===
 
 /**
- * Estimate ROI for stock investment based on historical return rate.
+ * Split income across buckets by effective weight.
+ * Returns per-bucket deltas to add to balances.
  */
-export function estimateStockROI(portfolioValue: number, profitPerSec: number): number {
-  if (portfolioValue <= 0) return 0.5;
-  // Annualized return rate, scaled down
-  return Math.max(0.1, (profitPerSec / portfolioValue) * 100);
+export function splitIncome(
+  income: number,
+  weights: Record<string, number>,
+  activeFlags: Record<string, boolean>,
+  rushBucket: string | null,
+): Record<string, number> {
+  const effective = computeEffectiveWeights(weights, activeFlags, rushBucket);
+  const deltas: Record<string, number> = {};
+
+  for (const bucket of Object.keys(weights)) {
+    deltas[bucket] = income * (effective[bucket] ?? 0);
+  }
+
+  return deltas;
 }
 
-/**
- * Estimate ROI for gang equipment purchases.
- * More members and higher income indicate the gang is productive and
- * equipment investments compound across all members.
- */
-export function estimateGangEquipmentROI(memberCount: number, incomePerSec: number): number {
-  if (memberCount <= 0) return 1;
-  // Equipment benefits all members, so ROI scales with member count.
-  // Income indicates how productive the gang is (higher = better investment).
-  const memberFactor = Math.min(memberCount / 12, 1) * 10;
-  const incomeFactor = incomePerSec > 0 ? Math.log10(Math.max(incomePerSec, 1)) : 0;
-  return Math.max(1, memberFactor + incomeFactor);
-}
+// === COMPLETION HANDLING ===
 
 /**
- * Estimate ROI for NeuroFlux Governor donations.
- * Models NFG value (~$1B per level equivalent) vs total cost (donation + purchase).
+ * Handle a bucket signaling "done". Deactivates the bucket and redistributes
+ * its remaining balance proportionally to other active buckets.
  */
-export function estimateDonationROI(nfgLevels: number, donationCost: number, purchaseCost: number): number {
-  const totalCost = donationCost + purchaseCost;
-  if (totalCost <= 0 || nfgLevels <= 0) return 0.1;
-  // Each NFG level gives ~1% boost to all stats, valued at roughly $1B
-  const estimatedValue = nfgLevels * 1e9;
-  return Math.max(0.1, (estimatedValue / totalCost) * 10);
+export function handleCompletion(
+  bucket: string,
+  balances: Record<string, number>,
+  weights: Record<string, number>,
+  activeFlags: Record<string, boolean>,
+): void {
+  activeFlags[bucket] = false;
+  const surplus = balances[bucket];
+  balances[bucket] = 0;
+
+  if (surplus <= 0) return;
+
+  // Find other active buckets and redistribute proportionally
+  let totalActiveWeight = 0;
+  for (const b of Object.keys(weights)) {
+    if (b !== bucket && activeFlags[b]) {
+      totalActiveWeight += weights[b];
+    }
+  }
+
+  if (totalActiveWeight <= 0) return;
+
+  for (const b of Object.keys(weights)) {
+    if (b !== bucket && activeFlags[b]) {
+      balances[b] += surplus * (weights[b] / totalActiveWeight);
+    }
+  }
+}
+
+// === CAP CHECKING ===
+
+/**
+ * Check if a bucket has reached its reported cost cap.
+ */
+export function isBucketCapReached(
+  lifetimeSpent: number,
+  cap: number | null,
+): boolean {
+  if (cap === null) return false;
+  return lifetimeSpent >= cap;
 }

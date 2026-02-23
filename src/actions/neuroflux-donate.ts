@@ -19,7 +19,7 @@ import {
   DONATION_FAVOR_THRESHOLD,
   NFGDonatePurchasePlan,
 } from "/controllers/factions";
-import { canSpend, notifyPurchase } from "/lib/budget";
+// Augments/donations are outside the budget system entirely
 
 // === TYPES ===
 
@@ -257,11 +257,6 @@ export async function main(ns: NS): Promise<void> {
     return;
   }
 
-  // Budget warning (proceed anyway since --confirm was passed)
-  if (!canSpend(ns, "donations", plan.totalCost)) {
-    ns.tprint(`${C.yellow}WARNING: Exceeds budget allocation for donations. Proceeding due to --confirm.${C.reset}`);
-  }
-
   ns.tprint(`${C.cyan}Executing donate & buy plan...${C.reset}`);
   ns.tprint("");
 
@@ -286,11 +281,6 @@ export async function main(ns: NS): Promise<void> {
   ns.tprint(
     `${C.dim}Donated: $${ns.formatNumber(result.donationsSpent)} | Purchased: $${ns.formatNumber(result.purchasesSpent)} | Total: $${ns.formatNumber(result.totalSpent)}${C.reset}`
   );
-
-  // Notify budget daemon of completed spending
-  if (result.totalSpent > 0) {
-    notifyPurchase(ns, "donations", result.totalSpent, `NFG x${result.purchased} donate+buy`);
-  }
 
   if (result.purchased > 0) {
     ns.tprint("");

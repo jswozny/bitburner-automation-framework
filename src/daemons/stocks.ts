@@ -18,7 +18,7 @@ import { NS } from "@ns";
 import { COLORS } from "/lib/utils";
 import { publishStatus, peekStatus } from "/lib/ports";
 import { writeDefaultConfig, getConfigNumber, getConfigBool } from "/lib/config";
-import { requestBudget, notifyPurchase, canSpend } from "/lib/budget";
+import { getBudgetBalance, notifyPurchase, canAfford, signalDone } from "/lib/budget";
 import {
   STATUS_PORTS,
   STOCKS_CONTROL_PORT,
@@ -209,19 +209,15 @@ function tryPurchaseAPIs(ns: NS): { hasWSE: boolean; hasTIX: boolean; has4S: boo
   // Purchase WSE Account ($200M)
   if (!hasWSE) {
     const cost = 200_000_000;
-    if (money >= cost) {
-      if (canSpend(ns, "wse-access", cost)) {
-        try {
-          if (ns.stock.purchaseWseAccount()) {
-            hasWSE = true;
-            notifyPurchase(ns, "wse-access", cost, "WSE Account");
-            ns.print(`  ${C.green}PURCHASED${C.reset} WSE Account`);
-          }
-        } catch {
-          // Not available in this bitnode
+    if (money >= cost && canAfford(ns, "wse-access", cost)) {
+      try {
+        if (ns.stock.purchaseWseAccount()) {
+          hasWSE = true;
+          notifyPurchase(ns, "wse-access", cost, "WSE Account");
+          ns.print(`  ${C.green}PURCHASED${C.reset} WSE Account`);
         }
-      } else {
-        requestBudget(ns, "wse-access", cost, "WSE Account", 50);
+      } catch {
+        // Not available in this bitnode
       }
     }
   }
@@ -229,41 +225,38 @@ function tryPurchaseAPIs(ns: NS): { hasWSE: boolean; hasTIX: boolean; has4S: boo
   // Purchase TIX API ($5B)
   if (hasWSE && !hasTIX) {
     const cost = 5_000_000_000;
-    if (money >= cost) {
-      if (canSpend(ns, "wse-access", cost)) {
-        try {
-          if (ns.stock.purchaseTixApi()) {
-            hasTIX = true;
-            notifyPurchase(ns, "wse-access", cost, "TIX API");
-            ns.print(`  ${C.green}PURCHASED${C.reset} TIX API`);
-          }
-        } catch {
-          // Not available
+    if (money >= cost && canAfford(ns, "wse-access", cost)) {
+      try {
+        if (ns.stock.purchaseTixApi()) {
+          hasTIX = true;
+          notifyPurchase(ns, "wse-access", cost, "TIX API");
+          ns.print(`  ${C.green}PURCHASED${C.reset} TIX API`);
         }
-      } else {
-        requestBudget(ns, "wse-access", cost, "TIX API", 50);
+      } catch {
+        // Not available
       }
     }
   }
 
-  // Purchase 4S Market Data TIX API ($25B) — Tier 2 priority
+  // Purchase 4S Market Data TIX API ($25B)
   if (hasTIX && !has4S) {
     const cost = 25_000_000_000;
-    if (money >= cost) {
-      if (canSpend(ns, "stocks", cost)) {
-        try {
-          if (ns.stock.purchase4SMarketDataTixApi()) {
-            has4S = true;
-            notifyPurchase(ns, "stocks", cost, "4S Market Data TIX API");
-            ns.print(`  ${C.green}PURCHASED${C.reset} 4S Market Data TIX API`);
-          }
-        } catch {
-          // Not available
+    if (money >= cost && canAfford(ns, "wse-access", cost)) {
+      try {
+        if (ns.stock.purchase4SMarketDataTixApi()) {
+          has4S = true;
+          notifyPurchase(ns, "wse-access", cost, "4S Market Data TIX API");
+          ns.print(`  ${C.green}PURCHASED${C.reset} 4S Market Data TIX API`);
         }
-      } else {
-        requestBudget(ns, "stocks", cost, "4S Market Data TIX API", 25);
+      } catch {
+        // Not available
       }
     }
+  }
+
+  // Signal done for wse-access once all APIs owned
+  if (hasWSE && hasTIX && has4S) {
+    signalDone(ns, "wse-access");
   }
 
   return { hasWSE, hasTIX, has4S };
@@ -323,7 +316,7 @@ async function daemon(ns: NS, maxTier: number, tierName: string): Promise<void> 
       realizedProfit: 0, realizedProfitFormatted: "$0",
       profitPerSec: 0, profitPerSecFormatted: "$0/s",
       longPositions: 0, shortPositions: 0, positions: [],
-      signals: [], budgetAllocation: 0, budgetAllocationFormatted: "$0",
+      signals: [], tradingCapital: 0, tradingCapitalFormatted: "$0",
       smartMode: false, pollInterval: 0, tickCount: 0,
     };
     publishStatus(ns, STATUS_PORTS.stocks, disabledStatus);
@@ -371,7 +364,7 @@ async function daemon(ns: NS, maxTier: number, tierName: string): Promise<void> 
         realizedProfit: 0, realizedProfitFormatted: "$0",
         profitPerSec: 0, profitPerSecFormatted: "$0/s",
         longPositions: 0, shortPositions: 0, positions: [],
-        signals: [], budgetAllocation: 0, budgetAllocationFormatted: "$0",
+        signals: [], tradingCapital: 0, tradingCapitalFormatted: "$0",
         smartMode, pollInterval, tickCount,
       };
       publishStatus(ns, STATUS_PORTS.stocks, waitStatus);
@@ -419,17 +412,10 @@ async function daemon(ns: NS, maxTier: number, tierName: string): Promise<void> 
     // Get hack targets for smart mode
     const hackTargets = smartMode ? getHackTargets(ns) : new Map<string, string>();
 
-    // Budget allocation
-    let budgetAllocation = Infinity;
+    // Budget: use balance as trading capital limit
+    let tradingCapital = Infinity;
     if (canTrade) {
-      const budgetCheck = canSpend(ns, "stocks", 0);
-      // Read actual allocation from budget status
-      const budgetStatus = peekStatus<any>(ns, STATUS_PORTS.budget, 30_000);
-      if (budgetStatus && budgetStatus.allocations && budgetStatus.allocations.stocks) {
-        budgetAllocation = budgetStatus.allocations.stocks.allocated;
-      }
-      // Request budget for stocks bucket
-      requestBudget(ns, "stocks", ns.getPlayer().money * 0.3, "stock investment", 10);
+      tradingCapital = getBudgetBalance(ns, "stocks");
     }
 
     const positions: StockPosition[] = [];
@@ -641,7 +627,7 @@ async function daemon(ns: NS, maxTier: number, tierName: string): Promise<void> 
       }
 
       const maxShares = ns.stock.getMaxShares(cand.sym);
-      const availCash = Math.min(ns.getPlayer().money * 0.5, budgetAllocation);
+      const availCash = Math.min(ns.getPlayer().money * 0.5, tradingCapital);
       const sharesToBuy = calculatePositionSize(cand.strength, availCash, maxShares, cand.price);
       if (sharesToBuy <= 0) continue;
 
@@ -712,8 +698,8 @@ async function daemon(ns: NS, maxTier: number, tierName: string): Promise<void> 
       shortPositions: shortCount,
       positions: positions.sort((a, b) => Math.abs(b.profit) - Math.abs(a.profit)),
       signals: signals.slice(0, 10),
-      budgetAllocation: budgetAllocation === Infinity ? -1 : budgetAllocation,
-      budgetAllocationFormatted: budgetAllocation === Infinity ? "unlimited" : ns.formatNumber(budgetAllocation),
+      tradingCapital: tradingCapital === Infinity ? -1 : tradingCapital,
+      tradingCapitalFormatted: tradingCapital === Infinity ? "unlimited" : ns.formatNumber(tradingCapital),
       smartMode,
       pollInterval,
       tickCount,

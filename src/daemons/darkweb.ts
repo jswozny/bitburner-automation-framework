@@ -18,8 +18,7 @@ import { analyzeDarkwebPrograms, getDarkwebStatus, purchaseTorRouter, formatMone
 import { publishStatus } from "/lib/ports";
 import { STATUS_PORTS, DarkwebStatus } from "/types/ports";
 import { writeDefaultConfig, getConfigNumber, getConfigBool } from "/lib/config";
-import { canSpend, requestBudget, notifyPurchase } from "/lib/budget";
-import { estimateProgramROI } from "/controllers/budget";
+import { canAfford, notifyPurchase, reportCap, signalDone } from "/lib/budget";
 
 /**
  * Build a DarkwebStatus object with formatted values for the dashboard.
@@ -153,16 +152,8 @@ export async function main(ns: NS): Promise<void> {
     ns.clearLog();
 
     // Budget check closure: gates purchases through the budget system
-    const ownedCount = (() => {
-      try { return ns.singularity.getDarkwebPrograms().filter(p => ns.fileExists(p, "home")).length; } catch { return 0; }
-    })();
-    const budgetCheck = (cost: number, name: string): boolean => {
-      if (!canSpend(ns, "programs", cost)) {
-        const roi = estimateProgramROI(name, ownedCount);
-        requestBudget(ns, "programs", cost, name, roi);
-        return false;
-      }
-      return true;
+    const budgetCheck = (cost: number, _name: string): boolean => {
+      return canAfford(ns, "programs", cost);
     };
 
     // Try to buy TOR if we don't have it
@@ -199,12 +190,12 @@ export async function main(ns: NS): Promise<void> {
       }
     }
 
-    // Register budget requests for programs we still need
+    // Report remaining cost cap to budget daemon
     if (hasTor) {
       const status = getDarkwebStatus(ns);
-      for (const p of status.cannotAfford) {
-        const roi = estimateProgramROI(p.name, ownedCount + purchasedThisCycle.length);
-        requestBudget(ns, "programs", p.cost, p.name, roi);
+      const remainingCost = status.cannotAfford.reduce((sum, p) => sum + p.cost, 0);
+      if (remainingCost > 0) {
+        reportCap(ns, "programs", remainingCost);
       }
     }
 
@@ -219,6 +210,7 @@ export async function main(ns: NS): Promise<void> {
 
     // Exit if all programs are owned
     if (darkwebStatus.allOwned) {
+      signalDone(ns, "programs");
       ns.tprint(`${COLORS.green}All darkweb programs owned - exiting.${COLORS.reset}`);
       return;
     }

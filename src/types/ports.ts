@@ -29,6 +29,7 @@ export const STATUS_PORTS = {
   budget: 22,
   stocks: 24,
   casino: 26,
+  home: 27,
 } as const;
 
 export const GANG_CONTROL_PORT = 15;
@@ -41,7 +42,7 @@ export const COMMAND_PORT = 20;
 
 // === TOOL NAMES ===
 
-export type ToolName = "nuke" | "pserv" | "share" | "rep" | "hack" | "darkweb" | "work" | "faction" | "infiltration" | "gang" | "augments" | "advisor" | "contracts" | "budget" | "stocks" | "casino";
+export type ToolName = "nuke" | "pserv" | "share" | "rep" | "hack" | "darkweb" | "work" | "faction" | "infiltration" | "gang" | "augments" | "advisor" | "contracts" | "budget" | "stocks" | "casino" | "home";
 
 // === TOOL SCRIPTS (daemon paths) ===
 
@@ -62,6 +63,7 @@ export const TOOL_SCRIPTS: Record<ToolName, string> = {
   budget: "daemons/budget.js",
   stocks: "daemons/stocks.js",
   casino: "casino.js",
+  home: "daemons/home.js",
 };
 
 // === PRIORITY CONSTANTS ===
@@ -89,7 +91,7 @@ export interface QueueEntry {
 
 export interface Command {
   tool: ToolName;
-  action: "start" | "stop" | "open-tail" | "run-script" | "start-faction-work" | "set-focus" | "start-training" | "install-augments" | "run-backdoors" | "restart-rep-daemon" | "join-faction" | "restart-faction-daemon" | "restart-hack-daemon" | "restart-share-daemon" | "stop-infiltration" | "kill-infiltration" | "configure-infiltration" | "set-gang-strategy" | "pin-gang-member" | "unpin-gang-member" | "ascend-gang-member" | "toggle-gang-purchases" | "toggle-gang-warfare" | "set-gang-wanted-threshold" | "set-gang-ascension-thresholds" | "set-gang-training-threshold" | "set-gang-grow-target" | "set-gang-grow-respect-reserve" | "set-gang-territory-threshold" | "force-buy-equipment" | "restart-gang-daemon" | "buy-selected-augments" | "claim-focus" | "toggle-pserv-autobuy" | "force-contract-attempt" | "restart-stocks-daemon";
+  action: "start" | "stop" | "open-tail" | "run-script" | "start-faction-work" | "set-focus" | "start-training" | "install-augments" | "run-backdoors" | "restart-rep-daemon" | "join-faction" | "restart-faction-daemon" | "restart-hack-daemon" | "restart-share-daemon" | "stop-infiltration" | "kill-infiltration" | "configure-infiltration" | "set-gang-strategy" | "pin-gang-member" | "unpin-gang-member" | "ascend-gang-member" | "toggle-gang-purchases" | "toggle-gang-warfare" | "set-gang-wanted-threshold" | "set-gang-ascension-thresholds" | "set-gang-training-threshold" | "set-gang-grow-target" | "set-gang-grow-respect-reserve" | "set-gang-territory-threshold" | "force-buy-equipment" | "restart-gang-daemon" | "buy-selected-augments" | "claim-focus" | "toggle-pserv-autobuy" | "force-contract-attempt" | "restart-stocks-daemon" | "rush-budget-bucket" | "cancel-budget-rush" | "update-budget-weight" | "reset-budget-weights" | "toggle-home-autobuy";
   scriptPath?: string;
   scriptArgs?: string[];
   factionName?: string;
@@ -121,6 +123,9 @@ export interface Command {
   pservAutoBuy?: boolean;
   contractHost?: string;
   contractFile?: string;
+  budgetBucket?: string;
+  budgetWeight?: number;
+  homeAutoBuy?: boolean;
 }
 
 // === STATUS INTERFACES ===
@@ -923,23 +928,40 @@ export interface ContractsStatus {
 
 // === BUDGET STATUS ===
 
-export interface BucketAllocation {
+export interface BucketState {
   bucket: string;
-  tier: 1 | 2 | 3;
-  allocated: number;
+  balance: number;
+  balanceFormatted: string;
   weight: number;
-  estimatedROI: number;
-  pendingRequests: number;
+  effectiveWeight: number;
+  lifetimeSpent: number;
+  lifetimeSpentFormatted: string;
+  incomeRate: number;
+  incomeRateFormatted: string;
+  active: boolean;
+  cap: number | null;
+  capFormatted: string | null;
 }
 
 export interface BudgetStatus {
   totalCash: number;
   totalCashFormatted: string;
-  reserve: number;
-  reserveFormatted: string;
-  allocations: Record<string, BucketAllocation>;
-  tierBreakdown: { tier1: number; tier2: number; tier3: number };
+  totalIncomeRate: number;
+  totalIncomeRateFormatted: string;
+  buckets: Record<string, BucketState>;
+  rushBucket: string | null;
   lastUpdated: number;
+}
+
+export type BudgetControlAction = "purchased" | "done" | "report-cap" | "rush" | "cancel-rush" | "update-weight" | "reset-weights";
+
+export interface BudgetControlMessage {
+  action: BudgetControlAction;
+  bucket: string;
+  amount?: number;
+  reason?: string;
+  cap?: number;
+  weight?: number;
 }
 
 // === STOCKS STATUS ===
@@ -996,8 +1018,8 @@ export interface StocksStatus {
   signals: StockSignal[];
 
   // Budget
-  budgetAllocation: number;
-  budgetAllocationFormatted: string;
+  tradingCapital: number;
+  tradingCapitalFormatted: string;
 
   // Config
   smartMode: boolean;
@@ -1012,6 +1034,46 @@ export interface StocksStatus {
 export interface CasinoStatus {
   // Casino has no daemon — this is a placeholder for the type system
   running: boolean;
+}
+
+// === HOME STATUS ===
+
+export interface HomeStatus {
+  // Tier metadata
+  tier: number;
+  tierName: "monitor" | "auto";
+  currentRamUsage: number;
+  nextTierRam: number | null;
+  canUpgrade: boolean;
+  availableFeatures: string[];
+  unavailableFeatures: string[];
+
+  // Home server stats
+  currentRam: number;
+  currentRamFormatted: string;
+  maxRam: number;
+  currentCores: number;
+  maxCores: number;
+
+  // Upgrade info
+  ramUpgradeCost: number | null;
+  ramUpgradeCostFormatted: string | null;
+  ramUpgradeTarget: number | null;
+  ramUpgradeTargetFormatted: string | null;
+  coreUpgradeCost: number | null;
+  coreUpgradeCostFormatted: string | null;
+  ramAtMax: boolean;
+  coresAtMax: boolean;
+  allMaxed: boolean;
+
+  // Auto-buy config
+  autoBuy: boolean;
+
+  // Purchase history
+  ramUpgradesBought: number;
+  coreUpgradesBought: number;
+  totalSpent: number;
+  totalSpentFormatted: string;
 }
 
 // === DASHBOARD STATE ===
@@ -1040,6 +1102,7 @@ export interface DashboardState {
   budgetStatus: BudgetStatus | null;
   stocksStatus: StocksStatus | null;
   casinoStatus: CasinoStatus | null;
+  homeStatus: HomeStatus | null;
 }
 
 // === PLUGIN INTERFACE (for dashboard) ===

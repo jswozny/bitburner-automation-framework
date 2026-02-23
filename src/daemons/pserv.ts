@@ -17,8 +17,7 @@ import { getPservStatus, PservConfig, PservCallbacks, runPservCycle } from "/con
 import { publishStatus } from "/lib/ports";
 import { STATUS_PORTS, PservStatus } from "/types/ports";
 import { writeDefaultConfig, getConfigString, getConfigNumber, getConfigBool } from "/lib/config";
-import { requestBudget, notifyPurchase, getBudgetAllocation } from "/lib/budget";
-import { estimateServerROI } from "/controllers/budget";
+import { getBudgetBalance, notifyPurchase, reportCap, signalDone } from "/lib/budget";
 
 /**
  * Build a PservStatus object with formatted values for the dashboard.
@@ -147,31 +146,46 @@ export async function main(ns: NS): Promise<void> {
     };
     ns.clearLog();
 
-    // Budget integration: constrain spending by allocation if daemon is running
+    // Budget integration: constrain spending by balance
     const budgetFn = (): number => {
-      const alloc = getBudgetAllocation(ns, "servers");
+      const balance = getBudgetBalance(ns, "servers");
       const raw = ns.getServerMoneyAvailable("home") - config.reserve;
-      if (alloc === null) return raw; // No budget daemon → unlimited
-      return Math.min(raw, alloc.allocated);
+      return Math.min(raw, balance);
     };
     const onPurchase = (cost: number, desc: string): void => {
       notifyPurchase(ns, "servers", cost, desc);
     };
 
-    // Request budget for the next expected purchase
+    // Report remaining cost cap to budget daemon
     const pstat = getPservStatus(ns);
-    if (pstat.serverCount < pstat.serverCap) {
-      const minCost = ns.getPurchasedServerCost(config.minRam);
-      const roi = estimateServerROI(0, config.minRam, 0);
-      requestBudget(ns, "servers", minCost, `new server @ ${ns.formatRam(config.minRam)}`, roi);
-    } else if (!pstat.allMaxed && pstat.servers.length > 0) {
-      const smallest = pstat.servers.reduce((m, h) => ns.getServerMaxRam(h) < ns.getServerMaxRam(m) ? h : m);
-      const smallestRam = ns.getServerMaxRam(smallest);
-      const nextRam = smallestRam * 2;
-      if (nextRam <= pstat.maxPossibleRam) {
-        const cost = ns.getPurchasedServerUpgradeCost(smallest, nextRam);
-        const roi = estimateServerROI(smallestRam, nextRam, 0);
-        requestBudget(ns, "servers", cost, `upgrade ${smallest} → ${ns.formatRam(nextRam)}`, roi);
+    const isFullyDone = pstat.allMaxed && pstat.serverCount >= pstat.serverCap;
+    if (!isFullyDone) {
+      let totalRemainingCost = 0;
+      if (pstat.serverCount < pstat.serverCap) {
+        // Cost for new servers (buy + upgrade each to max)
+        const slotsLeft = pstat.serverCap - pstat.serverCount;
+        totalRemainingCost += ns.getPurchasedServerCost(config.minRam) * slotsLeft;
+        // Cost to upgrade each new server from minRam to max
+        let ram = config.minRam;
+        while (ram < pstat.maxPossibleRam) {
+          const nextRam = ram * 2;
+          totalRemainingCost += ns.getPurchasedServerUpgradeCost(`${config.prefix}-0`, nextRam) * slotsLeft;
+          ram = nextRam;
+        }
+      }
+      if (pstat.servers.length > 0) {
+        // Cost to max all existing servers
+        for (const hostname of pstat.servers) {
+          let ram = ns.getServerMaxRam(hostname);
+          while (ram < pstat.maxPossibleRam) {
+            const nextRam = ram * 2;
+            totalRemainingCost += ns.getPurchasedServerUpgradeCost(hostname, nextRam);
+            ram = nextRam;
+          }
+        }
+      }
+      if (totalRemainingCost > 0) {
+        reportCap(ns, "servers", totalRemainingCost);
       }
     }
 
@@ -193,6 +207,7 @@ export async function main(ns: NS): Promise<void> {
 
     // Auto-exit when all servers are purchased and maxed
     if (pservStatus.allMaxed && pservStatus.serverCount >= pservStatus.serverCap) {
+      signalDone(ns, "servers");
       ns.tprint("INFO: All personal servers purchased and maxed. Pserv daemon exiting.");
       return;
     }
