@@ -29,6 +29,9 @@ function isScriptRunning(ns: NS, path: string, host: string): boolean {
  * @returns {boolean} 
  */
 function hasNeededSourceFiles(ns: NS, SFArray: Array<number>): boolean {
+  if (SFArray.length === 0) { // No SF requirements
+    return true;
+  }
   for (const SF of SFArray) {
     if (!ns.getResetInfo().sourceFiles.some(s => s.n === SF)) {
       return false;
