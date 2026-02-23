@@ -7,7 +7,7 @@
  * Usage: run scripts/hack/distributed.js [--one-shot] [--interval 200]
  */
 import { NS } from "@ns";
-import { COLORS } from "/lib/utils";
+import { COLORS } from "lib/utils";
 import {
   runDistributedCycle,
   formatDistributedStatus,
