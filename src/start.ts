@@ -12,34 +12,53 @@
 import { NS } from "@ns";
 import { ensureRamAndExec } from "/lib/launcher";
 import { setConfigValue } from "/lib/config";
+import { resetBudgetWeights } from './views/dashboard/state-store';
+import { getNextUpgradeInfo } from './controllers/pserv';
 
 /** Check if any instance of a script is running, regardless of arguments. */
 function isScriptRunning(ns: NS, path: string, host: string): boolean {
   return ns.ps(host).some(p => p.filename === path);
 }
 
+/*
+ * Checks if all the requisite Source Files
+ * listed in the SFArray parameter are available
+ * 
+ * @param {NS} ns 
+ * @param {Array<number>} SFArray 
+ * @returns {boolean} 
+ */
+function hasNeededSourceFiles(ns: NS, SFArray: Array<number>): boolean {
+  for (const SF of SFArray) {
+    if (!ns.Resetinfo().sourceFiles.some(s => s.n === SF)) {
+      return false;
+    }
+  }
+  return true;
+}
+
 /** Core daemons to launch after the dashboard, in priority order. */
-const CORE_SCRIPTS: { path: string; args: (string | number | boolean)[] }[] = [
-  { path: "daemons/nuke.js", args: [] },
-  { path: "daemons/hack.js", args: [] },
-  { path: "daemons/queue.js", args: [] },
-  { path: "daemons/darkweb.js", args: [] },
-  { path: "daemons/work.js", args: [] },
-  { path: "daemons/rep.js", args: [] },
-  { path: "daemons/share.js", args: [] },
+const CORE_SCRIPTS: { path: string; args: (string | number | boolean)[];neededSF?: number[] }[] = [
+  { path: "daemons/nuke.js", args: [], neededSF: [] },
+  { path: "daemons/hack.js", args: [], neededSF: [] },
+  { path: "daemons/queue.js", args: [], neededSF: [] },
+  { path: "daemons/darkweb.js", args: [],neededSF: [4] },
+  { path: "daemons/work.js", args: [],neededSF: [4] },
+  { path: "daemons/rep.js", args: [],neededSF: [4] },
+  { path: "daemons/share.js", args: [],neededSF: [] },
 ];
 
 /** Optional daemons launched if RAM permits. */
 const OPTIONAL_SCRIPTS: { path: string; args: (string | number | boolean)[] }[] = [
-  { path: "daemons/pserv.js", args: [] },
-  { path: "daemons/faction.js", args: [] },
-  { path: "daemons/augments.js", args: [] },
-  { path: "daemons/advisor.js", args: [] },
-  { path: "daemons/contracts.js", args: [] },
-  { path: "daemons/budget.js", args: [] },
-  { path: "daemons/stocks.js", args: [] },
-  { path: "daemons/gang.js", args: [] },
-  { path: "daemons/home.js", args: [] },
+  { path: "daemons/pserv.js", args: [],neededSF: [] },
+  { path: "daemons/faction.js", args: [], neededSF: [4] },
+  { path: "daemons/augments.js", args: [],neededSF: [4] },
+  { path: "daemons/advisor.js", args: [], neededSF: [] },
+  { path: "daemons/contracts.js", args: [], neededSF: [] },
+  { path: "daemons/budget.js", args: [], neededSF: [] },
+  { path: "daemons/stocks.js", args: [], neededSF: [] },
+  { path: "daemons/gang.js", args: [], neededSF: [4] },
+  { path: "daemons/home.js", args: [], neededSF: [4] },
 ];
 
 export async function main(ns: NS): Promise<void> {
