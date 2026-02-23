@@ -31,6 +31,7 @@ import {
 
 const C = COLORS;
 const BALANCE_FILE = "/data/budget-balances.json";
+const DONE_MARKER_FILE = "/data/budget-done.txt";
 const INCOME_HISTORY_SIZE = 15;
 
 /** @ram 4 */
@@ -108,8 +109,10 @@ function handleMessage(ns: NS, msg: BudgetControlMessage): void {
       break;
 
     case "done":
-      ns.print(`  ${C.yellow}DONE${C.reset} ${msg.bucket}: closing bucket`);
-      handleCompletion(msg.bucket, state.balances, state.weights, state.activeFlags);
+      if (state.activeFlags[msg.bucket]) {
+        ns.print(`  ${C.yellow}DONE${C.reset} ${msg.bucket}: closing bucket`);
+        handleCompletion(msg.bucket, state.balances, state.weights, state.activeFlags);
+      }
       break;
 
     case "report-cap":
@@ -156,6 +159,20 @@ function ensureBucket(bucket: string): void {
   }
 }
 
+/** Check persistent done markers written by consumer daemons. */
+function checkDoneMarkers(ns: NS): void {
+  const content = ns.read(DONE_MARKER_FILE);
+  if (!content) return;
+  const doneBuckets = content.split("\n").filter(Boolean);
+  for (const bucket of doneBuckets) {
+    ensureBucket(bucket);
+    if (state.activeFlags[bucket]) {
+      ns.print(`  ${C.yellow}DONE${C.reset} ${bucket}: closing bucket (from marker)`);
+      handleCompletion(bucket, state.balances, state.weights, state.activeFlags);
+    }
+  }
+}
+
 // === INCOME RATE TRACKING ===
 
 function updateIncomeRate(income: number): void {
@@ -192,8 +209,9 @@ async function daemon(ns: NS): Promise<void> {
 
   // eslint-disable-next-line no-constant-condition
   while (true) {
-    // 1. Drain control port
+    // 1. Drain control port + check persistent done markers
     drainControlPort(ns);
+    checkDoneMarkers(ns);
 
     // 2. Get current cash
     const currentCash = ns.getPlayer().money;
@@ -211,6 +229,7 @@ async function daemon(ns: NS): Promise<void> {
       incomeHistory.length = 0;
       purchasesThisTick = 0;
       prevCash = currentCash;
+      ns.write(DONE_MARKER_FILE, "", "w");
       saveState(ns);
       await ns.sleep(interval);
       continue;

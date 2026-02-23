@@ -61,8 +61,21 @@ export function notifyPurchase(
 /**
  * Signal that a bucket is "done" — no more spending needed.
  * The bucket's weight and remaining balance will be redistributed.
+ *
+ * Writes a persistent marker file so the signal survives across
+ * budget daemon restarts and startup ordering issues.
  */
 export function signalDone(ns: NS, bucket: string): void {
+  // Write persistent marker (survives budget daemon restart)
+  const markerFile = "/data/budget-done.txt";
+  const existing = ns.read(markerFile);
+  const doneBuckets = existing ? existing.split("\n").filter(Boolean) : [];
+  if (!doneBuckets.includes(bucket)) {
+    doneBuckets.push(bucket);
+    ns.write(markerFile, doneBuckets.join("\n"), "w");
+  }
+
+  // Also send port message for immediate processing
   const port = ns.getPortHandle(BUDGET_CONTROL_PORT);
   const msg: BudgetControlMessage = {
     action: "done",
