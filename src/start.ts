@@ -30,7 +30,7 @@ function isScriptRunning(ns: NS, path: string, host: string): boolean {
  */
 function hasNeededSourceFiles(ns: NS, SFArray: Array<number>): boolean {
   for (const SF of SFArray) {
-    if (!ns.Resetinfo().sourceFiles.some(s => s.n === SF)) {
+    if (!ns.getResetInfo().sourceFiles.some(s => s.n === SF)) {
       return false;
     }
   }
