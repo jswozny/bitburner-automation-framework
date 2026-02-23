@@ -8,7 +8,7 @@
  * Uses NetscriptPort for React→MainLoop communication to avoid click loss issues.
  */
 import { NetscriptPort, NS } from "@ns";
-import { peekStatus } from "/lib/ports";
+import { peekStatus } from "lib/ports";
 import { setConfigValue, getConfigString } from "/lib/config";
 import {
   ToolName,

@@ -10,8 +10,8 @@
  * RAM: ~3.8 GB (launcher lib + base)
  */
 import { NS } from "@ns";
-import { ensureRamAndExec } from "/lib/launcher";
-import { setConfigValue } from "/lib/config";
+import { ensureRamAndExec } from "lib/launcher";
+import { setConfigValue } from "lib/config";
 import { resetBudgetWeights } from './views/dashboard/state-store';
 import { getNextUpgradeInfo } from './controllers/pserv';
 

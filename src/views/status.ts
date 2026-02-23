@@ -17,8 +17,8 @@
  *   run views/status.js --live    # Auto-refreshing tail window
  */
 import { NS, ProcessInfo } from "@ns";
-import { COLORS } from "/lib/utils";
-import { peekStatus } from "/lib/ports";
+import { COLORS } from "lib/utils";
+import { peekStatus } from "lib/ports";
 import {
   ToolName,
   TOOL_SCRIPTS,
