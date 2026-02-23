@@ -54,6 +54,8 @@ const HOME_TIERS: HomeTierConfig[] = [
 
 // Base functions used by all tiers
 const BASE_FUNCTIONS = [
+  "getServerMaxRam",
+  "getServerUsedRam",
   "getPlayer",
   "getPortHandle",
   "fileExists",
@@ -124,8 +126,19 @@ export async function main(ns: NS): Promise<void> {
   });
 
   const tierRamCosts = HOME_TIERS.map((_, i) => calculateTierRam(ns, i));
-  const potentialRam = ns.getServerMaxRam("home") - ns.getServerUsedRam("home");
+  const currentScriptRam = 5;
+  const potentialRam = ns.getServerMaxRam("home") - ns.getServerUsedRam("home") + currentScriptRam;
   const { tier, ramCost } = selectBestTier(potentialRam, tierRamCosts);
+
+  // Re-override to actual calculated RAM
+  if (ramCost > currentScriptRam) {
+    const actual = ns.ramOverride(ramCost);
+    if (actual < ramCost) {
+      ns.tprint(`WARN: Home daemon could not allocate ${ns.formatRam(ramCost)}, got ${ns.formatRam(actual)}. Running tier 0.`);
+      const fallback = selectBestTier(actual, tierRamCosts);
+      ns.ramOverride(fallback.ramCost);
+    }
+  }
 
   ns.print(`${C.cyan}Home daemon started${C.reset} — Tier ${tier.tier}: ${tier.name} (${ramCost.toFixed(1)}GB)`);
 
