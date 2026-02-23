@@ -41,7 +41,7 @@ function hasNeededSourceFiles(ns: NS, SFArray: Array<number>): boolean {
 }
 
 /** Core daemons to launch after the dashboard, in priority order. */
-const CORE_SCRIPTS: { path: string; args: (string | number | boolean)[];neededSF?: number[] }[] = [
+const CORE_SCRIPTS: { path: string; args: (string | number | boolean)[];neededSF : number[] }[] = [
   { path: "daemons/nuke.js", args: [], neededSF: [] },
   { path: "daemons/hack.js", args: [], neededSF: [] },
   { path: "daemons/queue.js", args: [], neededSF: [] },
@@ -52,7 +52,7 @@ const CORE_SCRIPTS: { path: string; args: (string | number | boolean)[];neededSF
 ];
 
 /** Optional daemons launched if RAM permits. */
-const OPTIONAL_SCRIPTS: { path: string; args: (string | number | boolean)[] }[] = [
+const OPTIONAL_SCRIPTS: { path: string; args: (string | number | boolean)[];neededSF : number[] }[] = [
   { path: "daemons/pserv.js", args: [],neededSF: [] },
   { path: "daemons/faction.js", args: [], neededSF: [4] },
   { path: "daemons/augments.js", args: [],neededSF: [4] },
