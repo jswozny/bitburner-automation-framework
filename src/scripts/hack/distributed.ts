@@ -12,7 +12,7 @@ import {
   runDistributedCycle,
   formatDistributedStatus,
   DistributedConfig,
-} from "controllers/hack";
+} from "/controllers/hack";
 
 export async function main(ns: NS): Promise<void> {
   const flags = ns.flags([

@@ -10,7 +10,7 @@
  * RAM: ~1.6 GB (minimum floor via ramOverride).
  */
 import { NS } from "@ns";
-import { domUtils, installTrustBypass } from "lib/dom";
+import { domUtils, installTrustBypass } from "/lib/dom";
 import {
   navigateToCasino,
   clickPlayBlackjack,
