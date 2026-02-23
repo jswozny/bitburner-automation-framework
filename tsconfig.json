@@ -13,7 +13,7 @@
     "inlineSources": true,
     "strict": true,
     "rootDir": "src/",
-    "outDir": "dist/scripts/",
+    "outDir": "dist/",
     "baseUrl": "src/",
     "allowJs": true,
     "jsx": "react",
