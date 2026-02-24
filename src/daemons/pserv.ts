@@ -25,7 +25,7 @@ import { getBudgetBalance, notifyPurchase, reportCap, signalDone } from "/lib/bu
  */
 function computePservStatus(ns: NS, reserve: number, autoBuy: boolean): PservStatus {
   const raw = getPservStatus(ns);
-  const maxPossibleRam = ns.getPurchasedServerMaxRam();
+  const maxPossibleRam = ns.cloud.getRamLimit() 
 
   // Map servers to formatted entries
   const servers = raw.servers.map((hostname) => {
@@ -52,7 +52,7 @@ function computePservStatus(ns: NS, reserve: number, autoBuy: boolean): PservSta
     const smallest = servers.reduce((min, s) => (s.ram < min.ram ? s : min));
     if (smallest.ram < maxPossibleRam) {
       const nextRam = smallest.ram * 2;
-      const cost = ns.getPurchasedServerUpgradeCost(smallest.hostname, nextRam);
+      const cost = ns.cloud.getServerUpgradeCost(smallest.hostname, nextRam);
       const budget = ns.getServerMoneyAvailable("home") - reserve;
 
       nextUpgrade = {
@@ -164,12 +164,12 @@ export async function main(ns: NS): Promise<void> {
       if (pstat.serverCount < pstat.serverCap) {
         // Cost for new servers (buy + upgrade each to max)
         const slotsLeft = pstat.serverCap - pstat.serverCount;
-        totalRemainingCost += ns.getPurchasedServerCost(config.minRam) * slotsLeft;
+        totalRemainingCost += ns.cloud.getServerCost(config.minRam) * slotsLeft;
         // Cost to upgrade each new server from minRam to max
         let ram = config.minRam;
         while (ram < pstat.maxPossibleRam) {
           const nextRam = ram * 2;
-          totalRemainingCost += ns.getPurchasedServerUpgradeCost(`${config.prefix}-0`, nextRam) * slotsLeft;
+          totalRemainingCost += ns.cloud.getServerUpgradeCost(`${config.prefix}-0`, nextRam) * slotsLeft;
           ram = nextRam;
         }
       }
@@ -179,7 +179,7 @@ export async function main(ns: NS): Promise<void> {
           let ram = ns.getServerMaxRam(hostname);
           while (ram < pstat.maxPossibleRam) {
             const nextRam = ram * 2;
-            totalRemainingCost += ns.getPurchasedServerUpgradeCost(hostname, nextRam);
+            totalRemainingCost += ns.cloud.getServerUpgradeCost(hostname, nextRam);
             ram = nextRam;
           }
         }
