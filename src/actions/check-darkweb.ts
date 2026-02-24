@@ -21,7 +21,7 @@ export async function main(ns: NS): Promise<void> {
     return;
   }
  if (!ns.getResetInfo().ownedSF.has(4)) {
-  ns.tprint("ERROR: SF4.1 is required to check darkweb status. You do not have SF4.1 unlocked.");
+  ns.print("Error: SF4.1 is required to check darkweb status. You do not have SF4.1 unlocked.");
   return;
  }
   // Check if TOR router is owned - getDarkwebPrograms returns [] without it

@@ -7,7 +7,7 @@ import { NS } from "@ns";
 
 export async function main(ns: NS): Promise<void> {
    if (!ns.getResetInfo().ownedSF.has(4)) {
-  ns.tprint("ERROR: SF4.1 is required to travel to Aevum. You do not have SF4.1 unlocked.");
+  ns.print("Error: SF4.1 is required to travel to Aevum. You do not have SF4.1 unlocked.");
   return;
  }
   const city = "Aevum";

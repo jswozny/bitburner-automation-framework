@@ -32,7 +32,7 @@ export async function main(ns: NS): Promise<void> {
     ["gang", ""],
   ]) as { all: boolean; gang: string; _: string[] };
  if (!ns.getResetInfo().ownedSF.has(2)) {
-  ns.tprint("ERROR: SF2.0 is required to check territory status. You do not have SF2.0 unlocked.");
+  ns.print("Error: SF2.0 is required to check territory status. You do not have SF2.0 unlocked.");
   return;
  }
   // Exit early if not in a gang

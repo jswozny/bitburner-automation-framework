@@ -12,9 +12,9 @@ export const MANUAL_COMMAND = 'ns.singularity.purchaseTor()';
 
 export async function main(ns: NS): Promise<void> {
   ns.disableLog("ALL");
-  
+
  if (!ns.getResetInfo().ownedSF.has(4)) {
-  ns.tprint("ERROR: SF4.1 is required to purchase TOR. You do not have SF4.1 unlocked.");
+  ns.print("Error: SF4.1 is required to purchase TOR. You do not have SF4.1 unlocked.");
   return;
  }
   const success = ns.singularity.purchaseTor();

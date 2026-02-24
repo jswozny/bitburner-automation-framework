@@ -15,7 +15,7 @@ export const MANUAL_COMMAND = 'ns.singularity.gymWorkout("Powerhouse Gym", "str"
 export async function main(ns: NS): Promise<void> {
   ns.disableLog("ALL");
  if (!ns.getResetInfo().ownedSF.has(4)) {
-  ns.tprint("ERROR: SF4.1 is required to start gym workouts. You do not have SF4.1 unlocked.");
+  ns.print("Error: SF4.1 is required to start gym workouts. You do not have SF4.1 unlocked.");
   return;
  }
   const flags = ns.flags([

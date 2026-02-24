@@ -20,7 +20,7 @@ export async function main(ns: NS): Promise<void> {
   const programName = flags.program || (flags._.length > 0 ? String(flags._[0]) : "");
   
   if (!ns.getResetInfo().ownedSF.has(4)) {
-    ns.tprint("ERROR: SF4.1 is required to purchase programs. You do not have SF4.1 unlocked.");
+    ns.print("Error: SF4.1 is required to purchase programs. You do not have SF4.1 unlocked.");
     return;
   }
   
