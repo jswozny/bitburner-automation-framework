@@ -106,7 +106,7 @@ function formatShareStatus(ns: NS): FormattedShareStatus {
 
 // === RAM FORMATTING ===
 
-function format.ram(gb: number): string {
+function formatRam(gb: number): string {
   if (gb >= 1e6) return `${(gb / 1e6).toFixed(1)}PB`;
   if (gb >= 1e3) return `${(gb / 1e3).toFixed(1)}TB`;
   return `${gb.toFixed(0)}GB`;
@@ -230,7 +230,7 @@ function ShareDetailPanel({ status, running, toolId, pid }: DetailPanelProps<For
           <div style={styles.stat}>
             <span style={styles.statLabel}>Fleet Allocation</span>
             <span style={{ color: "#00ffff", fontSize: "11px" }}>
-              {alloc.shareServers.length} dedicated servers ({format.ram(alloc.shareFleetRam)})
+              {alloc.shareServers.length} dedicated servers ({formatRam(alloc.shareFleetRam)})
             </span>
           </div>
           <div style={{ ...styles.dim, fontSize: "11px" }}>
