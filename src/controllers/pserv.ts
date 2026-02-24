@@ -232,7 +232,7 @@ export async function runPservCycle(
         const cost = ns.cloud.getServerCost(plan.ramPerServer);
         const name = `${prefix}-${Date.now().toString(36)}`;
 
-        if (ns.purchaseServer(name, plan.ramPerServer)) {
+        if (ns.cloud.purchaseServer(name, plan.ramPerServer)) {
           ns.print(
             `${C.green}BOUGHT: ${name} @ ${ns.format.ram(plan.ramPerServer)} for ${ns.formatNumber(cost)}${C.reset}`
           );
