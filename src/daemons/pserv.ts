@@ -60,7 +60,7 @@ function computePservStatus(ns: NS, reserve: number, autoBuy: boolean): PservSta
         currentRam: ns.format.ram(smallest.ram),
         nextRam: ns.format.ram(nextRam),
         cost,
-        costFormatted: ns.formatNumber(cost),
+        costFormatted: ns.format.number(cost),
         canAfford: cost <= budget,
       };
     }
