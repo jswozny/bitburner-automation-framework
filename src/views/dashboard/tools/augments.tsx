@@ -13,7 +13,7 @@ import { ProgressBar } from "views/dashboard/components/ProgressBar";
 import { runScript, installAugments, buySelectedAugments, getPluginUIState, setPluginUIState } from "views/dashboard/state-store";
 import { AUG_COST_MULT } from "/controllers/factions";
 
-function format.number(n: number): string {
+function formatNumber(n: number): string {
   if (n >= 1_000_000_000) return `${(n / 1_000_000_000).toFixed(1)}b`;
   if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}m`;
   if (n >= 1_000) return `${(n / 1_000).toFixed(1)}k`;
@@ -318,7 +318,7 @@ function AugmentsDetailPanel({ status, running, toolId, pid }: DetailPanelProps<
           <div style={styles.sectionTitle}>
             PURCHASE PLANNER
             <span style={{ ...styles.dim, marginLeft: "8px", fontWeight: "normal" }}>
-              {plannerItems.length} augs | ${format.number(totalPlanCost)} total
+              {plannerItems.length} augs | ${formatNumber(totalPlanCost)} total
             </span>
           </div>
           <table style={styles.table}>
@@ -345,10 +345,10 @@ function AugmentsDetailPanel({ status, running, toolId, pid }: DetailPanelProps<
                       {item.faction.substring(0, 16)}
                     </td>
                     <td style={{ ...styles.tableCell, textAlign: "right", color: affordable ? "#00ff00" : "#ff4444" }}>
-                      ${format.number(item.rollingAdjusted)}
+                      ${formatNumber(item.rollingAdjusted)}
                     </td>
                     <td style={{ ...styles.tableCell, textAlign: "right", ...styles.runningTotal }}>
-                      ${format.number(item.rollingTotal)}
+                      ${formatNumber(item.rollingTotal)}
                     </td>
                   </tr>
                 );
@@ -462,7 +462,7 @@ function AugmentsDetailPanel({ status, running, toolId, pid }: DetailPanelProps<
               <div style={styles.stat}>
                 <span style={styles.statLabel}>Need</span>
                 <span style={{ color: "#ffaa00" }}>
-                  ${format.number(status.neuroFlux.currentPrice - status.playerMoney)} more
+                  ${formatNumber(status.neuroFlux.currentPrice - status.playerMoney)} more
                 </span>
               </div>
             </>

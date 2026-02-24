@@ -31,7 +31,7 @@ import { formatTime } from "lib/utils";
 
 // === HELPERS ===
 
-function format.number(n: number): string {
+function formatNumber(n: number): string {
   if (n >= 1_000_000_000) return `${(n / 1_000_000_000).toFixed(1)}b`;
   if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}m`;
   if (n >= 1_000) return `${(n / 1_000).toFixed(1)}k`;
@@ -221,16 +221,16 @@ function MemberCard({ member, taskNames, running, growTarget }: {
 
       {/* Stats compact */}
       <div style={{ fontSize: "10px", color: "#888", display: "grid", gridTemplateColumns: "1fr 1fr", gap: "1px 8px" }}>
-        <span>STR: <span style={{ color: "#fff" }}>{format.number(member.str)}</span></span>
-        <span>DEF: <span style={{ color: "#fff" }}>{format.number(member.def)}</span></span>
-        <span>DEX: <span style={{ color: "#fff" }}>{format.number(member.dex)}</span></span>
-        <span>AGI: <span style={{ color: "#fff" }}>{format.number(member.agi)}</span></span>
+        <span>STR: <span style={{ color: "#fff" }}>{formatNumber(member.str)}</span></span>
+        <span>DEF: <span style={{ color: "#fff" }}>{formatNumber(member.def)}</span></span>
+        <span>DEX: <span style={{ color: "#fff" }}>{formatNumber(member.dex)}</span></span>
+        <span>AGI: <span style={{ color: "#fff" }}>{formatNumber(member.agi)}</span></span>
       </div>
 
       {/* Gains */}
       <div style={{ fontSize: "10px", color: "#888", marginTop: "3px" }}>
-        <span style={{ color: "#00ff00" }}>${format.number(member.moneyGain * 5)}/s</span>
-        <span style={{ marginLeft: "8px", color: "#00ffff" }}>{format.number(member.respectGain * 5)} rep/s</span>
+        <span style={{ color: "#00ff00" }}>${formatNumber(member.moneyGain * 5)}/s</span>
+        <span style={{ marginLeft: "8px", color: "#00ffff" }}>{formatNumber(member.respectGain * 5)} rep/s</span>
       </div>
 
       {/* Ascension info */}
@@ -351,11 +351,11 @@ function GangDetailPanel({ status, running, toolId, pid }: DetailPanelProps<Gang
           />
           <div style={styles.stat}>
             <span style={styles.statLabel}>Current Karma</span>
-            <span style={styles.statValue}>{format.number(status.karma ?? 0)}</span>
+            <span style={styles.statValue}>{formatNumber(status.karma ?? 0)}</span>
           </div>
           <div style={styles.stat}>
             <span style={styles.statLabel}>Required</span>
-            <span style={{ color: "#ff4444" }}>-{format.number(status.karmaRequired ?? 54000)}</span>
+            <span style={{ color: "#ff4444" }}>-{formatNumber(status.karmaRequired ?? 54000)}</span>
           </div>
           {(() => {
             const work = getStateSnapshot().workStatus;
@@ -539,7 +539,7 @@ function GangDetailPanel({ status, running, toolId, pid }: DetailPanelProps<Gang
                         <span style={{ color: "#fff" }}>{item.name}</span>
                         <span style={{ color: "#555", marginLeft: "4px", fontSize: "9px" }}>{item.type}</span>
                       </span>
-                      <span style={{ color: "#ffff00" }}>${format.number(item.cost)}</span>
+                      <span style={{ color: "#ffff00" }}>${formatNumber(item.cost)}</span>
                     </div>
                   ))}
               </div>
@@ -598,7 +598,7 @@ function GangDetailPanel({ status, running, toolId, pid }: DetailPanelProps<Gang
           </div>
           <div style={styles.stat}>
             <span style={styles.statLabel}>Our Power</span>
-            <span style={styles.statValue}>{format.number(status.territoryData.ourPower)}</span>
+            <span style={styles.statValue}>{formatNumber(status.territoryData.ourPower)}</span>
           </div>
           <table style={styles.table}>
             <thead>
@@ -613,7 +613,7 @@ function GangDetailPanel({ status, running, toolId, pid }: DetailPanelProps<Gang
               {status.territoryData.rivals.map((r, i) => (
                 <tr key={r.name} style={i % 2 === 0 ? styles.tableRow : styles.tableRowAlt}>
                   <td style={styles.tableCell}>{r.name}</td>
-                  <td style={{ ...styles.tableCell, textAlign: "right" }}>{format.number(r.power)}</td>
+                  <td style={{ ...styles.tableCell, textAlign: "right" }}>{formatNumber(r.power)}</td>
                   <td style={{ ...styles.tableCell, textAlign: "right" }}>{formatPct(r.territory)}</td>
                   <td style={{
                     ...styles.tableCell,
