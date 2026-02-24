@@ -395,7 +395,7 @@ function computeLegacyHackStatus(ns: NS, homeReserve: number, maxTargets: number
   const saturationPercent = targets.length > 0 ? (activeTargets / targets.length) * 100 : 0;
 
   return {
-    totalRam: ns.formatRam(totalRam),
+    totalRam: ns.format.ram(totalRam),
     serverCount: servers.length,
     totalThreads: ns.formatNumber(totalThreadsCount),
     activeTargets,
@@ -575,7 +575,7 @@ function computeBatchHackStatus(
   const incomePerSec = incomeTracker.getIncomePerSec();
 
   return {
-    totalRam: ns.formatRam(totalRam),
+    totalRam: ns.format.ram(totalRam),
     serverCount: servers.length,
     totalThreads: ns.formatNumber(totalThreadsCount),
     activeTargets,
@@ -787,7 +787,7 @@ async function runLegacyMode(ns: NS): Promise<void> {
       ns.print("ERROR: No valid targets found!");
 
       const emptyStatus: HackStatus = {
-        totalRam: ns.formatRam(0),
+        totalRam: ns.format.ram(0),
         serverCount: 0,
         totalThreads: "0",
         activeTargets: 0,
@@ -908,7 +908,7 @@ async function runBatchMode(ns: NS): Promise<void> {
     if (targetStates.size === 0) {
       ns.print("ERROR: No valid targets found for batch mode!");
       publishStatus(ns, STATUS_PORTS.hack, {
-        totalRam: ns.formatRam(0), serverCount: 0, totalThreads: "0",
+        totalRam: ns.format.ram(0), serverCount: 0, totalThreads: "0",
         activeTargets: 0, totalTargets: 0, saturationPercent: 0,
         shortestWait: "N/A", longestWait: "N/A",
         hackingCount: 0, growingCount: 0, weakeningCount: 0,
@@ -1090,7 +1090,7 @@ async function runXpMode(ns: NS): Promise<void> {
     if (!xpTarget) {
       ns.print("ERROR: No valid XP targets found!");
       const emptyStatus: HackStatus = {
-        totalRam: ns.formatRam(0), serverCount: 0, totalThreads: "0",
+        totalRam: ns.format.ram(0), serverCount: 0, totalThreads: "0",
         activeTargets: 0, totalTargets: 0, saturationPercent: 0,
         shortestWait: "N/A", longestWait: "N/A",
         hackingCount: 0, growingCount: 0, weakeningCount: 0,
@@ -1152,7 +1152,7 @@ async function runXpMode(ns: NS): Promise<void> {
 
     // 6. Publish status
     const hackStatus: HackStatus = {
-      totalRam: ns.formatRam(totalFleetRam),
+      totalRam: ns.format.ram(totalFleetRam),
       serverCount: servers.length,
       totalThreads: ns.formatNumber(launchedThreads),
       activeTargets: 1,
@@ -1182,7 +1182,7 @@ async function runXpMode(ns: NS): Promise<void> {
     ns.print(`${C.cyan}════════════════════════════════════════════════════${C.reset}`);
     ns.print(`${C.white}Target: ${C.cyan}${xpTarget}${C.reset} (min sec: ${ns.getServer(xpTarget).minDifficulty?.toFixed(1)})`);
     ns.print(`${C.white}Launched: ${C.green}${ns.formatNumber(launchedThreads)}${C.reset} threads this tick | Servers: ${servers.length}`);
-    ns.print(`${C.white}Fleet RAM: ${ns.formatRam(totalFleetRam)} | Utilization: ${C.green}${utilization.toFixed(0)}%${C.reset}`);
+    ns.print(`${C.white}Fleet RAM: ${ns.format.ram(totalFleetRam)} | Utilization: ${C.green}${utilization.toFixed(0)}%${C.reset}`);
     ns.print(`${C.white}Hack Time: ${formatTimeCondensed(hackTime)}${C.reset}`);
     ns.print(`${C.white}XP Rate: ${C.green}${ns.formatNumber(xpRate)} XP/s${C.reset} (${ns.formatNumber(xpGained)} total)`);
 
@@ -1298,7 +1298,7 @@ async function runDrainMode(ns: NS): Promise<void> {
 
     // 6. Publish status
     const hackStatus: HackStatus = {
-      totalRam: ns.formatRam(totalRam),
+      totalRam: ns.format.ram(totalRam),
       serverCount: allServers.length,
       totalThreads: ns.formatNumber(totalHackThreads),
       activeTargets,
@@ -1321,7 +1321,7 @@ async function runDrainMode(ns: NS): Promise<void> {
     ns.print(`${C.cyan}════════════════════════════════════════════════════${C.reset}`);
     ns.print(`${C.red}  DRAIN MODE - ${new Date().toLocaleTimeString()}${C.reset}`);
     ns.print(`${C.cyan}════════════════════════════════════════════════════${C.reset}`);
-    ns.print(`${C.white}Targets: ${C.cyan}${activeTargets}${C.reset} / ${drainTargets.length} | Threads: ${C.green}${ns.formatNumber(totalHackThreads)}${C.reset} | RAM: ${ns.formatRam(totalRam)}`);
+    ns.print(`${C.white}Targets: ${C.cyan}${activeTargets}${C.reset} / ${drainTargets.length} | Threads: ${C.green}${ns.formatNumber(totalHackThreads)}${C.reset} | RAM: ${ns.format.ram(totalRam)}`);
     ns.print(`${C.white}Money Available: ${C.green}$${ns.formatNumber(totalMoneyAvailable)}${C.reset}`);
     if (shortestHackTime < Number.MAX_SAFE_INTEGER) {
       ns.print(`${C.white}Hack Time: ${formatTimeCondensed(shortestHackTime)} - ${formatTimeCondensed(longestHackTime)}${C.reset}`);

@@ -33,7 +33,7 @@ function computePservStatus(ns: NS, reserve: number, autoBuy: boolean): PservSta
     return {
       hostname,
       ram,
-      ramFormatted: ns.formatRam(ram),
+      ramFormatted: ns.format.ram(ram),
     };
   });
 
@@ -57,8 +57,8 @@ function computePservStatus(ns: NS, reserve: number, autoBuy: boolean): PservSta
 
       nextUpgrade = {
         hostname: smallest.hostname,
-        currentRam: ns.formatRam(smallest.ram),
-        nextRam: ns.formatRam(nextRam),
+        currentRam: ns.format.ram(smallest.ram),
+        nextRam: ns.format.ram(nextRam),
         cost,
         costFormatted: ns.formatNumber(cost),
         canAfford: cost <= budget,
@@ -69,10 +69,10 @@ function computePservStatus(ns: NS, reserve: number, autoBuy: boolean): PservSta
   return {
     serverCount: raw.serverCount,
     serverCap: raw.serverCap,
-    totalRam: ns.formatRam(raw.totalRam),
-    minRam: ns.formatRam(raw.minRam),
-    maxRam: ns.formatRam(raw.maxRam),
-    maxPossibleRam: ns.formatRam(maxPossibleRam),
+    totalRam: ns.format.ram(raw.totalRam),
+    minRam: ns.format.ram(raw.minRam),
+    maxRam: ns.format.ram(raw.maxRam),
+    maxPossibleRam: ns.format.ram(maxPossibleRam),
     maxPossibleRamNum: maxPossibleRam,
     allMaxed: raw.allMaxed,
     autoBuy,
