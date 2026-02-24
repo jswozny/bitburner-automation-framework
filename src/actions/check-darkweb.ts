@@ -38,7 +38,7 @@ export async function main(ns: NS): Promise<void> {
       totalPrograms: 0,
       nextProgram: null,
       moneyUntilNext: 200_000,
-      moneyUntilNextFormatted: ns.formatNumber(200_000, 1),
+      moneyUntilNextFormatted: ns.format.number(200_000, 1),
       canAffordNext: ns.getServerMoneyAvailable("home") >= 200_000,
       programs: [],
       allOwned: false,
@@ -56,7 +56,7 @@ export async function main(ns: NS): Promise<void> {
       return {
         name,
         cost,
-        costFormatted: ns.formatNumber(cost, 1),
+        costFormatted: ns.format.number(cost, 1),
         owned: ns.fileExists(name, "home"),
       };
     })
@@ -79,7 +79,7 @@ export async function main(ns: NS): Promise<void> {
     totalPrograms: programs.length,
     nextProgram,
     moneyUntilNext,
-    moneyUntilNextFormatted: ns.formatNumber(moneyUntilNext, 1),
+    moneyUntilNextFormatted: ns.format.number(moneyUntilNext, 1),
     canAffordNext: nextUnowned !== null && playerMoney >= nextUnowned.cost,
     programs,
     allOwned,

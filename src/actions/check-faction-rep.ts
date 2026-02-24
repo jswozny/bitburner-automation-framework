@@ -60,7 +60,7 @@ export async function main(ns: NS): Promise<void> {
     repRequired: 0,
     repRequiredFormatted: "-",
     currentRep: bestRep,
-    currentRepFormatted: ns.formatNumber(bestRep, 1),
+    currentRepFormatted: ns.format.number(bestRep, 1),
     repGap: 0,
     repGapFormatted: "-",
     repGapPositive: false,
@@ -83,5 +83,5 @@ export async function main(ns: NS): Promise<void> {
   };
 
   publishStatus(ns, STATUS_PORTS.rep, status as RepStatus);
-  ns.print(`Published rep status: ${bestFaction} rep=${ns.formatNumber(bestRep, 1)} favor=${bestFavor}`);
+  ns.print(`Published rep status: ${bestFaction} rep=${ns.format.number(bestRep, 1)} favor=${bestFavor}`);
 }

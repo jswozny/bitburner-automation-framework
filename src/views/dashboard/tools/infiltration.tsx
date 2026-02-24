@@ -48,7 +48,7 @@ function formatRate(n: number): string {
   return n > 0 ? `${(n * 100).toFixed(0)}%` : "—";
 }
 
-function formatNumber(n: number): string {
+function format.number(n: number): string {
   if (n >= 1_000_000_000) return `${(n / 1_000_000_000).toFixed(1)}b`;
   if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}m`;
   if (n >= 1_000) return `${(n / 1_000).toFixed(1)}k`;
@@ -167,7 +167,7 @@ function InfiltrationOverviewCard({ status, running, toolId, error, pid }: Overv
                 <div style={styles.stat}>
                   <span style={styles.statLabel}>Reward</span>
                   <span style={{ color: "#00ffff", fontSize: "11px" }}>
-                    ~{formatNumber(effectiveRep)} rep{effPct ? ` (${effPct}%)` : ""}
+                    ~{format.number(effectiveRep)} rep{effPct ? ` (${effPct}%)` : ""}
                   </span>
                 </div>
               );
@@ -177,7 +177,7 @@ function InfiltrationOverviewCard({ status, running, toolId, error, pid }: Overv
               <div style={styles.stat}>
                 <span style={styles.statLabel}>Reward</span>
                 <span style={{ color: "#ffff00", fontSize: "11px" }}>
-                  ${formatNumber(effectiveCash)}{effPct ? ` (${effPct}%)` : ""}
+                  ${format.number(effectiveCash)}{effPct ? ` (${effPct}%)` : ""}
                 </span>
               </div>
             );
@@ -293,11 +293,11 @@ function InfiltrationDetailPanel({ status, running, toolId, pid }: DetailPanelPr
               <span style={{ color: status.expectedReward.faction ? "#00ffff" : "#ffff00" }}>
                 {status.expectedReward.faction
                   ? hasEff
-                    ? `~${formatNumber(status.expectedReward.tradeRep * mult)} (${formatNumber(status.expectedReward.tradeRep)} API max) — ${status.expectedReward.faction}`
-                    : `${formatNumber(status.expectedReward.tradeRep)} (${status.expectedReward.faction})`
+                    ? `~${format.number(status.expectedReward.tradeRep * mult)} (${format.number(status.expectedReward.tradeRep)} API max) — ${status.expectedReward.faction}`
+                    : `${format.number(status.expectedReward.tradeRep)} (${status.expectedReward.faction})`
                   : hasEff
-                    ? `~$${formatNumber(status.expectedReward.sellCash * mult)} ($${formatNumber(status.expectedReward.sellCash)} API max)`
-                    : `$${formatNumber(status.expectedReward.sellCash)}`}
+                    ? `~$${format.number(status.expectedReward.sellCash * mult)} ($${format.number(status.expectedReward.sellCash)} API max)`
+                    : `$${format.number(status.expectedReward.sellCash)}`}
               </span>
             </div>
           </div>
@@ -323,12 +323,12 @@ function InfiltrationDetailPanel({ status, running, toolId, pid }: DetailPanelPr
                 <div style={styles.stat}>
                   <span style={styles.statLabel}>Last Actual / Expected</span>
                   <span style={styles.statValue}>
-                    {formatNumber(rv.lastActualDelta)} / {formatNumber(rv.lastExpectedDelta)}
+                    {format.number(rv.lastActualDelta)} / {format.number(rv.lastExpectedDelta)}
                   </span>
                 </div>
                 <div style={styles.stat}>
                   <span style={styles.statLabel}>Verified Rep Total</span>
-                  <span style={{ color: "#00ffff" }}>{formatNumber(rv.totalVerifiedRep)}</span>
+                  <span style={{ color: "#00ffff" }}>{format.number(rv.totalVerifiedRep)}</span>
                 </div>
               </>
             );
@@ -356,11 +356,11 @@ function InfiltrationDetailPanel({ status, running, toolId, pid }: DetailPanelPr
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "8px", marginTop: "8px" }}>
           <div style={styles.stat}>
             <span style={styles.statLabel}>Total Rep</span>
-            <span style={{ color: "#00ffff" }}>{formatNumber(status.totalRepEarned)}</span>
+            <span style={{ color: "#00ffff" }}>{format.number(status.totalRepEarned)}</span>
           </div>
           <div style={styles.stat}>
             <span style={styles.statLabel}>Total Cash</span>
-            <span style={{ color: "#ffff00" }}>${formatNumber(status.totalCashEarned)}</span>
+            <span style={{ color: "#ffff00" }}>${format.number(status.totalCashEarned)}</span>
           </div>
           <div style={styles.stat}>
             <span style={styles.statLabel}>Rep Runs</span>
@@ -445,13 +445,13 @@ function InfiltrationDetailPanel({ status, running, toolId, pid }: DetailPanelPr
                     <td style={{ ...styles.tableCell, color: "#888" }}>{loc.city}</td>
                     <td style={{ ...styles.tableCell, textAlign: "right" }}>{loc.maxClearanceLevel}</td>
                     <td style={{ ...styles.tableCell, textAlign: "right", color: "#00ffff" }}>
-                      {formatNumber(loc.reward.tradeRep)}
+                      {format.number(loc.reward.tradeRep)}
                     </td>
                     <td style={{ ...styles.tableCell, textAlign: "right", color: "#ffff00" }}>
-                      ${formatNumber(loc.reward.sellCash)}
+                      ${format.number(loc.reward.sellCash)}
                     </td>
                     <td style={{ ...styles.tableCell, textAlign: "right", color: mode === "money" ? "#ffff00" : "#00ffff" }}>
-                      {mode === "money" ? `$${formatNumber(perLevel(loc))}` : formatNumber(perLevel(loc))}
+                      {mode === "money" ? `$${format.number(perLevel(loc))}` : format.number(perLevel(loc))}
                     </td>
                   </tr>
                 ))}

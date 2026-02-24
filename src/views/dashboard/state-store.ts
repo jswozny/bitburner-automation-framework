@@ -660,7 +660,7 @@ function executeCommand(ns: NS, cmd: Command): void {
             }
           } else {
             ns.toast(
-              `Not enough RAM for purchase-augments (need ${ns.formatRam(requiredRam)}, have ${ns.formatRam(available)})`,
+              `Not enough RAM for purchase-augments (need ${ns.format.ram(requiredRam)}, have ${ns.format.ram(available)})`,
               "error", 4000
             );
           }
@@ -1081,8 +1081,8 @@ function startTool(ns: NS, tool: ToolName): void {
 
   if (available < requiredRam) {
     ns.toast(
-      `Not enough RAM for ${tool} (need ${ns.formatRam(requiredRam)}, ` +
-      `have ${ns.formatRam(available)}). Launch from CLI: run ${script}`,
+      `Not enough RAM for ${tool} (need ${ns.format.ram(requiredRam)}, ` +
+      `have ${ns.format.ram(available)}). Launch from CLI: run ${script}`,
       "error", 6000
     );
     return;

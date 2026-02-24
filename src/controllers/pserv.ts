@@ -191,7 +191,7 @@ export function getNextUpgradeInfo(ns: NS, reserve: number): string | null {
   if (cost <= budget) {
     return `Can upgrade ${smallest.hostname} to ${ns.format.ram(nextRam)}`;
   } else {
-    return `Need ${ns.formatNumber(cost - budget)} more for ${smallest.hostname} → ${ns.format.ram(nextRam)}`;
+    return `Need ${ns.format.number(cost - budget)} more for ${smallest.hostname} → ${ns.format.ram(nextRam)}`;
   }
 }
 
@@ -226,7 +226,7 @@ export async function runPservCycle(
     const plan = calculateBatchPurchasePlan(ns, getBudget(), emptySlots, minRam, MAX_RAM);
 
     if (plan) {
-      ns.print(`${C.cyan}BATCH: ${plan.count} servers @ ${ns.format.ram(plan.ramPerServer)} (${ns.formatNumber(plan.totalCost)} total)${C.reset}`);
+      ns.print(`${C.cyan}BATCH: ${plan.count} servers @ ${ns.format.ram(plan.ramPerServer)} (${ns.format.number(plan.totalCost)} total)${C.reset}`);
 
       for (let i = 0; i < plan.count; i++) {
         const cost = ns.cloud.getServerCost(plan.ramPerServer);
@@ -234,7 +234,7 @@ export async function runPservCycle(
 
         if (ns.cloud.purchaseServer(name, plan.ramPerServer)) {
           ns.print(
-            `${C.green}BOUGHT: ${name} @ ${ns.format.ram(plan.ramPerServer)} for ${ns.formatNumber(cost)}${C.reset}`
+            `${C.green}BOUGHT: ${name} @ ${ns.format.ram(plan.ramPerServer)} for ${ns.format.number(cost)}${C.reset}`
           );
           bought++;
           callbacks?.onPurchase?.(cost, `${name} @ ${ns.format.ram(plan.ramPerServer)}`);

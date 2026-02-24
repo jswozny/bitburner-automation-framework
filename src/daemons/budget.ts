@@ -104,7 +104,7 @@ function handleMessage(ns: NS, msg: BudgetControlMessage): void {
         state.balances[msg.bucket] = Math.max(0, (state.balances[msg.bucket] ?? 0) - msg.amount);
         state.lifetimeSpent[msg.bucket] = (state.lifetimeSpent[msg.bucket] ?? 0) + msg.amount;
         purchasesThisTick += msg.amount;
-        ns.print(`  ${C.green}BUY${C.reset} ${msg.bucket}: ${ns.formatNumber(msg.amount)} (${msg.reason ?? ""})`);
+        ns.print(`  ${C.green}BUY${C.reset} ${msg.bucket}: ${ns.format.number(msg.amount)} (${msg.reason ?? ""})`);
       }
       break;
 
@@ -119,7 +119,7 @@ function handleMessage(ns: NS, msg: BudgetControlMessage): void {
       if (msg.cap !== undefined) {
         // Cap = current lifetimeSpent + remaining cost
         state.caps[msg.bucket] = (state.lifetimeSpent[msg.bucket] ?? 0) + msg.cap;
-        ns.print(`  ${C.cyan}CAP${C.reset} ${msg.bucket}: ${ns.formatNumber(msg.cap)} remaining`);
+        ns.print(`  ${C.cyan}CAP${C.reset} ${msg.bucket}: ${ns.format.number(msg.cap)} remaining`);
       }
       break;
 
@@ -272,24 +272,24 @@ async function daemon(ns: NS): Promise<void> {
       buckets[bucket] = {
         bucket,
         balance,
-        balanceFormatted: ns.formatNumber(balance),
+        balanceFormatted: ns.format.number(balance),
         weight: state.weights[bucket] ?? 0,
         effectiveWeight: ew,
         lifetimeSpent: lifetime,
-        lifetimeSpentFormatted: ns.formatNumber(lifetime),
+        lifetimeSpentFormatted: ns.format.number(lifetime),
         incomeRate: bucketIncomeRate,
-        incomeRateFormatted: ns.formatNumber(bucketIncomeRate) + "/s",
+        incomeRateFormatted: ns.format.number(bucketIncomeRate) + "/s",
         active: state.activeFlags[bucket] ?? false,
         cap,
-        capFormatted: cap !== null ? ns.formatNumber(cap) : null,
+        capFormatted: cap !== null ? ns.format.number(cap) : null,
       };
     }
 
     const status: BudgetStatus = {
       totalCash: currentCash,
-      totalCashFormatted: ns.formatNumber(currentCash),
+      totalCashFormatted: ns.format.number(currentCash),
       totalIncomeRate,
-      totalIncomeRateFormatted: ns.formatNumber(totalIncomeRate) + "/s",
+      totalIncomeRateFormatted: ns.format.number(totalIncomeRate) + "/s",
       buckets,
       rushBucket: state.rushBucket,
       lastUpdated: Date.now(),
@@ -310,8 +310,8 @@ async function daemon(ns: NS): Promise<void> {
     const rushLabel = state.rushBucket ? ` ${C.yellow}RUSH:${state.rushBucket}${C.reset}` : "";
     ns.print(
       `${C.cyan}=== Budget ===${C.reset} ` +
-      `Cash: ${ns.formatNumber(currentCash)} | ` +
-      `Income: ${ns.formatNumber(totalIncomeRate)}/s | ` +
+      `Cash: ${ns.format.number(currentCash)} | ` +
+      `Income: ${ns.format.number(totalIncomeRate)}/s | ` +
       `Active: ${activeCount}/${totalBuckets}${rushLabel}`
     );
 
