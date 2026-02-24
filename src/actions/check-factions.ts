@@ -27,7 +27,10 @@ export async function main(ns: NS): Promise<void> {
   if (ns.ps("home").some(p => p.filename === "daemons/faction.js")) {
     return;
   }
-
+ if (!ns.getResetInfo().ownedSF.has(4)) {
+  ns.tprint("ERROR: SF4.1 is required to check faction status. You do not have SF4.1 unlocked.");
+  return;
+ }
   const player = ns.getPlayer();
 
   let invitations: string[] = [];

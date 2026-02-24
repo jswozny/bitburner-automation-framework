@@ -60,7 +60,7 @@ const OPTIONAL_SCRIPTS: { path: string; args: (string | number | boolean)[];need
   { path: "daemons/contracts.js", args: [], neededSF: [] },
   { path: "daemons/budget.js", args: [], neededSF: [] },
   { path: "daemons/stocks.js", args: [], neededSF: [] },
-  { path: "daemons/gang.js", args: [], neededSF: [4] },
+  { path: "daemons/gang.js", args: [], neededSF: [2] },
   { path: "daemons/home.js", args: [], neededSF: [4] },
 ];
 

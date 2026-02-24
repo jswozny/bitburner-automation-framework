@@ -14,7 +14,10 @@ export const MANUAL_COMMAND = 'ns.singularity.universityCourse("ZB Institute of 
 
 export async function main(ns: NS): Promise<void> {
   ns.disableLog("ALL");
-
+ if (!ns.getResetInfo().ownedSF.has(4)) {
+  ns.tprint("ERROR: SF4.1 is required to start university courses. You do not have SF4.1 unlocked.");
+  return;
+ }
   const flags = ns.flags([
     ["uni", "ZB Institute of Technology"],
     ["course", "Algorithms"],

@@ -18,7 +18,6 @@ import { writeDefaultConfig, getConfigNumber } from "/lib/config";
 
 // === ROUND-ROBIN STATUS CHECKS ===
 
-if (ns.getResetInfo().ownedSF.has(4)) {
 const STATUS_CHECKS: QueueEntry[] = [
   {
     script: "actions/check-work.js",
@@ -52,11 +51,7 @@ const STATUS_CHECKS: QueueEntry[] = [
     timestamp: 0,
     requester: "queue-runner",
   },
-]
-}
-else {
-  const STATUS_CHECKS: QueueEntry[] = [
-  ]}
+];
 
 /**
  * Collect all pending queue entries, sorted by priority (highest first)

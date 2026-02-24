@@ -15,7 +15,10 @@ export const MANUAL_COMMAND = 'ns.singularity.purchaseAugmentation("FACTION", "A
 
 export async function main(ns: NS): Promise<void> {
   ns.disableLog("ALL");
-
+ if (!ns.getResetInfo().ownedSF.has(4)) {
+  ns.tprint("ERROR: SF4.1 is required to purchase augmentations. You do not have SF4.1 unlocked.");
+  return;
+ }
   const flags = ns.flags([
     ["dry-run", false],
     ["max-spend", Infinity],

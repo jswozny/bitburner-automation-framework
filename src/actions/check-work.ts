@@ -20,7 +20,10 @@ export async function main(ns: NS): Promise<void> {
   if (ns.ps("home").some(p => p.filename === "daemons/work.js")) {
     return;
   }
-
+ if (!ns.getResetInfo().ownedSF.has(4)) {
+  ns.tprint("ERROR: SF4.1 is required to check work status. You do not have SF4.1 unlocked.");
+  return;
+ }
   const player = ns.getPlayer();
   const currentWork = ns.singularity.getCurrentWork();
   const focused = ns.singularity.isFocused();
