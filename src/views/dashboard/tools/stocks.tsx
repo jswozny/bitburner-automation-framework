@@ -15,6 +15,7 @@ import {
 import { StockPosition, StockSignal } from "/types/ports";
 import { styles } from "views/dashboard/styles";
 import { ToolControl } from "views/dashboard/components/ToolControl";
+import { TierFooter } from "views/dashboard/components/TierFooter";
 import { runScript } from "views/dashboard/state-store";
 
 // === OVERVIEW CARD ===
@@ -29,6 +30,7 @@ function StocksOverviewCard({
     disabled: "#888",
     monitor: "#ffaa00",
     pre4s: "#00ff00",
+    scraped: "#00bbff",
     "4s": "#00ffff",
   };
 
@@ -108,6 +110,7 @@ function StocksDetailPanel({
     disabled: "#888",
     monitor: "#ffaa00",
     pre4s: "#00ff00",
+    scraped: "#00bbff",
     "4s": "#00ffff",
   };
 
@@ -136,7 +139,12 @@ function StocksDetailPanel({
             </span>
           </span>
         </div>
-        <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+        <ToolControl tool={toolId} running={running} pid={pid} />
+      </div>
+
+      {/* Action buttons row */}
+      {(status.positions.length > 0 || (status.hasTIX && !status.has4S)) && (
+        <div style={{ marginTop: "4px", display: "flex", gap: "6px", alignItems: "center" }}>
           {status.positions.length > 0 && (
             <button
               style={{
@@ -151,9 +159,27 @@ function StocksDetailPanel({
               SELL ALL
             </button>
           )}
-          <ToolControl tool={toolId} running={running} pid={pid} />
+          {status.hasTIX && !status.has4S && (
+            <button
+              style={{
+                ...styles.buttonPlay,
+                marginLeft: 0,
+                padding: "2px 8px",
+                backgroundColor: "#003355",
+                color: "#00bbff",
+              }}
+              onClick={() => runScript("stocks", "actions/scrape-forecasts.js")}
+            >
+              SCRAPE 4S
+            </button>
+          )}
+          {status.scrapedForecastCount !== undefined && status.scrapedForecastAge !== undefined && (
+            <span style={{ fontSize: "10px", color: status.scrapedForecastAge < 30000 ? "#00bbff" : "#888" }}>
+              (scraped: {status.scrapedForecastCount}sym, {Math.round(status.scrapedForecastAge / 1000)}s ago)
+            </span>
+          )}
         </div>
-      </div>
+      )}
 
       {/* API Status */}
       <div style={{ marginTop: "6px", display: "flex", gap: "12px", fontSize: "11px" }}>
@@ -319,6 +345,8 @@ function StocksDetailPanel({
           Waiting for TIX API access (WSE: $200M, TIX: $5B)
         </div>
       )}
+
+      <TierFooter tier={status.tier} tierName={status.tierName} />
     </div>
   );
 }

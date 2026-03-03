@@ -1,22 +1,31 @@
 /**
  * Budget Controller (Pure Logic)
  *
- * Income-splitting algorithm: tracks income deltas, splits incoming money
- * across weighted buckets, each with a running balance consumers spend from.
+ * Snapshot-based "allowance" model: each tick computes fresh spending limits
+ * from current wealth. No accumulated state to drift out of sync.
+ *
+ * Two consumer classes:
+ *   Holders (stocks, corp) — allowance = max(0, netWorth * weight% - currentHolding)
+ *   Spenders (everything else) — allowance = cash * weight%
  *
  * Zero NS imports — safe to import without RAM cost.
  *
- * Import with: import { splitIncome, ... } from "/controllers/budget";
+ * Import with: import { computeAllowances, ... } from "/controllers/budget";
  */
+
+// === HOLDER BUCKETS ===
+
+export const HOLDER_BUCKETS = new Set(["stocks", "corp"]);
 
 // === DEFAULT WEIGHTS ===
 
 export const DEFAULT_WEIGHTS: Record<string, number> = {
-  stocks: 50,
+  stocks: 30,
   servers: 25,
-  gang: 15,
-  home: 10,
-  hacknet: 10,
+  corp: 15,
+  home: 15,
+  gang: 10,
+  hacknet: 5,
   programs: 5,
   "wse-access": 5,
 };
@@ -24,7 +33,6 @@ export const DEFAULT_WEIGHTS: Record<string, number> = {
 // === PERSISTED STATE ===
 
 export interface PersistedBudgetState {
-  balances: Record<string, number>;
   lifetimeSpent: Record<string, number>;
   weights: Record<string, number>;
   activeFlags: Record<string, boolean>;
@@ -33,20 +41,17 @@ export interface PersistedBudgetState {
 }
 
 export function createDefaultPersistedState(): PersistedBudgetState {
-  const balances: Record<string, number> = {};
   const lifetimeSpent: Record<string, number> = {};
   const activeFlags: Record<string, boolean> = {};
   const caps: Record<string, number | null> = {};
 
   for (const bucket of Object.keys(DEFAULT_WEIGHTS)) {
-    balances[bucket] = 0;
     lifetimeSpent[bucket] = 0;
     activeFlags[bucket] = true;
     caps[bucket] = null;
   }
 
   return {
-    balances,
     lifetimeSpent,
     weights: { ...DEFAULT_WEIGHTS },
     activeFlags,
@@ -55,22 +60,7 @@ export function createDefaultPersistedState(): PersistedBudgetState {
   };
 }
 
-// === INCOME CALCULATION ===
-
-/**
- * Calculate income delta for this tick.
- * income = (currentCash - prevCash) + purchasesThisTick
- * Purchases add back what was spent so we see gross income, not net.
- */
-export function calculateIncome(
-  prevCash: number,
-  currentCash: number,
-  purchasesThisTick: number,
-): number {
-  const delta = currentCash - prevCash + purchasesThisTick;
-  // Only distribute positive income (don't claw back on spending)
-  return Math.max(0, delta);
-}
+// === AUGMENTATION RESET DETECTION ===
 
 /**
  * Detect augmentation reset: cash drops >90% between ticks.
@@ -84,8 +74,8 @@ export function isAugReset(prevCash: number, currentCash: number): boolean {
 
 /**
  * Compute effective weights considering active flags and rush mode.
- * Rush mode: 100% to rushed bucket, 0% to everything else.
- * Normal mode: distribute among active buckets by weight.
+ * Rush mode: rushed bucket gets weight 1, others get 0.
+ * Normal mode: each bucket's weight / 100 (weights are independent caps, not shares).
  */
 export function computeEffectiveWeights(
   weights: Record<string, number>,
@@ -101,16 +91,9 @@ export function computeEffectiveWeights(
     return effective;
   }
 
-  let totalWeight = 0;
   for (const bucket of Object.keys(weights)) {
     if (activeFlags[bucket]) {
-      totalWeight += weights[bucket];
-    }
-  }
-
-  for (const bucket of Object.keys(weights)) {
-    if (activeFlags[bucket] && totalWeight > 0) {
-      effective[bucket] = weights[bucket] / totalWeight;
+      effective[bucket] = weights[bucket] / 100;
     } else {
       effective[bucket] = 0;
     }
@@ -119,61 +102,76 @@ export function computeEffectiveWeights(
   return effective;
 }
 
-// === INCOME SPLITTING ===
+// === ALLOWANCE COMPUTATION ===
+
+export interface AllowanceResult {
+  allowance: number;
+  maxAllocation: number;
+  currentHolding: number;
+  isHolder: boolean;
+}
+
+export interface HoldingsInfo {
+  portfolioValue: number;
+  corpFunds: number;
+}
 
 /**
- * Split income across buckets by effective weight.
- * Returns per-bucket deltas to add to balances.
+ * Compute allowances for all buckets based on current wealth snapshot.
+ *
+ * Holders: allowance = max(0, netWorth * weight% - currentHoldingValue)
+ * Spenders: allowance = cash * weight%
  */
-export function splitIncome(
-  income: number,
+export function computeAllowances(
+  cash: number,
+  holdings: HoldingsInfo,
   weights: Record<string, number>,
   activeFlags: Record<string, boolean>,
   rushBucket: string | null,
-): Record<string, number> {
-  const effective = computeEffectiveWeights(weights, activeFlags, rushBucket);
-  const deltas: Record<string, number> = {};
+): Record<string, AllowanceResult> {
+  const netWorth = cash + holdings.portfolioValue + holdings.corpFunds;
+  const effectiveWeights = computeEffectiveWeights(weights, activeFlags, rushBucket);
+  const results: Record<string, AllowanceResult> = {};
 
   for (const bucket of Object.keys(weights)) {
-    deltas[bucket] = income * (effective[bucket] ?? 0);
+    const ew = effectiveWeights[bucket] ?? 0;
+    const isHolder = HOLDER_BUCKETS.has(bucket);
+
+    let currentHolding = 0;
+    if (bucket === "stocks") currentHolding = holdings.portfolioValue;
+    else if (bucket === "corp") currentHolding = holdings.corpFunds;
+
+    let maxAllocation: number;
+    let allowance: number;
+
+    if (isHolder) {
+      // Holders: percentage of net worth, minus what they already hold
+      maxAllocation = netWorth * ew;
+      allowance = Math.max(0, maxAllocation - currentHolding);
+    } else {
+      // Spenders: percentage of cash
+      maxAllocation = cash * ew;
+      allowance = maxAllocation;
+    }
+
+    results[bucket] = { allowance, maxAllocation, currentHolding, isHolder };
   }
 
-  return deltas;
+  return results;
 }
 
 // === COMPLETION HANDLING ===
 
 /**
- * Handle a bucket signaling "done". Deactivates the bucket and redistributes
- * its remaining balance proportionally to other active buckets.
+ * Handle a bucket signaling "done". Simply deactivates the bucket.
+ * No balance redistribution needed — other allowances naturally increase
+ * since the done bucket's weight is zeroed via activeFlags.
  */
 export function handleCompletion(
   bucket: string,
-  balances: Record<string, number>,
-  weights: Record<string, number>,
   activeFlags: Record<string, boolean>,
 ): void {
   activeFlags[bucket] = false;
-  const surplus = balances[bucket];
-  balances[bucket] = 0;
-
-  if (surplus <= 0) return;
-
-  // Find other active buckets and redistribute proportionally
-  let totalActiveWeight = 0;
-  for (const b of Object.keys(weights)) {
-    if (b !== bucket && activeFlags[b]) {
-      totalActiveWeight += weights[b];
-    }
-  }
-
-  if (totalActiveWeight <= 0) return;
-
-  for (const b of Object.keys(weights)) {
-    if (b !== bucket && activeFlags[b]) {
-      balances[b] += surplus * (weights[b] / totalActiveWeight);
-    }
-  }
 }
 
 // === CAP CHECKING ===

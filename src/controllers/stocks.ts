@@ -85,6 +85,26 @@ export function getMovingAverage(history: PriceHistory): number | null {
   return sum / history.prices.length;
 }
 
+/**
+ * Estimate volatility from price history as standard deviation of tick-to-tick returns.
+ * Returns null if not enough data points (need at least 3 prices for 2 returns).
+ */
+export function estimateVolatility(history: PriceHistory): number | null {
+  if (history.prices.length < 3) return null;
+
+  const returns: number[] = [];
+  for (let i = 1; i < history.prices.length; i++) {
+    if (history.prices[i - 1] > 0) {
+      returns.push((history.prices[i] - history.prices[i - 1]) / history.prices[i - 1]);
+    }
+  }
+  if (returns.length < 2) return null;
+
+  const mean = returns.reduce((a, b) => a + b, 0) / returns.length;
+  const variance = returns.reduce((a, r) => a + (r - mean) ** 2, 0) / returns.length;
+  return Math.sqrt(variance);
+}
+
 // === TREND DETECTION (PRE-4S) ===
 
 export interface TrendSignal {
@@ -128,78 +148,83 @@ export function detectTrend(
   return { direction: "neutral", strength: 0, maRatio };
 }
 
-// === 4S FORECAST SIGNALS ===
+// === EXPECTED RETURN ===
+
+/**
+ * Calculate expected return per tick for a stock.
+ * Positive = long signal, negative = short signal, magnitude = return per share per tick.
+ *
+ * This is the core metric used by every successful Bitburner stock script:
+ *   expectedReturn = volatility × (forecast - 0.5)
+ */
+export function calcExpectedReturn(
+  forecast: number,
+  volatility: number,
+): number {
+  return volatility * (forecast - 0.5);
+}
+
+// === 4S / SCRAPED FORECAST SIGNALS ===
 
 export interface ForecastSignal {
   direction: "long" | "short" | "neutral";
-  strength: number;
+  strength: number;      // absReturn (expected return magnitude)
   forecast: number;
+  expectedReturn: number; // signed expected return per tick
 }
 
 /**
- * Generate a signal from 4S forecast data.
- * forecast > 0.5 = trending up, < 0.5 = trending down.
+ * Generate a signal from forecast data using expected return.
+ * Buy filter: |expectedReturn| > buyThreshold.
  */
 export function forecastSignal(
   forecast: number,
-  minConfidence: number,
+  volatility: number,
+  buyThreshold: number,
 ): ForecastSignal {
-  const deviation = forecast - 0.5;
+  const expectedReturn = calcExpectedReturn(forecast, volatility);
+  const absReturn = Math.abs(expectedReturn);
 
-  if (forecast > minConfidence) {
+  if (absReturn > buyThreshold) {
     return {
-      direction: "long",
-      strength: Math.min(1, deviation * 4),
+      direction: expectedReturn > 0 ? "long" : "short",
+      strength: absReturn,
       forecast,
-    };
-  } else if (forecast < (1 - minConfidence)) {
-    return {
-      direction: "short",
-      strength: Math.min(1, Math.abs(deviation) * 4),
-      forecast,
+      expectedReturn,
     };
   }
 
-  return { direction: "neutral", strength: 0, forecast };
+  return { direction: "neutral", strength: 0, forecast, expectedReturn };
 }
 
 // === POSITION SIZING ===
 
-const COMMISSION = 100_000; // $100k per trade
+/**
+ * Calculate the per-stock budget based on diversification cap.
+ * Divides the trading capital (budget allowance) evenly across maxPositions.
+ */
+export function calcDiversifiedBudget(
+  tradingCapital: number,
+  maxPositions: number,
+): number {
+  if (maxPositions <= 0) return tradingCapital;
+  return tradingCapital / maxPositions;
+}
 
 /**
- * Calculate position size based on signal strength and available budget.
+ * Calculate position size: full allocation up to diversification cap.
+ * Signal-strength scaling removed — qualifying signals get full allocation,
+ * and diversification handles risk management.
  */
 export function calculatePositionSize(
-  signalStrength: number,
   availableCash: number,
   maxShares: number,
   pricePerShare: number,
 ): number {
   if (pricePerShare <= 0 || availableCash <= 0) return 0;
 
-  // Full allocation — edge is binary (above threshold or not)
-  const cashToSpend = availableCash;
-
-  // Ensure expected profit > commission (need at least 0.5% expected return)
-  const minInvestment = COMMISSION * 2 / 0.005;
-  if (cashToSpend < minInvestment) return 0;
-
-  const sharesByBudget = Math.floor(cashToSpend / pricePerShare);
+  const sharesByBudget = Math.floor(availableCash / pricePerShare);
   return Math.min(sharesByBudget, maxShares);
-}
-
-/**
- * Check if a trade is worth it given commission costs.
- * Returns true if expected profit exceeds commission.
- */
-export function isTradeWorthCommission(
-  shares: number,
-  pricePerShare: number,
-  expectedReturnPercent: number,
-): boolean {
-  const expectedProfit = shares * pricePerShare * expectedReturnPercent;
-  return expectedProfit > COMMISSION * 2; // Commission on buy + sell
 }
 
 // === SELL THRESHOLDS ===

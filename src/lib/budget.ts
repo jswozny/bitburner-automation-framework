@@ -25,7 +25,7 @@ export function getBudgetBalance(ns: NS, bucket: string): number {
   if (!status) return Infinity;
   const bucketState = status.buckets[bucket];
   if (!bucketState) return Infinity;
-  return bucketState.balance;
+  return bucketState.allowance;
 }
 
 /**

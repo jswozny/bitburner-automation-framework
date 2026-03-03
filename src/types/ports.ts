@@ -30,19 +30,22 @@ export const STATUS_PORTS = {
   stocks: 24,
   casino: 26,
   home: 27,
+  corp: 28,
 } as const;
 
 export const GANG_CONTROL_PORT = 15;
 export const CONTRACTS_CONTROL_PORT = 21;
 export const BUDGET_CONTROL_PORT = 23;
 export const STOCKS_CONTROL_PORT = 25;
+export const CORP_CONTROL_PORT = 29;
+export const CORP_RECOMMENDATIONS_PORT = 30;
 
 export const QUEUE_PORT = 19;
 export const COMMAND_PORT = 20;
 
 // === TOOL NAMES ===
 
-export type ToolName = "nuke" | "pserv" | "share" | "rep" | "hack" | "darkweb" | "work" | "faction" | "infiltration" | "gang" | "augments" | "advisor" | "contracts" | "budget" | "stocks" | "casino" | "home";
+export type ToolName = "nuke" | "pserv" | "share" | "rep" | "hack" | "darkweb" | "work" | "faction" | "infiltration" | "gang" | "augments" | "advisor" | "contracts" | "budget" | "stocks" | "casino" | "home" | "corp";
 
 // === TOOL SCRIPTS (daemon paths) ===
 
@@ -64,6 +67,7 @@ export const TOOL_SCRIPTS: Record<ToolName, string> = {
   stocks: "daemons/stocks.js",
   casino: "casino.js",
   home: "daemons/home.js",
+  corp: "daemons/corp.js",
 };
 
 // === PRIORITY CONSTANTS ===
@@ -91,7 +95,7 @@ export interface QueueEntry {
 
 export interface Command {
   tool: ToolName;
-  action: "start" | "stop" | "open-tail" | "run-script" | "start-faction-work" | "set-focus" | "start-training" | "install-augments" | "run-backdoors" | "restart-rep-daemon" | "join-faction" | "restart-faction-daemon" | "restart-hack-daemon" | "restart-share-daemon" | "stop-infiltration" | "kill-infiltration" | "configure-infiltration" | "set-gang-strategy" | "pin-gang-member" | "unpin-gang-member" | "ascend-gang-member" | "toggle-gang-purchases" | "toggle-gang-warfare" | "set-gang-wanted-threshold" | "set-gang-ascension-thresholds" | "set-gang-training-threshold" | "set-gang-grow-target" | "set-gang-grow-respect-reserve" | "set-gang-territory-threshold" | "force-buy-equipment" | "restart-gang-daemon" | "buy-selected-augments" | "claim-focus" | "toggle-pserv-autobuy" | "force-contract-attempt" | "restart-stocks-daemon" | "rush-budget-bucket" | "cancel-budget-rush" | "update-budget-weight" | "reset-budget-weights" | "toggle-home-autobuy";
+  action: "start" | "stop" | "open-tail" | "run-script" | "start-faction-work" | "set-focus" | "start-training" | "install-augments" | "run-backdoors" | "restart-rep-daemon" | "join-faction" | "restart-faction-daemon" | "restart-hack-daemon" | "restart-share-daemon" | "stop-infiltration" | "kill-infiltration" | "configure-infiltration" | "set-gang-strategy" | "pin-gang-member" | "unpin-gang-member" | "ascend-gang-member" | "toggle-gang-purchases" | "toggle-gang-warfare" | "set-gang-wanted-threshold" | "set-gang-ascension-thresholds" | "set-gang-training-threshold" | "set-gang-grow-target" | "set-gang-grow-respect-reserve" | "set-gang-territory-threshold" | "force-buy-equipment" | "restart-gang-daemon" | "buy-selected-augments" | "claim-focus" | "toggle-pserv-autobuy" | "force-contract-attempt" | "restart-stocks-daemon" | "rush-budget-bucket" | "cancel-budget-rush" | "update-budget-weight" | "reset-budget-weights" | "toggle-home-autobuy" | "accept-corp-recommendation" | "dismiss-corp-recommendation" | "restart-corp-daemon" | "toggle-corp-auto-products" | "toggle-corp-auto-tea" | "set-corp-dividend-rate" | "toggle-corp-enabled";
   scriptPath?: string;
   scriptArgs?: string[];
   factionName?: string;
@@ -126,6 +130,11 @@ export interface Command {
   budgetBucket?: string;
   budgetWeight?: number;
   homeAutoBuy?: boolean;
+  corpRecommendationId?: string;
+  corpAutoProducts?: boolean;
+  corpAutoTea?: boolean;
+  corpDividendRate?: number;
+  corpEnabled?: boolean;
 }
 
 // === STATUS INTERFACES ===
@@ -930,14 +939,17 @@ export interface ContractsStatus {
 
 export interface BucketState {
   bucket: string;
-  balance: number;
-  balanceFormatted: string;
+  allowance: number;
+  allowanceFormatted: string;
   weight: number;
   effectiveWeight: number;
   lifetimeSpent: number;
   lifetimeSpentFormatted: string;
-  incomeRate: number;
-  incomeRateFormatted: string;
+  isHolder: boolean;
+  currentHolding: number;
+  currentHoldingFormatted: string;
+  maxAllocation: number;
+  maxAllocationFormatted: string;
   active: boolean;
   cap: number | null;
   capFormatted: string | null;
@@ -946,14 +958,18 @@ export interface BucketState {
 export interface BudgetStatus {
   totalCash: number;
   totalCashFormatted: string;
-  totalIncomeRate: number;
-  totalIncomeRateFormatted: string;
+  netWorth: number;
+  netWorthFormatted: string;
+  portfolioValue: number;
+  portfolioValueFormatted: string;
+  corpFunds: number;
+  corpFundsFormatted: string;
   buckets: Record<string, BucketState>;
   rushBucket: string | null;
   lastUpdated: number;
 }
 
-export type BudgetControlAction = "purchased" | "done" | "report-cap" | "rush" | "cancel-rush" | "update-weight" | "reset-weights";
+export type BudgetControlAction = "purchased" | "done" | "report-cap" | "rush" | "cancel-rush" | "update-weight" | "reset-weights" | "reactivate";
 
 export interface BudgetControlMessage {
   action: BudgetControlAction;
@@ -966,7 +982,7 @@ export interface BudgetControlMessage {
 
 // === STOCKS STATUS ===
 
-export type StocksMode = "disabled" | "monitor" | "pre4s" | "4s";
+export type StocksMode = "disabled" | "monitor" | "pre4s" | "scraped" | "4s";
 
 export interface StockPosition {
   symbol: string;
@@ -1027,6 +1043,10 @@ export interface StocksStatus {
 
   // Tick counter
   tickCount: number;
+
+  // Scraped forecast info (when using DOM scraper)
+  scrapedForecastAge?: number;
+  scrapedForecastCount?: number;
 }
 
 // === CASINO STATUS ===
@@ -1076,6 +1096,144 @@ export interface HomeStatus {
   totalSpentFormatted: string;
 }
 
+// === CORP STATUS ===
+
+export type CorpPhase =
+  | "not-created"
+  | "setup"
+  | "agriculture"
+  | "investment-1"
+  | "investment-2"
+  | "tobacco-setup"
+  | "product-dev"
+  | "investment-3"
+  | "public"
+  | "profit";
+
+export type CorpTierName = "monitor" | "manage" | "invest";
+
+export interface CorpDivisionStatus {
+  name: string;
+  type: string;
+  cities: string[];
+  revenue: number;
+  revenueFormatted: string;
+  expenses: number;
+  expensesFormatted: string;
+  profit: number;
+  profitFormatted: string;
+  awareness: number;
+  popularity: number;
+  research: number;
+  researchFormatted: string;
+  products: CorpProductStatus[];
+  warehouses: {
+    city: string;
+    size: number;
+    used: number;
+    usedPercent: number;
+    employees: number;
+  }[];
+}
+
+export interface CorpProductStatus {
+  name: string;
+  progress: number;
+  rating: number;
+  effectiveRating: number;
+  demand: number;
+  competition: number;
+  stored: number;
+  produced: number;
+  sold: number;
+  developmentCity: string;
+}
+
+export interface CorpRecommendation {
+  id: string;
+  action: string;
+  title: string;
+  description: string;
+  priority: "high" | "medium" | "low";
+  params: Record<string, string | number | boolean>;
+  estimatedValue: number;
+  estimatedValueFormatted: string;
+}
+
+export interface CorpControlMessage {
+  action: "accept-recommendation" | "dismiss-recommendation" | "toggle-auto-products" | "toggle-auto-tea" | "set-dividend-rate" | "restart";
+  recommendationId?: string;
+  autoProducts?: boolean;
+  autoTea?: boolean;
+  dividendRate?: number;
+}
+
+export interface CorpStatus {
+  // Tier metadata
+  tier: number;
+  tierName: CorpTierName;
+  availableFeatures: string[];
+  unavailableFeatures: string[];
+
+  // Corp state
+  hasCorp: boolean;
+  corpName: string;
+  phase: CorpPhase;
+  phaseLabel: string;
+
+  // Financials
+  funds: number;
+  fundsFormatted: string;
+  revenue: number;
+  revenueFormatted: string;
+  expenses: number;
+  expensesFormatted: string;
+  profit: number;
+  profitFormatted: string;
+
+  // Investment state
+  investmentRound: number;
+  currentOffer: number;
+  currentOfferFormatted: string;
+  investmentShares: number;
+
+  // Public state
+  isPublic: boolean;
+  sharePrice: number;
+  sharePriceFormatted: string;
+  dividendRate: number;
+  issuedShares: number;
+
+  // Divisions
+  divisions: CorpDivisionStatus[];
+
+  // Upgrades
+  upgrades: { name: string; level: number; cost: number; costFormatted: string }[];
+
+  // Unlocks
+  unlocks: { name: string; unlocked: boolean }[];
+
+  // Recommendations
+  recommendations: CorpRecommendation[];
+
+  // Automation config
+  autoProducts: boolean;
+  autoTea: boolean;
+  autoMaterials: boolean;
+
+  // Budget integration
+  budgetBalance: number;
+  budgetBalanceFormatted: string;
+
+  // Action transparency
+  nextStep: string;
+  nextStepDetail: string;
+  manualAction: string | null;
+  savingFor: string | null;
+  savingForCost: number;
+  savingForProgress: number;
+}
+
 // === DASHBOARD STATE ===
 
 export interface DashboardState {
@@ -1103,6 +1261,8 @@ export interface DashboardState {
   stocksStatus: StocksStatus | null;
   casinoStatus: CasinoStatus | null;
   homeStatus: HomeStatus | null;
+  corpStatus: CorpStatus | null;
+  corpEnabled: boolean;
 }
 
 // === PLUGIN INTERFACE (for dashboard) ===
