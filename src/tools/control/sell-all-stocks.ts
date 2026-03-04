@@ -11,7 +11,7 @@
 import { NS } from "@ns";
 
 export async function main(ns: NS): Promise<void> {
-  if (!ns.stock.hasTIXAPIAccess()) {
+  if (!ns.stock.hasTixApiAccess()) {
     ns.tprint("ERROR: No TIX API access — cannot sell stocks");
     return;
   }
