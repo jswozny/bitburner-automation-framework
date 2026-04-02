@@ -5,7 +5,7 @@
  * If the budget daemon isn't running, these functions gracefully degrade
  * (consumers assume unlimited budget).
  *
- * Import with: import { getBudgetBalance, canAfford, notifyPurchase, signalDone, reportCap } from "/lib/budget";
+ * Import with: import { getBudgetBalance, canAfford, notifyPurchase, signalDone, reportCap, setBudgetWeight } from "/lib/budget";
  */
 import { NS } from "@ns";
 import { peekStatus } from "/lib/ports";
@@ -88,6 +88,19 @@ export function signalDone(ns: NS, bucket: string): void {
  * Report a remaining-cost cap for a bucket.
  * When lifetime spending reaches this cap, the bucket auto-closes.
  */
+/**
+ * Set a bucket's weight. Use 0 to release the allowance (e.g. when pausing).
+ */
+export function setBudgetWeight(ns: NS, bucket: string, weight: number): void {
+  const port = ns.getPortHandle(BUDGET_CONTROL_PORT);
+  const msg: BudgetControlMessage = {
+    action: "update-weight",
+    bucket,
+    weight,
+  };
+  port.write(JSON.stringify(msg));
+}
+
 export function reportCap(ns: NS, bucket: string, remainingCost: number): void {
   const port = ns.getPortHandle(BUDGET_CONTROL_PORT);
   const msg: BudgetControlMessage = {
