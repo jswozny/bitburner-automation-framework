@@ -413,27 +413,52 @@ function StocksDetailPanel({
 
       {/* Session Stats */}
       {status.sessionStats && (
-        <div style={{ marginTop: "8px", fontSize: "11px", display: "flex", gap: "12px", flexWrap: "wrap" }}>
-          <span>
-            Win: <span style={{ color: status.sessionStats.winRate >= 0.5 ? "#00ff00" : "#ff4444" }}>
-              {(status.sessionStats.winRate * 100).toFixed(0)}%
+        <div style={{ marginTop: "8px", fontSize: "11px" }}>
+          <div style={{ display: "flex", gap: "12px", flexWrap: "wrap" }}>
+            <span>
+              Win: <span style={{ color: status.sessionStats.winRate >= 0.5 ? "#00ff00" : "#ff4444" }}>
+                {(status.sessionStats.winRate * 100).toFixed(0)}%
+              </span>
+              <span style={styles.dim}> ({status.sessionStats.wins}/{status.sessionStats.totalTrades})</span>
             </span>
-            <span style={styles.dim}> ({status.sessionStats.wins}/{status.sessionStats.totalTrades})</span>
-          </span>
-          <span>
-            Avg: <span style={{ color: status.sessionStats.avgProfit >= 0 ? "#00ff00" : "#ff4444" }}>
-              {status.sessionStats.avgProfitFormatted}
+            <span>
+              Avg: <span style={{ color: status.sessionStats.avgProfit >= 0 ? "#00ff00" : "#ff4444" }}>
+                {status.sessionStats.avgProfitFormatted}
+              </span>
             </span>
-          </span>
-          <span>
-            Best: <span style={{ color: "#00ff00" }}>{status.sessionStats.bestTradeFormatted}</span>
-          </span>
-          <span>
-            Worst: <span style={{ color: "#ff4444" }}>{status.sessionStats.worstTradeFormatted}</span>
-          </span>
-          <span style={styles.dim}>
-            Avg Hold: {status.sessionStats.avgHoldTicks} ticks
-          </span>
+            <span>
+              Best: <span style={{ color: "#00ff00" }}>{status.sessionStats.bestTradeFormatted}</span>
+            </span>
+            <span>
+              Worst: <span style={{ color: "#ff4444" }}>{status.sessionStats.worstTradeFormatted}</span>
+            </span>
+            <span style={styles.dim}>
+              Avg Hold: {status.sessionStats.avgHoldTicks} ticks
+            </span>
+          </div>
+          {/* Long vs Short breakdown */}
+          <div style={{ display: "flex", gap: "16px", marginTop: "4px" }}>
+            <span>
+              <span style={{ color: "#00ff00" }}>LONG</span>
+              <span style={styles.dim}>: </span>
+              <span style={{ color: status.sessionStats.long.totalProfit >= 0 ? "#00ff00" : "#ff4444" }}>
+                {status.sessionStats.long.totalProfitFormatted}
+              </span>
+              <span style={styles.dim}>
+                {" "}({(status.sessionStats.long.winRate * 100).toFixed(0)}% of {status.sessionStats.long.trades})
+              </span>
+            </span>
+            <span>
+              <span style={{ color: "#ff8800" }}>SHORT</span>
+              <span style={styles.dim}>: </span>
+              <span style={{ color: status.sessionStats.short.totalProfit >= 0 ? "#00ff00" : "#ff4444" }}>
+                {status.sessionStats.short.totalProfitFormatted}
+              </span>
+              <span style={styles.dim}>
+                {" "}({(status.sessionStats.short.winRate * 100).toFixed(0)}% of {status.sessionStats.short.trades})
+              </span>
+            </span>
+          </div>
         </div>
       )}
 

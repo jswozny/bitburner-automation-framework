@@ -188,6 +188,13 @@ let sessionTotalProfit = 0;
 let sessionTotalHoldTicks = 0;
 let sessionBestTrade = 0;
 let sessionWorstTrade = 0;
+// Per-direction stats
+let longTrades = 0;
+let longWins = 0;
+let longTotalProfit = 0;
+let shortTrades = 0;
+let shortWins = 0;
+let shortTotalProfit = 0;
 
 // === CONTROL PORT ===
 
@@ -224,6 +231,17 @@ function recordTrade(trade: TradeRecordInternal): void {
   sessionTotalHoldTicks += trade.ticksHeld;
   sessionBestTrade = Math.max(sessionBestTrade, trade.profit);
   sessionWorstTrade = Math.min(sessionWorstTrade, trade.profit);
+
+  // Per-direction tracking
+  if (trade.direction === "long") {
+    longTrades++;
+    if (trade.profit > 0) longWins++;
+    longTotalProfit += trade.profit;
+  } else {
+    shortTrades++;
+    if (trade.profit > 0) shortWins++;
+    shortTotalProfit += trade.profit;
+  }
 }
 
 // === API PURCHASE ===
@@ -433,6 +451,12 @@ async function daemon(ns: NS, maxTier: number, tierName: string): Promise<void> 
         sessionTotalHoldTicks = 0;
         sessionBestTrade = 0;
         sessionWorstTrade = 0;
+        longTrades = 0;
+        longWins = 0;
+        longTotalProfit = 0;
+        shortTrades = 0;
+        shortWins = 0;
+        shortTotalProfit = 0;
         ns.print(`  ${C.green}P&L and trade history reset${C.reset}`);
       }
     }
@@ -965,6 +989,20 @@ async function daemon(ns: NS, maxTier: number, tierName: string): Promise<void> 
         avgProfitFormatted: ns.formatNumber(sessionTotalProfit / sessionTradeCount),
         bestTradeFormatted: ns.formatNumber(sessionBestTrade),
         worstTradeFormatted: ns.formatNumber(sessionWorstTrade),
+        long: {
+          trades: longTrades,
+          wins: longWins,
+          winRate: longTrades > 0 ? longWins / longTrades : 0,
+          totalProfit: longTotalProfit,
+          totalProfitFormatted: ns.formatNumber(longTotalProfit),
+        },
+        short: {
+          trades: shortTrades,
+          wins: shortWins,
+          winRate: shortTrades > 0 ? shortWins / shortTrades : 0,
+          totalProfit: shortTotalProfit,
+          totalProfitFormatted: ns.formatNumber(shortTotalProfit),
+        },
       } : undefined,
     };
 

@@ -1081,6 +1081,14 @@ export interface TradeRecord {
   forecastAtExit?: number;
 }
 
+export interface DirectionStats {
+  trades: number;
+  wins: number;
+  winRate: number;
+  totalProfit: number;
+  totalProfitFormatted: string;
+}
+
 export interface SessionStats {
   totalTrades: number;
   wins: number;
@@ -1093,6 +1101,8 @@ export interface SessionStats {
   avgProfitFormatted: string;
   bestTradeFormatted: string;
   worstTradeFormatted: string;
+  long: DirectionStats;
+  short: DirectionStats;
 }
 
 // === CASINO STATUS ===
