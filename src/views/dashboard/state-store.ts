@@ -176,6 +176,14 @@ export function togglePservAutoBuy(enabled: boolean): void {
 }
 
 /**
+ * Set pserv max RAM cap (0 = game max, positive = power of 2 cap).
+ */
+export function setPservMaxRam(ram: number): void {
+  if (!commandPort) return;
+  commandPort.write(JSON.stringify({ tool: "pserv", action: "set-pserv-max-ram", pservMaxRam: ram }));
+}
+
+/**
  * Restart the rep daemon, optionally with a faction focus override.
  */
 export function restartRepDaemon(factionFocus?: string): void {
@@ -695,6 +703,10 @@ function executeCommand(ns: NS, cmd: Command): void {
     case "toggle-pserv-autobuy":
       setConfigValue(ns, "pserv", "autoBuy", cmd.pservAutoBuy ? "true" : "false");
       ns.toast(`Pserv: ${cmd.pservAutoBuy ? "auto-buy ON" : "monitor only"}`, "info", 2000);
+      break;
+    case "set-pserv-max-ram":
+      setConfigValue(ns, "pserv", "maxRam", String(cmd.pservMaxRam ?? 0));
+      ns.toast(`Pserv: RAM cap ${cmd.pservMaxRam ? ns.formatRam(cmd.pservMaxRam) : "removed (game max)"}`, "info", 2000);
       break;
     case "force-contract-attempt":
       if (cmd.contractHost && cmd.contractFile) {

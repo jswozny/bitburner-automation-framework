@@ -85,9 +85,22 @@ export function signalDone(ns: NS, bucket: string): void {
 }
 
 /**
- * Report a remaining-cost cap for a bucket.
- * When lifetime spending reaches this cap, the bucket auto-closes.
+ * Reactivate a bucket that was previously marked as done.
+ * Removes the persistent marker and sends a reactivate message
+ * so the budget daemon re-enables the bucket.
  */
+export function reactivateBucket(ns: NS, bucket: string): void {
+  const markerFile = "/data/budget-done.txt";
+  const existing = ns.read(markerFile);
+  if (existing) {
+    const filtered = existing.split("\n").filter(Boolean).filter(b => b !== bucket);
+    ns.write(markerFile, filtered.join("\n"), "w");
+  }
+  const port = ns.getPortHandle(BUDGET_CONTROL_PORT);
+  const msg: BudgetControlMessage = { action: "reactivate", bucket };
+  port.write(JSON.stringify(msg));
+}
+
 /**
  * Set a bucket's weight. Use 0 to release the allowance (e.g. when pausing).
  */

@@ -23,6 +23,7 @@ export interface PservStatus {
 export interface PservConfig {
   prefix: string;
   minRam: number;
+  maxRam: number;
   reserve: number;
   oneShot: boolean;
   interval: number;
@@ -207,7 +208,7 @@ export async function runPservCycle(
 ): Promise<PservCycleResult> {
   const C = COLORS;
   const { prefix, minRam, reserve } = config;
-  const MAX_RAM = ns.getPurchasedServerMaxRam();
+  const MAX_RAM = config.maxRam > 0 ? config.maxRam : ns.getPurchasedServerMaxRam();
   const SERVER_CAP = ns.getPurchasedServerLimit();
 
   const getBudget = () => {

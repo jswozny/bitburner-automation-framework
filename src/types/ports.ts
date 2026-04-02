@@ -95,7 +95,7 @@ export interface QueueEntry {
 
 export interface Command {
   tool: ToolName;
-  action: "start" | "stop" | "open-tail" | "run-script" | "start-faction-work" | "set-focus" | "start-training" | "install-augments" | "run-backdoors" | "restart-rep-daemon" | "join-faction" | "restart-faction-daemon" | "restart-hack-daemon" | "restart-share-daemon" | "stop-infiltration" | "kill-infiltration" | "configure-infiltration" | "set-gang-strategy" | "pin-gang-member" | "unpin-gang-member" | "ascend-gang-member" | "toggle-gang-purchases" | "toggle-gang-warfare" | "set-gang-wanted-threshold" | "set-gang-ascension-thresholds" | "set-gang-training-threshold" | "set-gang-grow-target" | "set-gang-grow-respect-reserve" | "set-gang-territory-threshold" | "force-buy-equipment" | "restart-gang-daemon" | "buy-selected-augments" | "claim-focus" | "toggle-pserv-autobuy" | "force-contract-attempt" | "restart-stocks-daemon" | "reset-stocks-pnl" | "stocks-control" | "set-stocks-profile" | "rush-budget-bucket" | "cancel-budget-rush" | "update-budget-weight" | "reset-budget-weights" | "toggle-home-autobuy" | "accept-corp-recommendation" | "dismiss-corp-recommendation" | "restart-corp-daemon" | "toggle-corp-auto-products" | "toggle-corp-auto-tea" | "set-corp-dividend-rate" | "toggle-corp-enabled";
+  action: "start" | "stop" | "open-tail" | "run-script" | "start-faction-work" | "set-focus" | "start-training" | "install-augments" | "run-backdoors" | "restart-rep-daemon" | "join-faction" | "restart-faction-daemon" | "restart-hack-daemon" | "restart-share-daemon" | "stop-infiltration" | "kill-infiltration" | "configure-infiltration" | "set-gang-strategy" | "pin-gang-member" | "unpin-gang-member" | "ascend-gang-member" | "toggle-gang-purchases" | "toggle-gang-warfare" | "set-gang-wanted-threshold" | "set-gang-ascension-thresholds" | "set-gang-training-threshold" | "set-gang-grow-target" | "set-gang-grow-respect-reserve" | "set-gang-territory-threshold" | "force-buy-equipment" | "restart-gang-daemon" | "buy-selected-augments" | "claim-focus" | "toggle-pserv-autobuy" | "set-pserv-max-ram" | "force-contract-attempt" | "restart-stocks-daemon" | "reset-stocks-pnl" | "stocks-control" | "set-stocks-profile" | "rush-budget-bucket" | "cancel-budget-rush" | "update-budget-weight" | "reset-budget-weights" | "toggle-home-autobuy" | "accept-corp-recommendation" | "dismiss-corp-recommendation" | "restart-corp-daemon" | "toggle-corp-auto-products" | "toggle-corp-auto-tea" | "set-corp-dividend-rate" | "toggle-corp-enabled";
   scriptPath?: string;
   scriptArgs?: string[];
   factionName?: string;
@@ -125,6 +125,7 @@ export interface Command {
   selectedAugs?: string[];
   focusTarget?: "work" | "rep";
   pservAutoBuy?: boolean;
+  pservMaxRam?: number;
   contractHost?: string;
   contractFile?: string;
   budgetBucket?: string;
@@ -169,6 +170,9 @@ export interface PservStatus {
   autoBuy: boolean;
   servers: { hostname: string; ram: number; ramFormatted: string }[];
   maxPossibleRamNum: number;
+  maxRamCap: number;
+  maxRamCapFormatted: string;
+  effectiveMaxRam: number;
   upgradeProgress: string;
   nextUpgrade: {
     hostname: string;

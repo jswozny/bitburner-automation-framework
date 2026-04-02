@@ -8,7 +8,7 @@ import { NS } from "@ns";
 import { ToolPlugin, FormattedPservStatus, OverviewCardProps, DetailPanelProps } from "views/dashboard/types";
 import { styles } from "views/dashboard/styles";
 import { ToolControl } from "views/dashboard/components/ToolControl";
-import { togglePservAutoBuy } from "views/dashboard/state-store";
+import { togglePservAutoBuy, setPservMaxRam } from "views/dashboard/state-store";
 import { getPservStatus } from "/controllers/pserv";
 
 // === STATUS FORMATTING ===
@@ -61,10 +61,32 @@ function formatPservStatus(ns: NS): FormattedPservStatus {
     allMaxed: raw.allMaxed,
     autoBuy: true,
     maxPossibleRamNum: raw.maxPossibleRam,
+    maxRamCap: 0,
+    maxRamCapFormatted: "Game Max",
+    effectiveMaxRam: raw.maxPossibleRam,
     servers,
     upgradeProgress,
     nextUpgrade,
   };
+}
+
+const controlSelectStyle: React.CSSProperties = {
+  backgroundColor: "#1a1a1a",
+  color: "#00ff00",
+  border: "1px solid #333",
+  borderRadius: "3px",
+  padding: "1px 4px",
+  fontSize: "10px",
+  fontFamily: "inherit",
+  cursor: "pointer",
+};
+
+function generateRamOptions(gameMax: number): number[] {
+  const options: number[] = [];
+  for (let ram = 8; ram <= gameMax; ram *= 2) {
+    options.push(ram);
+  }
+  return options;
 }
 
 // === COMPONENTS ===
@@ -202,6 +224,20 @@ function PservDetailPanel({ status, running, toolId, pid }: DetailPanelProps<For
               {status.autoBuy ? "AUTO" : "MONITOR"}
             </button>
           )}
+          {status && (
+            <select
+              style={controlSelectStyle}
+              value={status.maxRamCap}
+              onChange={(e) => {
+                if (running) setPservMaxRam(parseInt((e.target as HTMLSelectElement).value, 10));
+              }}
+            >
+              <option value={0}>Cap: Max</option>
+              {generateRamOptions(status.maxPossibleRamNum).map(ram => (
+                <option key={ram} value={ram}>Cap: {formatCompactRam(ram)}</option>
+              ))}
+            </select>
+          )}
           <ToolControl tool={toolId} running={running} completed={completed} pid={pid} />
         </div>
       </div>
@@ -212,7 +248,7 @@ function PservDetailPanel({ status, running, toolId, pid }: DetailPanelProps<For
           <ServerCell
             key={i}
             server={server}
-            maxRam={status?.maxPossibleRamNum ?? 1048576}
+            maxRam={status?.effectiveMaxRam ?? 1048576}
             index={i}
           />
         ))}
@@ -251,8 +287,10 @@ function PservDetailPanel({ status, running, toolId, pid }: DetailPanelProps<For
         </div>
         <div style={styles.card}>
           <div style={styles.stat}>
-            <span style={styles.statLabel}>Max Possible</span>
-            <span style={styles.statValue}>{status?.maxPossibleRam ?? "—"}</span>
+            <span style={styles.statLabel}>{status?.maxRamCap ? "RAM Cap" : "Max Possible"}</span>
+            <span style={styles.statValue}>
+              {status ? (status.maxRamCap > 0 ? status.maxRamCapFormatted : status.maxPossibleRam) : "—"}
+            </span>
           </div>
           <div style={styles.stat}>
             <span style={styles.statLabel}>Status</span>
