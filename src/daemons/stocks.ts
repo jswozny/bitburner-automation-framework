@@ -35,17 +35,21 @@ import {
   detectTrend,
   forecastSignal,
   calcExpectedReturn,
-  calcDiversifiedBudget,
+  calcWeightedBudget,
   calculatePositionSize,
+  meetsCommissionThreshold,
+  estimateForecast,
   estimateVolatility,
   shouldSell,
   getHackAdjustment,
   getSymbolForServer,
   shouldStopLoss,
   updatePeakPrice,
+  detectActiveProfile,
   PriceHistory,
   PositionTracking,
   StopLossParams,
+  TradingProfileName,
 } from "/controllers/stocks";
 
 const C = COLORS;
@@ -160,6 +164,31 @@ const MAX_PROFIT_HISTORY = 30;
 const sellCooldowns: Map<string, number> = new Map(); // symbol → tick when sold
 const previousPositions: Map<string, [number, number, number, number]> = new Map(); // symbol → [longShares, longAvg, shortShares, shortAvg]
 
+// Trade history for dashboard display and session analytics
+interface TradeRecordInternal {
+  symbol: string;
+  direction: "long" | "short";
+  entryPrice: number;
+  exitPrice: number;
+  shares: number;
+  profit: number;
+  ticksHeld: number;
+  exitReason: string;
+  forecastAtEntry?: number;
+  forecastAtExit?: number;
+}
+const recentTrades: TradeRecordInternal[] = [];
+const MAX_RECENT_TRADES = 20;
+
+// Session analytics
+let sessionTradeCount = 0;
+let sessionWins = 0;
+let sessionLosses = 0;
+let sessionTotalProfit = 0;
+let sessionTotalHoldTicks = 0;
+let sessionBestTrade = 0;
+let sessionWorstTrade = 0;
+
 // === CONTROL PORT ===
 
 interface StocksControlMessage {
@@ -180,6 +209,21 @@ function readControlPort(ns: NS): StocksControlMessage[] {
     }
   }
   return messages;
+}
+
+// === TRADE RECORDING ===
+
+function recordTrade(trade: TradeRecordInternal): void {
+  recentTrades.push(trade);
+  if (recentTrades.length > MAX_RECENT_TRADES) recentTrades.shift();
+
+  sessionTradeCount++;
+  if (trade.profit > 0) sessionWins++;
+  else sessionLosses++;
+  sessionTotalProfit += trade.profit;
+  sessionTotalHoldTicks += trade.ticksHeld;
+  sessionBestTrade = Math.max(sessionBestTrade, trade.profit);
+  sessionWorstTrade = Math.min(sessionWorstTrade, trade.profit);
 }
 
 // === API PURCHASE ===
@@ -314,15 +358,16 @@ async function daemon(ns: NS, maxTier: number, tierName: string): Promise<void> 
     enabled: "true",
     pollInterval: "6000",
     smartMode: "true",
+    minForecastDeviation: "0.10",
+    sellForecastDeviation: "0.05",
     preThreshold: "0.03",
-    forecastThreshold: "0.00",
-    maWindow: "12",
-    buyThreshold: "0.05",
+    tickWindow: "40",
     maxPositions: "8",
     stopLossPercent: "0.15",
     trailingStopPercent: "0.08",
     maxHoldTicks: "60",
     sellCooldownTicks: "3",
+    commissionPerTrade: "100000",
     scrapeMaxAge: "120000",
   });
 
@@ -344,33 +389,53 @@ async function daemon(ns: NS, maxTier: number, tierName: string): Promise<void> 
     return;
   }
 
-  const pollInterval = getConfigNumber(ns, "stocks", "pollInterval", 6000);
-  const smartMode = getConfigBool(ns, "stocks", "smartMode", true);
-  const preThreshold = getConfigNumber(ns, "stocks", "preThreshold", 0.03);
-  const forecastThreshold = getConfigNumber(ns, "stocks", "forecastThreshold", 0.01);
-  const maWindow = getConfigNumber(ns, "stocks", "maWindow", 12);
-  const buyThreshold = getConfigNumber(ns, "stocks", "buyThreshold", 0.0001);
-  const maxPositions = getConfigNumber(ns, "stocks", "maxPositions", 8);
-  const sellCooldownTicks = getConfigNumber(ns, "stocks", "sellCooldownTicks", 3);
-  const scrapeMaxAge = getConfigNumber(ns, "stocks", "scrapeMaxAge", 120_000);
-  const stopLossParams: StopLossParams = {
-    hardStopPercent: getConfigNumber(ns, "stocks", "stopLossPercent", 0),
-    trailingStopPercent: getConfigNumber(ns, "stocks", "trailingStopPercent", 0),
-    maxHoldTicks: getConfigNumber(ns, "stocks", "maxHoldTicks", 0),
-  };
-
   // Short selling availability (requires BN8 or SF8.2) — detected on first trade tick
   let canShort = false;
   let shortDetected = false;
 
   ns.print(
-    `${C.cyan}Stocks daemon started${C.reset} tier=${maxTier} (${tierName}) ` +
-    `poll=${pollInterval}ms smart=${smartMode}`
+    `${C.cyan}Stocks daemon started${C.reset} tier=${maxTier} (${tierName})`
   );
 
   // eslint-disable-next-line no-constant-condition
   while (true) {
-    readControlPort(ns);
+    // Read config every tick (hot reload for profile switching)
+    const pollInterval = getConfigNumber(ns, "stocks", "pollInterval", 6000);
+    const smartMode = getConfigBool(ns, "stocks", "smartMode", true);
+    const minForecastDeviation = getConfigNumber(ns, "stocks", "minForecastDeviation", 0.10);
+    const sellForecastDeviation = getConfigNumber(ns, "stocks", "sellForecastDeviation", 0.05);
+    const preThreshold = getConfigNumber(ns, "stocks", "preThreshold", 0.03);
+    const tickWindow = getConfigNumber(ns, "stocks", "tickWindow", 40);
+    const maxPositions = getConfigNumber(ns, "stocks", "maxPositions", 8);
+    const sellCooldownTicks = getConfigNumber(ns, "stocks", "sellCooldownTicks", 3);
+    const commissionPerTrade = getConfigNumber(ns, "stocks", "commissionPerTrade", 100_000);
+    const scrapeMaxAge = getConfigNumber(ns, "stocks", "scrapeMaxAge", 120_000);
+    const stopLossParams: StopLossParams = {
+      hardStopPercent: getConfigNumber(ns, "stocks", "stopLossPercent", 0.15),
+      trailingStopPercent: getConfigNumber(ns, "stocks", "trailingStopPercent", 0.08),
+      maxHoldTicks: getConfigNumber(ns, "stocks", "maxHoldTicks", 60),
+    };
+
+    // Process control messages
+    const controlMessages = readControlPort(ns);
+    for (const msg of controlMessages) {
+      if (msg.action === "reload-config") {
+        ns.print(`  ${C.green}Config reloaded${C.reset} (profile change)`);
+      } else if (msg.action === "reset-pnl") {
+        realizedProfit = 0;
+        sessionStartOffset = 0;
+        profitHistory.length = 0;
+        recentTrades.length = 0;
+        sessionTradeCount = 0;
+        sessionWins = 0;
+        sessionLosses = 0;
+        sessionTotalProfit = 0;
+        sessionTotalHoldTicks = 0;
+        sessionBestTrade = 0;
+        sessionWorstTrade = 0;
+        ns.print(`  ${C.green}P&L and trade history reset${C.reset}`);
+      }
+    }
 
     // Attempt to purchase APIs
     const apis = tryPurchaseAPIs(ns);
@@ -460,11 +525,13 @@ async function daemon(ns: NS, maxTier: number, tierName: string): Promise<void> 
 
     const positions: StockPosition[] = [];
     const signals: StockSignal[] = [];
-    const buyCandidates: { sym: string; dir: "long" | "short"; strength: number; price: number; expectedReturn: number }[] = [];
+    const buyCandidates: { sym: string; dir: "long" | "short"; strength: number; price: number; expectedReturn: number; forecast?: number }[] = [];
     let portfolioValue = 0;
     let unrealizedProfit = 0;
     let longCount = 0;
     let shortCount = 0;
+    const allForecasts: Map<string, number> = new Map(); // symbol → forecast (for market grid)
+    const heldSymbols: Map<string, "long" | "short"> = new Map(); // symbol → direction
 
     for (const sym of symbols) {
       const price = ns.stock.getPrice(sym);
@@ -478,25 +545,38 @@ async function daemon(ns: NS, maxTier: number, tierName: string): Promise<void> 
 
         // Long position disappeared externally
         if (prevLong > 0 && longShares === 0) {
-          // Estimate realized P&L at current price (close enough since we poll every few seconds)
-          realizedProfit += prevLong * (price - prevLongAvg);
+          const profit = prevLong * (price - prevLongAvg);
+          realizedProfit += profit;
           sellCooldowns.set(sym, tickCount);
+          const tracking = positionTracking.get(longKey);
+          recordTrade({
+            symbol: sym, direction: "long", entryPrice: prevLongAvg, exitPrice: price,
+            shares: prevLong, profit, ticksHeld: tracking?.ticksHeld ?? 0,
+            exitReason: "external", forecastAtEntry: tracking?.forecastAtEntry,
+          });
           positionTracking.delete(longKey);
-          ns.print(`  ${C.yellow}EXTERNAL SELL${C.reset} ${sym} LONG: ~${ns.formatNumber(prevLong * (price - prevLongAvg))}`);
+          ns.print(`  ${C.yellow}EXTERNAL SELL${C.reset} ${sym} LONG: ~${ns.formatNumber(profit)}`);
         }
 
         // Short position disappeared externally
         if (prevShort > 0 && shortShares === 0) {
-          realizedProfit += prevShort * (prevShortAvg - price);
+          const profit = prevShort * (prevShortAvg - price);
+          realizedProfit += profit;
           sellCooldowns.set(sym, tickCount);
+          const tracking = positionTracking.get(shortKey);
+          recordTrade({
+            symbol: sym, direction: "short", entryPrice: prevShortAvg, exitPrice: price,
+            shares: prevShort, profit, ticksHeld: tracking?.ticksHeld ?? 0,
+            exitReason: "external", forecastAtEntry: tracking?.forecastAtEntry,
+          });
           positionTracking.delete(shortKey);
-          ns.print(`  ${C.yellow}EXTERNAL SELL${C.reset} ${sym} SHORT: ~${ns.formatNumber(prevShort * (prevShortAvg - price))}`);
+          ns.print(`  ${C.yellow}EXTERNAL SELL${C.reset} ${sym} SHORT: ~${ns.formatNumber(profit)}`);
         }
       }
 
       // Update price history
       if (!priceHistories.has(sym)) {
-        priceHistories.set(sym, createPriceHistory(maWindow));
+        priceHistories.set(sym, createPriceHistory(tickWindow));
       }
       const history = priceHistories.get(sym)!;
       addPrice(history, price);
@@ -528,7 +608,7 @@ async function daemon(ns: NS, maxTier: number, tierName: string): Promise<void> 
 
       if (forecast !== null && volatility !== null && volatility > 0) {
         // Expected-return-based signal (4S or scraped mode)
-        const sig = forecastSignal(forecast, volatility, buyThreshold);
+        const sig = forecastSignal(forecast, volatility, minForecastDeviation);
         signalDir = sig.direction;
         signalStrength = sig.strength;
         expectedReturn = sig.expectedReturn;
@@ -536,18 +616,26 @@ async function daemon(ns: NS, maxTier: number, tierName: string): Promise<void> 
       } else if (forecast !== null) {
         // Have forecast but no volatility data yet — use forecast deviation as crude proxy
         const deviation = Math.abs(forecast - 0.5);
-        if (deviation > buyThreshold) {
+        if (deviation >= minForecastDeviation) {
           signalDir = forecast > 0.5 ? "long" : "short";
           signalStrength = deviation;
           expectedReturn = forecast - 0.5;
         }
         forecastVal = forecast;
       } else {
-        // Pre-4S mode: MA-based trend detection (no change)
-        const sig = detectTrend(history, preThreshold);
+        // Pre-4S mode: tick-count forecast estimation with MA fallback
+        const sig = detectTrend(history, preThreshold, minForecastDeviation);
         signalDir = sig.direction;
         signalStrength = sig.strength;
         maRatio = sig.maRatio;
+        // Use estimated forecast for display if available
+        const estFc = estimateForecast(history);
+        if (estFc !== null) forecastVal = estFc;
+      }
+
+      // Collect forecast for market grid
+      if (forecastVal !== undefined) {
+        allForecasts.set(sym, forecastVal);
       }
 
       // Apply hack adjustment in smart mode
@@ -559,6 +647,9 @@ async function daemon(ns: NS, maxTier: number, tierName: string): Promise<void> 
       }
 
       // Track existing positions
+      if (longShares > 0) heldSymbols.set(sym, "long");
+      if (shortShares > 0) heldSymbols.set(sym, "short");
+
       if (longShares > 0) {
         longCount++;
         const profit = longShares * (price - longAvg);
@@ -597,19 +688,33 @@ async function daemon(ns: NS, maxTier: number, tierName: string): Promise<void> 
           if (stopCheck.shouldExit) {
             const saleProfit = ns.stock.sellStock(sym, longShares);
             if (saleProfit > 0) {
-              realizedProfit += longShares * (saleProfit - longAvg);
+              const profit = longShares * (saleProfit - longAvg);
+              realizedProfit += profit;
+              recordTrade({
+                symbol: sym, direction: "long", entryPrice: longAvg, exitPrice: saleProfit,
+                shares: longShares, profit, ticksHeld: tracking.ticksHeld,
+                exitReason: stopCheck.reason, forecastAtEntry: tracking.forecastAtEntry,
+                forecastAtExit: forecastVal,
+              });
               positionTracking.delete(longKey);
               sellCooldowns.set(sym, tickCount);
               ns.print(`  ${C.red}STOP ${stopCheck.reason.toUpperCase()}${C.reset} ${sym} LONG: ${ns.formatNumber(saleProfit)}`);
               sold = true;
             }
           }
-          // Signal-based sell: forecast crosses 0.5 (4S/scraped) or MA reversal (pre-4S)
-          const shouldSellLong = shouldSell("long", forecast, maRatio ?? null, forecastThreshold, preThreshold);
+          // Signal-based sell: forecast crosses 0.5 with hysteresis (4S/scraped) or MA reversal (pre-4S)
+          const shouldSellLong = shouldSell("long", forecast, maRatio ?? null, sellForecastDeviation, preThreshold);
           if (!sold && shouldSellLong) {
             const saleProfit = ns.stock.sellStock(sym, longShares);
             if (saleProfit > 0) {
-              realizedProfit += longShares * (saleProfit - longAvg);
+              const profit = longShares * (saleProfit - longAvg);
+              realizedProfit += profit;
+              recordTrade({
+                symbol: sym, direction: "long", entryPrice: longAvg, exitPrice: saleProfit,
+                shares: longShares, profit, ticksHeld: tracking.ticksHeld,
+                exitReason: "signal", forecastAtEntry: tracking.forecastAtEntry,
+                forecastAtExit: forecastVal,
+              });
               positionTracking.delete(longKey);
               sellCooldowns.set(sym, tickCount);
               ns.print(`  ${C.green}SELL LONG${C.reset} ${sym}: ${ns.formatNumber(saleProfit)}`);
@@ -656,19 +761,33 @@ async function daemon(ns: NS, maxTier: number, tierName: string): Promise<void> 
           if (stopCheck.shouldExit) {
             const saleProfit = ns.stock.sellShort(sym, shortShares);
             if (saleProfit > 0) {
-              realizedProfit += shortShares * (shortAvg - saleProfit);
+              const profit = shortShares * (shortAvg - saleProfit);
+              realizedProfit += profit;
+              recordTrade({
+                symbol: sym, direction: "short", entryPrice: shortAvg, exitPrice: saleProfit,
+                shares: shortShares, profit, ticksHeld: tracking.ticksHeld,
+                exitReason: stopCheck.reason, forecastAtEntry: tracking.forecastAtEntry,
+                forecastAtExit: forecastVal,
+              });
               positionTracking.delete(shortKey);
               sellCooldowns.set(sym, tickCount);
               ns.print(`  ${C.red}STOP ${stopCheck.reason.toUpperCase()}${C.reset} ${sym} SHORT: ${ns.formatNumber(saleProfit)}`);
               sold = true;
             }
           }
-          // Signal-based sell: forecast crosses 0.5 (4S/scraped) or MA reversal (pre-4S)
-          const shouldSellShort = shouldSell("short", forecast, maRatio ?? null, forecastThreshold, preThreshold);
+          // Signal-based sell: forecast crosses 0.5 with hysteresis (4S/scraped) or MA reversal (pre-4S)
+          const shouldSellShort = shouldSell("short", forecast, maRatio ?? null, sellForecastDeviation, preThreshold);
           if (!sold && shouldSellShort) {
             const saleProfit = ns.stock.sellShort(sym, shortShares);
             if (saleProfit > 0) {
-              realizedProfit += shortShares * (shortAvg - saleProfit);
+              const profit = shortShares * (shortAvg - saleProfit);
+              realizedProfit += profit;
+              recordTrade({
+                symbol: sym, direction: "short", entryPrice: shortAvg, exitPrice: saleProfit,
+                shares: shortShares, profit, ticksHeld: tracking.ticksHeld,
+                exitReason: "signal", forecastAtEntry: tracking.forecastAtEntry,
+                forecastAtExit: forecastVal,
+              });
               positionTracking.delete(shortKey);
               sellCooldowns.set(sym, tickCount);
               ns.print(`  ${C.yellow}SELL SHORT${C.reset} ${sym}: ${ns.formatNumber(saleProfit)}`);
@@ -680,9 +799,9 @@ async function daemon(ns: NS, maxTier: number, tierName: string): Promise<void> 
       // Collect buy candidates (executed after loop, sorted by expected return)
       if (canTrade && signalDir !== "neutral" && signalStrength > 0) {
         if (signalDir === "long" && longShares === 0) {
-          buyCandidates.push({ sym, dir: "long", strength: signalStrength, price, expectedReturn });
+          buyCandidates.push({ sym, dir: "long", strength: signalStrength, price, expectedReturn, forecast: forecastVal });
         } else if (signalDir === "short" && shortShares === 0 && canShort) {
-          buyCandidates.push({ sym, dir: "short", strength: signalStrength, price, expectedReturn });
+          buyCandidates.push({ sym, dir: "short", strength: signalStrength, price, expectedReturn, forecast: forecastVal });
         }
       }
 
@@ -701,8 +820,9 @@ async function daemon(ns: NS, maxTier: number, tierName: string): Promise<void> 
       previousPositions.set(sym, [longShares, longAvg, shortShares, shortAvg]);
     }
 
-    // Execute buy candidates sorted by expected return, respecting diversification cap and cooldowns
+    // Execute buy candidates sorted by strength, weighted allocation, respecting diversification cap
     buyCandidates.sort((a, b) => b.strength - a.strength);
+    const totalCandidateStrength = buyCandidates.reduce((sum, c) => sum + c.strength, 0);
     const currentPositionCount = longCount + shortCount;
     let newPositions = 0;
     for (const cand of buyCandidates) {
@@ -716,12 +836,17 @@ async function daemon(ns: NS, maxTier: number, tierName: string): Promise<void> 
 
       const maxShares = ns.stock.getMaxShares(cand.sym);
       const playerCash = ns.getPlayer().money;
-      // Diversification cap: divide trading capital evenly across maxPositions
-      const perStockBudget = calcDiversifiedBudget(tradingCapital, maxPositions);
+      // Weighted allocation: stronger signals get more capital, capped at 2x equal share
+      const perStockBudget = calcWeightedBudget(tradingCapital, maxPositions, cand.strength, totalCandidateStrength);
       // 10% cash reserve: never spend more than 90% of cash
       const availCash = Math.min(perStockBudget, playerCash * 0.9, tradingCapital);
       const sharesToBuy = calculatePositionSize(availCash, maxShares, cand.price);
       if (sharesToBuy <= 0) continue;
+
+      // Commission check: skip if expected profit can't overcome round-trip commission
+      if (!meetsCommissionThreshold(sharesToBuy, cand.price, cand.expectedReturn, commissionPerTrade)) {
+        continue;
+      }
 
       if (cand.dir === "long") {
         const cost = ns.stock.buyStock(cand.sym, sharesToBuy);
@@ -731,6 +856,7 @@ async function daemon(ns: NS, maxTier: number, tierName: string): Promise<void> 
             peakPrice: cost,
             ticksHeld: 0,
             direction: "long",
+            forecastAtEntry: cand.forecast,
           });
           notifyPurchase(ns, "stocks", cost * sharesToBuy, `Buy ${cand.sym} LONG`);
           ns.print(`  ${C.green}BUY LONG${C.reset} ${cand.sym}: ${sharesToBuy} @ ${ns.formatNumber(cost)}`);
@@ -744,6 +870,7 @@ async function daemon(ns: NS, maxTier: number, tierName: string): Promise<void> 
             peakPrice: cost,
             ticksHeld: 0,
             direction: "short",
+            forecastAtEntry: cand.forecast,
           });
           notifyPurchase(ns, "stocks", cost * sharesToBuy, `Buy ${cand.sym} SHORT`);
           ns.print(`  ${C.cyan}BUY SHORT${C.reset} ${cand.sym}: ${sharesToBuy} @ ${ns.formatNumber(cost)}`);
@@ -770,6 +897,27 @@ async function daemon(ns: NS, maxTier: number, tierName: string): Promise<void> 
     // Sort signals by strength
     signals.sort((a, b) => b.strength - a.strength);
 
+    // Build market overview grid (4S/scraped mode only)
+    const marketOverview = (mode === "4s" || mode === "scraped") && allForecasts.size > 0
+      ? Array.from(allForecasts.entries()).map(([sym, fc]) => ({
+          symbol: sym,
+          forecast: fc,
+          direction: (fc >= 0.5 ? "bull" : "bear") as "bull" | "bear",
+          held: heldSymbols.has(sym),
+          heldDirection: heldSymbols.get(sym),
+        }))
+      : undefined;
+
+    // Detect active trading profile
+    const activeProfile: TradingProfileName = detectActiveProfile({
+      minForecastDeviation,
+      sellForecastDeviation,
+      stopLossPercent: stopLossParams.hardStopPercent,
+      trailingStopPercent: stopLossParams.trailingStopPercent,
+      maxHoldTicks: stopLossParams.maxHoldTicks,
+      maxPositions,
+    });
+
     // Build status
     const status: StocksStatus = {
       mode,
@@ -793,10 +941,31 @@ async function daemon(ns: NS, maxTier: number, tierName: string): Promise<void> 
       tradingCapital: tradingCapital === Infinity ? -1 : tradingCapital,
       tradingCapitalFormatted: tradingCapital === Infinity ? "unlimited" : ns.formatNumber(tradingCapital),
       smartMode,
+      activeProfile,
       pollInterval,
       tickCount,
       scrapedForecastAge: scrapedForecasts ? Math.round(scrapedAge) : undefined,
       scrapedForecastCount: scrapedForecasts ? Object.keys(scrapedForecasts).length : undefined,
+      // Market overview grid
+      marketOverview,
+      // Trade history & session analytics
+      recentTrades: recentTrades.map(t => ({
+        ...t,
+        profitFormatted: ns.formatNumber(t.profit),
+      })),
+      sessionStats: sessionTradeCount > 0 ? {
+        totalTrades: sessionTradeCount,
+        wins: sessionWins,
+        losses: sessionLosses,
+        winRate: sessionWins / sessionTradeCount,
+        avgProfit: sessionTotalProfit / sessionTradeCount,
+        avgHoldTicks: Math.round(sessionTotalHoldTicks / sessionTradeCount),
+        bestTrade: sessionBestTrade,
+        worstTrade: sessionWorstTrade,
+        avgProfitFormatted: ns.formatNumber(sessionTotalProfit / sessionTradeCount),
+        bestTradeFormatted: ns.formatNumber(sessionBestTrade),
+        worstTradeFormatted: ns.formatNumber(sessionWorstTrade),
+      } : undefined,
     };
 
     publishStatus(ns, STATUS_PORTS.stocks, status);

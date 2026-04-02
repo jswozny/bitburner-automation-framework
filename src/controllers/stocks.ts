@@ -7,6 +7,65 @@
  * Import with: import { ... } from "/controllers/stocks";
  */
 
+// === TRADING PROFILES ===
+
+export type TradingProfileName = "aggressive" | "moderate" | "conservative" | "custom";
+
+export interface TradingProfile {
+  minForecastDeviation: number;
+  sellForecastDeviation: number;
+  stopLossPercent: number;
+  trailingStopPercent: number;
+  maxHoldTicks: number;
+  maxPositions: number;
+}
+
+export const TRADING_PROFILES: Record<Exclude<TradingProfileName, "custom">, TradingProfile> = {
+  aggressive: {
+    minForecastDeviation: 0.055,
+    sellForecastDeviation: 0.02,
+    stopLossPercent: 0.10,
+    trailingStopPercent: 0.06,
+    maxHoldTicks: 45,
+    maxPositions: 10,
+  },
+  moderate: {
+    minForecastDeviation: 0.10,
+    sellForecastDeviation: 0.05,
+    stopLossPercent: 0.15,
+    trailingStopPercent: 0.08,
+    maxHoldTicks: 60,
+    maxPositions: 8,
+  },
+  conservative: {
+    minForecastDeviation: 0.15,
+    sellForecastDeviation: 0.08,
+    stopLossPercent: 0.20,
+    trailingStopPercent: 0.10,
+    maxHoldTicks: 75,
+    maxPositions: 6,
+  },
+};
+
+/**
+ * Detect which profile matches the current config values, or "custom" if none match.
+ */
+export function detectActiveProfile(config: TradingProfile): TradingProfileName {
+  for (const [name, profile] of Object.entries(TRADING_PROFILES) as [Exclude<TradingProfileName, "custom">, TradingProfile][]) {
+    if (
+      Math.abs(config.minForecastDeviation - profile.minForecastDeviation) < 0.001 &&
+      Math.abs(config.sellForecastDeviation - profile.sellForecastDeviation) < 0.001 &&
+      Math.abs(config.stopLossPercent - profile.stopLossPercent) < 0.001 &&
+      Math.abs(config.trailingStopPercent - profile.trailingStopPercent) < 0.001 &&
+      config.maxHoldTicks === profile.maxHoldTicks &&
+      config.maxPositions === profile.maxPositions
+    ) {
+      return name;
+    }
+  }
+  return "custom";
+}
+
 // === SERVER → SYMBOL MAPPING ===
 
 /**
@@ -66,17 +125,38 @@ export function getServerForSymbol(symbol: string): string | null {
 export interface PriceHistory {
   prices: number[];
   maxLength: number;
+  tickDirections: boolean[]; // true = price went up from previous tick
 }
 
 export function createPriceHistory(maxLength: number): PriceHistory {
-  return { prices: [], maxLength };
+  return { prices: [], maxLength, tickDirections: [] };
 }
 
 export function addPrice(history: PriceHistory, price: number): void {
+  // Track tick direction before adding price
+  if (history.prices.length > 0) {
+    const prevPrice = history.prices[history.prices.length - 1];
+    history.tickDirections.push(price > prevPrice);
+    if (history.tickDirections.length > history.maxLength) {
+      history.tickDirections.shift();
+    }
+  }
+
   history.prices.push(price);
   if (history.prices.length > history.maxLength) {
     history.prices.shift();
   }
+}
+
+/**
+ * Estimate forecast from tick direction counts.
+ * Returns the fraction of up-ticks, which directly estimates P(up) = (50 + otlkMag)/100.
+ * Requires at least 10 ticks for a reasonable estimate.
+ */
+export function estimateForecast(history: PriceHistory, minTicks: number = 10): number | null {
+  if (history.tickDirections.length < minTicks) return null;
+  const upTicks = history.tickDirections.filter(d => d).length;
+  return upTicks / history.tickDirections.length;
 }
 
 export function getMovingAverage(history: PriceHistory): number | null {
@@ -114,33 +194,50 @@ export interface TrendSignal {
 }
 
 /**
- * Generate a trend signal from price history using moving average crossover.
+ * Generate a trend signal from price history.
+ *
+ * Prefers tick-count forecast estimation (direct estimate of P(up)) when enough
+ * data is available. Falls back to moving average crossover for early ticks.
  */
 export function detectTrend(
   history: PriceHistory,
   threshold: number,
+  minForecastDeviation: number = 0.10,
 ): TrendSignal {
   const ma = getMovingAverage(history);
+  const currentPrice = history.prices.length > 0 ? history.prices[history.prices.length - 1] : 0;
+  const maRatio = ma !== null && ma > 0 ? currentPrice / ma : 1;
+
+  // Prefer tick-count forecast when available (more direct than MA)
+  const estForecast = estimateForecast(history);
+  if (estForecast !== null) {
+    const deviation = Math.abs(estForecast - 0.5);
+    if (deviation >= minForecastDeviation) {
+      return {
+        direction: estForecast > 0.5 ? "long" : "short",
+        strength: Math.min(1, deviation / 0.25), // Normalize: 0.25 deviation = max strength
+        maRatio,
+      };
+    }
+    return { direction: "neutral", strength: 0, maRatio };
+  }
+
+  // Fallback: MA crossover for early ticks before tick-count has enough data
   if (ma === null || history.prices.length < 3) {
     return { direction: "neutral", strength: 0, maRatio: 1 };
   }
 
-  const currentPrice = history.prices[history.prices.length - 1];
-  const maRatio = currentPrice / ma;
-  const deviation = maRatio - 1;
-
-  if (deviation > threshold) {
-    // Price above MA → uptrend → long
+  const maDeviation = maRatio - 1;
+  if (maDeviation > threshold) {
     return {
       direction: "long",
-      strength: Math.min(1, deviation / (threshold * 5)),
+      strength: Math.min(1, maDeviation / (threshold * 5)),
       maRatio,
     };
-  } else if (deviation < -threshold) {
-    // Price below MA → downtrend → short
+  } else if (maDeviation < -threshold) {
     return {
       direction: "short",
-      strength: Math.min(1, Math.abs(deviation) / (threshold * 5)),
+      strength: Math.min(1, Math.abs(maDeviation) / (threshold * 5)),
       maRatio,
     };
   }
@@ -175,17 +272,19 @@ export interface ForecastSignal {
 
 /**
  * Generate a signal from forecast data using expected return.
- * Buy filter: |expectedReturn| > buyThreshold.
+ * Buy filter: forecast must deviate from 0.5 by at least minForecastDeviation.
+ * Expected return is still used for ranking candidates by strength.
  */
 export function forecastSignal(
   forecast: number,
   volatility: number,
-  buyThreshold: number,
+  minForecastDeviation: number,
 ): ForecastSignal {
   const expectedReturn = calcExpectedReturn(forecast, volatility);
   const absReturn = Math.abs(expectedReturn);
+  const forecastDeviation = Math.abs(forecast - 0.5);
 
-  if (absReturn > buyThreshold) {
+  if (forecastDeviation >= minForecastDeviation) {
     return {
       direction: expectedReturn > 0 ? "long" : "short",
       strength: absReturn,
@@ -212,6 +311,23 @@ export function calcDiversifiedBudget(
 }
 
 /**
+ * Calculate per-stock budget weighted by signal strength.
+ * Stronger signals get more capital, capped at 2x the equal share.
+ */
+export function calcWeightedBudget(
+  tradingCapital: number,
+  maxPositions: number,
+  candidateStrength: number,
+  totalStrength: number,
+): number {
+  if (maxPositions <= 0 || totalStrength <= 0) return tradingCapital;
+  const equalShare = tradingCapital / maxPositions;
+  const weightedShare = (candidateStrength / totalStrength) * tradingCapital;
+  // Cap at 2x the equal share to prevent over-concentration
+  return Math.min(weightedShare, equalShare * 2);
+}
+
+/**
  * Calculate position size: full allocation up to diversification cap.
  * Signal-strength scaling removed — qualifying signals get full allocation,
  * and diversification handles risk management.
@@ -227,23 +343,48 @@ export function calculatePositionSize(
   return Math.min(sharesByBudget, maxShares);
 }
 
+// === COMMISSION CHECK ===
+
+/**
+ * Check if a position can generate enough profit to overcome round-trip commission.
+ * Expected profit over minHoldTicks must exceed commission × safetyMultiple.
+ */
+export function meetsCommissionThreshold(
+  shares: number,
+  pricePerShare: number,
+  expectedReturnPerTick: number,
+  commissionPerTrade: number,
+  minHoldTicks: number = 10,
+  safetyMultiple: number = 1.5,
+): boolean {
+  if (shares <= 0 || pricePerShare <= 0) return false;
+  const expectedProfit = shares * pricePerShare * Math.abs(expectedReturnPerTick) * minHoldTicks;
+  const totalCommission = commissionPerTrade * 2; // buy + sell
+  return expectedProfit > totalCommission * safetyMultiple;
+}
+
 // === SELL THRESHOLDS ===
 
 /**
- * Check if a position should be sold based on trailing threshold.
- * Returns true if the signal has reversed past the threshold.
+ * Check if a position should be sold based on forecast or MA reversal.
+ *
+ * For 4S/scraped mode: sell when forecast crosses back past 0.5 by sellForecastDeviation.
+ * This creates hysteresis — buy zone is wider than sell zone, preventing twitchy exits.
+ *   Buy long:  forecast > 0.5 + minForecastDeviation (e.g., > 0.60)
+ *   Hold long:  forecast > 0.5 - sellForecastDeviation (e.g., > 0.45)
+ *   Sell long:  forecast < 0.5 - sellForecastDeviation (e.g., < 0.45)
  */
 export function shouldSell(
   position: "long" | "short",
   currentForecast: number | null,
   currentMaRatio: number | null,
-  forecastThreshold: number,
+  sellForecastDeviation: number,
   preThreshold: number,
 ): boolean {
-  // 4S mode: use forecast directly
+  // 4S/scraped mode: use forecast with hysteresis
   if (currentForecast !== null) {
-    if (position === "long" && currentForecast < (0.5 - forecastThreshold)) return true;
-    if (position === "short" && currentForecast > (0.5 + forecastThreshold)) return true;
+    if (position === "long" && currentForecast < (0.5 - sellForecastDeviation)) return true;
+    if (position === "short" && currentForecast > (0.5 + sellForecastDeviation)) return true;
     return false;
   }
 
@@ -270,6 +411,7 @@ export interface PositionTracking {
   peakPrice: number;
   ticksHeld: number;
   direction: "long" | "short";
+  forecastAtEntry?: number;
 }
 
 export interface StopLossResult {

@@ -95,7 +95,7 @@ export interface QueueEntry {
 
 export interface Command {
   tool: ToolName;
-  action: "start" | "stop" | "open-tail" | "run-script" | "start-faction-work" | "set-focus" | "start-training" | "install-augments" | "run-backdoors" | "restart-rep-daemon" | "join-faction" | "restart-faction-daemon" | "restart-hack-daemon" | "restart-share-daemon" | "stop-infiltration" | "kill-infiltration" | "configure-infiltration" | "set-gang-strategy" | "pin-gang-member" | "unpin-gang-member" | "ascend-gang-member" | "toggle-gang-purchases" | "toggle-gang-warfare" | "set-gang-wanted-threshold" | "set-gang-ascension-thresholds" | "set-gang-training-threshold" | "set-gang-grow-target" | "set-gang-grow-respect-reserve" | "set-gang-territory-threshold" | "force-buy-equipment" | "restart-gang-daemon" | "buy-selected-augments" | "claim-focus" | "toggle-pserv-autobuy" | "force-contract-attempt" | "restart-stocks-daemon" | "rush-budget-bucket" | "cancel-budget-rush" | "update-budget-weight" | "reset-budget-weights" | "toggle-home-autobuy" | "accept-corp-recommendation" | "dismiss-corp-recommendation" | "restart-corp-daemon" | "toggle-corp-auto-products" | "toggle-corp-auto-tea" | "set-corp-dividend-rate" | "toggle-corp-enabled";
+  action: "start" | "stop" | "open-tail" | "run-script" | "start-faction-work" | "set-focus" | "start-training" | "install-augments" | "run-backdoors" | "restart-rep-daemon" | "join-faction" | "restart-faction-daemon" | "restart-hack-daemon" | "restart-share-daemon" | "stop-infiltration" | "kill-infiltration" | "configure-infiltration" | "set-gang-strategy" | "pin-gang-member" | "unpin-gang-member" | "ascend-gang-member" | "toggle-gang-purchases" | "toggle-gang-warfare" | "set-gang-wanted-threshold" | "set-gang-ascension-thresholds" | "set-gang-training-threshold" | "set-gang-grow-target" | "set-gang-grow-respect-reserve" | "set-gang-territory-threshold" | "force-buy-equipment" | "restart-gang-daemon" | "buy-selected-augments" | "claim-focus" | "toggle-pserv-autobuy" | "force-contract-attempt" | "restart-stocks-daemon" | "reset-stocks-pnl" | "stocks-control" | "set-stocks-profile" | "rush-budget-bucket" | "cancel-budget-rush" | "update-budget-weight" | "reset-budget-weights" | "toggle-home-autobuy" | "accept-corp-recommendation" | "dismiss-corp-recommendation" | "restart-corp-daemon" | "toggle-corp-auto-products" | "toggle-corp-auto-tea" | "set-corp-dividend-rate" | "toggle-corp-enabled";
   scriptPath?: string;
   scriptArgs?: string[];
   factionName?: string;
@@ -135,6 +135,8 @@ export interface Command {
   corpAutoTea?: boolean;
   corpDividendRate?: number;
   corpEnabled?: boolean;
+  stocksControlAction?: string;
+  stocksProfile?: string;
 }
 
 // === STATUS INTERFACES ===
@@ -473,7 +475,7 @@ export interface WorkStatus {
 
 // === HACK STRATEGY ===
 
-export type HackStrategy = "money" | "xp" | "drain";
+export type HackStrategy = "money" | "xp" | "drain" | "stocks";
 
 // === FLEET ALLOCATION ===
 
@@ -548,8 +550,8 @@ export interface HackStatus {
   totalExpectedMoneyFormatted: string;
   needHigherLevel: { count: number; nextLevel: number } | null;
 
-  // Batch-mode fields (undefined when running in legacy mode)
-  mode?: "legacy" | "batch";
+  // Mode fields
+  mode?: "legacy" | "batch" | "stocks";
   maxBatches?: number;
   incomePerSec?: number;
   incomePerSecFormatted?: string;
@@ -1039,6 +1041,7 @@ export interface StocksStatus {
 
   // Config
   smartMode: boolean;
+  activeProfile?: string;
   pollInterval: number;
 
   // Tick counter
@@ -1047,6 +1050,49 @@ export interface StocksStatus {
   // Scraped forecast info (when using DOM scraper)
   scrapedForecastAge?: number;
   scrapedForecastCount?: number;
+
+  // Trade history & session analytics
+  recentTrades?: TradeRecord[];
+  sessionStats?: SessionStats;
+
+  // Market overview grid (4S/scraped mode only)
+  marketOverview?: MarketCell[];
+}
+
+export interface MarketCell {
+  symbol: string;
+  forecast: number;
+  direction: "bull" | "bear";
+  held: boolean;
+  heldDirection?: "long" | "short";
+}
+
+export interface TradeRecord {
+  symbol: string;
+  direction: "long" | "short";
+  entryPrice: number;
+  exitPrice: number;
+  shares: number;
+  profit: number;
+  profitFormatted: string;
+  ticksHeld: number;
+  exitReason: string;
+  forecastAtEntry?: number;
+  forecastAtExit?: number;
+}
+
+export interface SessionStats {
+  totalTrades: number;
+  wins: number;
+  losses: number;
+  winRate: number;
+  avgProfit: number;
+  avgHoldTicks: number;
+  bestTrade: number;
+  worstTrade: number;
+  avgProfitFormatted: string;
+  bestTradeFormatted: string;
+  worstTradeFormatted: string;
 }
 
 // === CASINO STATUS ===

@@ -400,9 +400,10 @@ function HackControls({ running, sharePercent }: { running: boolean; sharePercen
           <option value="money">Money</option>
           <option value="xp">XP</option>
           <option value="drain">Drain</option>
+          <option value="stocks">Stocks</option>
         </select>
       </span>
-      {strategy !== "xp" && strategy !== "drain" && (
+      {strategy !== "xp" && strategy !== "drain" && strategy !== "stocks" && (
         <span style={{ display: "flex", alignItems: "center", gap: "4px" }}>
           <span style={{ ...styles.statLabel, fontSize: "11px" }}>Batches</span>
           <input
@@ -456,8 +457,9 @@ function HackOverviewCard({ status, running, toolId, pid }: OverviewCardProps<Fo
   const isBatch = status?.mode === "batch";
   const isXp = status?.strategy === "xp";
   const isDrain = status?.strategy === "drain";
+  const isStocks = status?.strategy === "stocks";
 
-  const modeLabel = isDrain ? " (DRAIN)" : isXp ? " (XP)" : isBatch ? " (HWGW)" : "";
+  const modeLabel = isStocks ? " (STOCKS)" : isDrain ? " (DRAIN)" : isXp ? " (XP)" : isBatch ? " (HWGW)" : "";
 
   return (
     <div style={styles.cardOverview}>

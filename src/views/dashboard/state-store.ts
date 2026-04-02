@@ -22,6 +22,7 @@ import {
   CONTRACTS_CONTROL_PORT,
   BUDGET_CONTROL_PORT,
   CORP_CONTROL_PORT,
+  STOCKS_CONTROL_PORT,
   NukeStatus,
   PservStatus,
   ShareStatus,
@@ -84,6 +85,30 @@ export function openToolTail(tool: ToolName): void {
  */
 export function runScript(tool: ToolName, scriptPath: string, scriptArgs: string[] = []): void {
   writeCommand(tool, "run-script", scriptPath, scriptArgs);
+}
+
+/**
+ * Send a control message to the stocks daemon.
+ */
+export function sendStocksControl(action: string): void {
+  if (!commandPort) return;
+  commandPort.write(JSON.stringify({ tool: "stocks", action: "stocks-control", stocksControlAction: action }));
+}
+
+/**
+ * Reset stocks P&L and trade history.
+ */
+export function resetStocksPnl(): void {
+  if (!commandPort) return;
+  commandPort.write(JSON.stringify({ tool: "stocks", action: "reset-stocks-pnl" }));
+}
+
+/**
+ * Set stocks trading profile.
+ */
+export function setStocksProfile(profile: string): void {
+  if (!commandPort) return;
+  commandPort.write(JSON.stringify({ tool: "stocks", action: "set-stocks-profile", stocksProfile: profile }));
 }
 
 /**
@@ -740,6 +765,46 @@ function executeCommand(ns: NS, cmd: Command): void {
           ns.toast("Stocks daemon restarted", "success", 2000);
         } else {
           ns.toast("Failed to restart stocks daemon (not enough RAM)", "error", 3000);
+        }
+      }
+      break;
+    case "reset-stocks-pnl":
+      {
+        const stocksCtrl = ns.getPortHandle(STOCKS_CONTROL_PORT);
+        stocksCtrl.write(JSON.stringify({ action: "reset-pnl" }));
+        ns.toast("Stocks: P&L and trade history reset", "info", 2000);
+      }
+      break;
+    case "stocks-control":
+      {
+        const stocksCtrl = ns.getPortHandle(STOCKS_CONTROL_PORT);
+        stocksCtrl.write(JSON.stringify({ action: cmd.stocksControlAction }));
+      }
+      break;
+    case "set-stocks-profile":
+      {
+        const profiles: Record<string, Record<string, string>> = {
+          aggressive: {
+            minForecastDeviation: "0.055", sellForecastDeviation: "0.02",
+            stopLossPercent: "0.10", trailingStopPercent: "0.06", maxHoldTicks: "45", maxPositions: "10",
+          },
+          moderate: {
+            minForecastDeviation: "0.10", sellForecastDeviation: "0.05",
+            stopLossPercent: "0.15", trailingStopPercent: "0.08", maxHoldTicks: "60", maxPositions: "8",
+          },
+          conservative: {
+            minForecastDeviation: "0.15", sellForecastDeviation: "0.08",
+            stopLossPercent: "0.20", trailingStopPercent: "0.10", maxHoldTicks: "75", maxPositions: "6",
+          },
+        };
+        const profile = cmd.stocksProfile ? profiles[cmd.stocksProfile] : null;
+        if (profile) {
+          for (const [key, value] of Object.entries(profile)) {
+            setConfigValue(ns, "stocks", key, value);
+          }
+          const stocksCtrl = ns.getPortHandle(STOCKS_CONTROL_PORT);
+          stocksCtrl.write(JSON.stringify({ action: "reload-config" }));
+          ns.toast(`Stocks: ${cmd.stocksProfile} profile applied`, "success", 2000);
         }
       }
       break;
