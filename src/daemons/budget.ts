@@ -220,6 +220,21 @@ async function daemon(ns: NS): Promise<void> {
   state = loadState(ns);
   prevCash = ns.getPlayer().money;
 
+  // Clear stale done markers on startup. Each daemon will re-signal done
+  // if its bucket is actually complete. This prevents markers from a
+  // previous bitnode/aug-install from permanently deactivating buckets
+  // (the aug-reset detector can't fire if the daemon restarts after the reset).
+  const staleMarkers = ns.read(DONE_MARKER_FILE);
+  if (staleMarkers) {
+    for (const bucket of staleMarkers.split("\n").filter(Boolean)) {
+      if (state.activeFlags[bucket] === false) {
+        state.activeFlags[bucket] = true;
+        ns.print(`  ${C.yellow}CLEARED${C.reset} stale done marker for ${bucket}`);
+      }
+    }
+    ns.write(DONE_MARKER_FILE, "", "w");
+  }
+
   ns.print(`${C.cyan}Budget daemon started${C.reset} (interval: ${interval}ms, snapshot-allowance)`);
   ns.print(`  Loaded ${Object.keys(state.weights).length} buckets from disk`);
 
