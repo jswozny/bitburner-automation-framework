@@ -124,6 +124,8 @@ export interface PlayerWithStats extends PlayerLike {
   dexterity: number;
   agility: number;
   augsInstalled: number;
+  karma: number;
+  numPeopleKilled: number;
 }
 
 // === FACTION REQUIREMENTS (hardcoded from Bitburner source) ===
@@ -154,7 +156,8 @@ const FACTION_REQUIREMENTS: Record<string, RequirementDef[]> = {
     { label: "Defense >= 300", check: p => p.defense >= 300, verifiable: true },
     { label: "Dexterity >= 300", check: p => p.dexterity >= 300, verifiable: true },
     { label: "Agility >= 300", check: p => p.agility >= 300, verifiable: true },
-    { label: "Kills >= 5", check: () => false, verifiable: false },
+    { label: "Karma <= -45", check: p => p.karma <= -45, verifiable: true },
+    { label: "Kills >= 5", check: p => p.numPeopleKilled >= 5, verifiable: true },
   ],
   "The Syndicate": [
     { label: "Hacking >= 200", check: p => p.hacking >= 200, verifiable: true },
@@ -163,14 +166,14 @@ const FACTION_REQUIREMENTS: Record<string, RequirementDef[]> = {
     { label: "Dexterity >= 200", check: p => p.dexterity >= 200, verifiable: true },
     { label: "Agility >= 200", check: p => p.agility >= 200, verifiable: true },
     { label: "Money >= $10M", check: p => p.money >= 10e6, verifiable: true },
-    { label: "Karma <= -90", check: () => false, verifiable: false },
+    { label: "Karma <= -90", check: p => p.karma <= -90, verifiable: true },
   ],
   "Tetrads": [
     { label: "Strength >= 75", check: p => p.strength >= 75, verifiable: true },
     { label: "Defense >= 75", check: p => p.defense >= 75, verifiable: true },
     { label: "Dexterity >= 75", check: p => p.dexterity >= 75, verifiable: true },
     { label: "Agility >= 75", check: p => p.agility >= 75, verifiable: true },
-    { label: "Karma <= -18", check: () => false, verifiable: false },
+    { label: "Karma <= -18", check: p => p.karma <= -18, verifiable: true },
   ],
   "Speakers for the Dead": [
     { label: "Hacking >= 100", check: p => p.hacking >= 100, verifiable: true },
@@ -178,8 +181,8 @@ const FACTION_REQUIREMENTS: Record<string, RequirementDef[]> = {
     { label: "Defense >= 300", check: p => p.defense >= 300, verifiable: true },
     { label: "Dexterity >= 300", check: p => p.dexterity >= 300, verifiable: true },
     { label: "Agility >= 300", check: p => p.agility >= 300, verifiable: true },
-    { label: "Kills >= 30", check: () => false, verifiable: false },
-    { label: "Karma <= -45", check: () => false, verifiable: false },
+    { label: "Kills >= 30", check: p => p.numPeopleKilled >= 30, verifiable: true },
+    { label: "Karma <= -45", check: p => p.karma <= -45, verifiable: true },
     { label: "Not working for CIA or NSA", check: () => false, verifiable: false },
   ],
   "Slum Snakes": [
@@ -188,7 +191,7 @@ const FACTION_REQUIREMENTS: Record<string, RequirementDef[]> = {
     { label: "Dexterity >= 30", check: p => p.dexterity >= 30, verifiable: true },
     { label: "Agility >= 30", check: p => p.agility >= 30, verifiable: true },
     { label: "Money >= $1M", check: p => p.money >= 1e6, verifiable: true },
-    { label: "Karma <= -9", check: () => false, verifiable: false },
+    { label: "Karma <= -9", check: p => p.karma <= -9, verifiable: true },
   ],
 
   // Hacking factions — hacking level + backdoor (not verifiable)

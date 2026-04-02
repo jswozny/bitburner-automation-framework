@@ -53,6 +53,8 @@ export async function main(ns: NS): Promise<void> {
     dexterity: player.skills.dexterity,
     agility: player.skills.agility,
     augsInstalled: 0,
+    karma: player.karma,
+    numPeopleKilled: player.numPeopleKilled,
   };
 
   // Enrich factions with requirements
