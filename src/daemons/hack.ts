@@ -832,6 +832,7 @@ async function runStocksMode(ns: NS): Promise<void> {
     // Distribute fleet RAM across targets
     if (targets.length > 0) {
       const totalPriority = targets.reduce((sum, t) => sum + t.priority, 0);
+      if (totalPriority <= 0) { await ns.sleep(cfg.interval); continue; }
 
       for (const target of targets) {
         const key = `${target.server}-${target.action}`;

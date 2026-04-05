@@ -612,7 +612,8 @@ export function getWorkStatus(ns: NS): WorkStatus {
 export function runWorkCycle(ns: NS, currentTier = 2): boolean {
   const config = readWorkConfig(ns);
   const status = getWorkStatus(ns);
-  const preserveFocus = ns.singularity.isFocused();
+  const hasWork = ns.singularity.getCurrentWork() !== null;
+  const preserveFocus = hasWork ? ns.singularity.isFocused() : true;
 
   // Handle crime modes
   const isCrimeMode = config.focus === "crime-money" || config.focus === "crime-stats"
