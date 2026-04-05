@@ -63,7 +63,7 @@ const DAEMON_DOCS: Record<ToolName, { start: string; stop: string; flags: string
   stocks: { start: "run daemons/stocks.js", stop: "kill daemons/stocks.js", flags: "config: /config/stocks.txt (enabled, pollInterval, smartMode, preThreshold, forecastThreshold, maWindow, buyThreshold)" },
   casino: { start: "run casino.js", stop: "kill casino.js", flags: null },
   home: { start: "run daemons/home.js", stop: "kill daemons/home.js", flags: "config: /config/home.txt (interval, autoBuy)" },
-  corp: { start: "run daemons/corp.js", stop: "kill daemons/corp.js", flags: "config: /config/corp.txt (tier, autoProducts, autoTea, autoMaterials, dividendRate, productInvestment)" },
+  corp: { start: "run daemons/corp.js", stop: "kill daemons/corp.js", flags: "config: /config/corp.txt (directive, pinDirective, tier, autoTea, dividendRate, productInvestPct, countdownSeconds)" },
 };
 
 // === RUNNING STATE ===

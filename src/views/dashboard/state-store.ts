@@ -395,35 +395,27 @@ export function toggleHomeAutoBuy(enabled: boolean): void {
 }
 
 /**
- * Accept a corp recommendation.
+ * Set corp directive (bootstrap/scale/harvest).
  */
-export function acceptCorpRecommendation(id: string): void {
+export function setCorpDirective(directive: string): void {
   if (!commandPort) return;
-  commandPort.write(JSON.stringify({ tool: "corp", action: "accept-corp-recommendation", corpRecommendationId: id }));
+  commandPort.write(JSON.stringify({ tool: "corp", action: "set-corp-directive", corpDirective: directive }));
 }
 
 /**
- * Dismiss a corp recommendation.
+ * Cancel pending corp action (countdown banner).
  */
-export function dismissCorpRecommendation(id: string): void {
+export function cancelCorpPending(): void {
   if (!commandPort) return;
-  commandPort.write(JSON.stringify({ tool: "corp", action: "dismiss-corp-recommendation", corpRecommendationId: id }));
+  commandPort.write(JSON.stringify({ tool: "corp", action: "cancel-corp-pending" }));
 }
 
 /**
- * Restart the corp daemon.
+ * Pin/unpin corp directive (prevents auto-advance).
  */
-export function restartCorpDaemon(): void {
+export function toggleCorpPin(pinned: boolean): void {
   if (!commandPort) return;
-  commandPort.write(JSON.stringify({ tool: "corp", action: "restart-corp-daemon" }));
-}
-
-/**
- * Toggle corp auto-products mode.
- */
-export function toggleCorpAutoProducts(enabled: boolean): void {
-  if (!commandPort) return;
-  commandPort.write(JSON.stringify({ tool: "corp", action: "toggle-corp-auto-products", corpAutoProducts: enabled }));
+  commandPort.write(JSON.stringify({ tool: "corp", action: "toggle-corp-pin", corpPinned: pinned }));
 }
 
 /**
@@ -870,31 +862,42 @@ function executeCommand(ns: NS, cmd: Command): void {
       setConfigValue(ns, "home", "autoBuy", cmd.homeAutoBuy ? "true" : "false");
       ns.toast(`Home: ${cmd.homeAutoBuy ? "auto-buy ON" : "monitor only"}`, "info", 2000);
       break;
-    case "accept-corp-recommendation":
-    case "dismiss-corp-recommendation":
-    case "toggle-corp-auto-products":
+    case "set-corp-directive":
+      {
+        const corpCtrl = ns.getPortHandle(CORP_CONTROL_PORT);
+        setConfigValue(ns, "corp", "directive", cmd.corpDirective ?? "bootstrap");
+        corpCtrl.write(JSON.stringify({ action: "set-directive", directive: cmd.corpDirective }));
+        ns.toast(`Corp: directive → ${cmd.corpDirective}`, "success", 2000);
+      }
+      break;
+    case "cancel-corp-pending":
+      {
+        const corpCtrl = ns.getPortHandle(CORP_CONTROL_PORT);
+        corpCtrl.write(JSON.stringify({ action: "cancel-pending" }));
+        ns.toast("Corp: pending action cancelled", "info", 2000);
+      }
+      break;
+    case "toggle-corp-pin":
+      {
+        const corpCtrl = ns.getPortHandle(CORP_CONTROL_PORT);
+        setConfigValue(ns, "corp", "pinDirective", cmd.corpPinned ? "true" : "false");
+        corpCtrl.write(JSON.stringify({ action: "pin-directive", pinned: cmd.corpPinned }));
+        ns.toast(`Corp: directive ${cmd.corpPinned ? "pinned" : "unpinned"}`, "info", 2000);
+      }
+      break;
     case "toggle-corp-auto-tea":
+      {
+        const corpCtrl = ns.getPortHandle(CORP_CONTROL_PORT);
+        corpCtrl.write(JSON.stringify({ action: "toggle-auto-tea", autoTea: cmd.corpAutoTea }));
+        setConfigValue(ns, "corp", "autoTea", cmd.corpAutoTea ? "true" : "false");
+        ns.toast(`Corp: auto-tea ${cmd.corpAutoTea ? "ON" : "OFF"}`, "info", 2000);
+      }
+      break;
     case "set-corp-dividend-rate":
       {
         const corpCtrl = ns.getPortHandle(CORP_CONTROL_PORT);
-        if (cmd.action === "accept-corp-recommendation") {
-          corpCtrl.write(JSON.stringify({ action: "accept-recommendation", recommendationId: cmd.corpRecommendationId }));
-          ns.toast("Corp: recommendation accepted", "success", 2000);
-        } else if (cmd.action === "dismiss-corp-recommendation") {
-          corpCtrl.write(JSON.stringify({ action: "dismiss-recommendation", recommendationId: cmd.corpRecommendationId }));
-          ns.toast("Corp: recommendation dismissed", "info", 2000);
-        } else if (cmd.action === "toggle-corp-auto-products") {
-          corpCtrl.write(JSON.stringify({ action: "toggle-auto-products", autoProducts: cmd.corpAutoProducts }));
-          setConfigValue(ns, "corp", "autoProducts", cmd.corpAutoProducts ? "true" : "false");
-          ns.toast(`Corp: auto-products ${cmd.corpAutoProducts ? "ON" : "OFF"}`, "info", 2000);
-        } else if (cmd.action === "toggle-corp-auto-tea") {
-          corpCtrl.write(JSON.stringify({ action: "toggle-auto-tea", autoTea: cmd.corpAutoTea }));
-          setConfigValue(ns, "corp", "autoTea", cmd.corpAutoTea ? "true" : "false");
-          ns.toast(`Corp: auto-tea ${cmd.corpAutoTea ? "ON" : "OFF"}`, "info", 2000);
-        } else if (cmd.action === "set-corp-dividend-rate") {
-          corpCtrl.write(JSON.stringify({ action: "set-dividend-rate", dividendRate: cmd.corpDividendRate }));
-          ns.toast(`Corp: dividend rate → ${((cmd.corpDividendRate ?? 0) * 100).toFixed(1)}%`, "info", 2000);
-        }
+        corpCtrl.write(JSON.stringify({ action: "set-dividend-rate", dividendRate: cmd.corpDividendRate }));
+        ns.toast(`Corp: dividend rate → ${((cmd.corpDividendRate ?? 0) * 100).toFixed(1)}%`, "info", 2000);
       }
       break;
     case "restart-corp-daemon":
