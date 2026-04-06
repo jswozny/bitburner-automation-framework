@@ -179,6 +179,7 @@ function computeWorkStatus(
   currentTierName: WorkTierName,
   currentRam: number,
   focusYielding = false,
+  focusHolder = "",
 ): WorkStatus {
   const rawStatus = getWorkStatus(ns);
 
@@ -384,6 +385,7 @@ function computeWorkStatus(
     crimeInfo,
     pendingCrimeSwitch,
     focusYielding,
+    focusHolder,
   };
 }
 
@@ -529,7 +531,7 @@ async function runMonitorMode(
   while (true) {
     const interval = getConfigNumber(ns, "work", "interval", 5000);
     const focusHolder = getConfigString(ns, "focus", "holder", "");
-    const focusYielding = focusHolder === "rep";
+    const focusYielding = focusHolder !== "" && focusHolder !== "work";
     const focus = readAndApplyFocus(ns);
 
     ns.clearLog();
@@ -537,7 +539,7 @@ async function runMonitorMode(
     // At tier 0 we can't train — just display status
     ns.print(`${C.yellow}Monitor mode (insufficient RAM for training)${C.reset}`);
 
-    const workStatus = computeWorkStatus(ns, 0, "monitor", currentRam, focusYielding);
+    const workStatus = computeWorkStatus(ns, 0, "monitor", currentRam, focusYielding, focusHolder);
     publishStatus(ns, STATUS_PORTS.work, workStatus);
     printStatus(ns, workStatus);
 
@@ -575,7 +577,7 @@ async function runTrainingMode(
     const interval = getConfigNumber(ns, "work", "interval", 5000);
     const oneShot = getConfigBool(ns, "work", "oneShot", false);
     const focusHolder = getConfigString(ns, "focus", "holder", "");
-    const focusYielding = focusHolder === "rep";
+    const focusYielding = focusHolder !== "" && focusHolder !== "work";
     const focus = readAndApplyFocus(ns);
 
     ns.clearLog();
@@ -595,7 +597,7 @@ async function runTrainingMode(
 
     // Run training cycle (skip when yielding focus to rep daemon)
     if (focusYielding) {
-      ns.print(`${C.yellow}Yielding focus to Rep daemon${C.reset}`);
+      ns.print(`${C.yellow}Yielding focus to ${focusHolder} daemon${C.reset}`);
     } else {
       const started = runWorkCycle(ns, 1);
       if (!started) {
@@ -603,7 +605,7 @@ async function runTrainingMode(
       }
     }
 
-    const workStatus = computeWorkStatus(ns, 1, "training", currentRam, focusYielding);
+    const workStatus = computeWorkStatus(ns, 1, "training", currentRam, focusYielding, focusHolder);
     publishStatus(ns, STATUS_PORTS.work, workStatus);
     printStatus(ns, workStatus);
 
@@ -626,7 +628,7 @@ async function runCrimeMode(
     const interval = getConfigNumber(ns, "work", "interval", 5000);
     const oneShot = getConfigBool(ns, "work", "oneShot", false);
     const focusHolder = getConfigString(ns, "focus", "holder", "");
-    const focusYielding = focusHolder === "rep";
+    const focusYielding = focusHolder !== "" && focusHolder !== "work";
     readAndApplyFocus(ns);
 
     ns.clearLog();
@@ -641,7 +643,7 @@ async function runCrimeMode(
       }
     }
 
-    const workStatus = computeWorkStatus(ns, 2, "crime", currentRam, focusYielding);
+    const workStatus = computeWorkStatus(ns, 2, "crime", currentRam, focusYielding, focusHolder);
     publishStatus(ns, STATUS_PORTS.work, workStatus);
     printStatus(ns, workStatus);
 

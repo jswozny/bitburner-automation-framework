@@ -31,6 +31,7 @@ export const STATUS_PORTS = {
   casino: 26,
   home: 27,
   corp: 28,
+  blade: 30,
 } as const;
 
 export const GANG_CONTROL_PORT = 15;
@@ -44,7 +45,7 @@ export const COMMAND_PORT = 20;
 
 // === TOOL NAMES ===
 
-export type ToolName = "nuke" | "pserv" | "share" | "rep" | "hack" | "darkweb" | "work" | "faction" | "infiltration" | "gang" | "augments" | "advisor" | "contracts" | "budget" | "stocks" | "casino" | "home" | "corp";
+export type ToolName = "nuke" | "pserv" | "share" | "rep" | "hack" | "darkweb" | "work" | "faction" | "infiltration" | "gang" | "augments" | "advisor" | "contracts" | "budget" | "stocks" | "casino" | "home" | "corp" | "blade";
 
 // === TOOL SCRIPTS (daemon paths) ===
 
@@ -67,6 +68,7 @@ export const TOOL_SCRIPTS: Record<ToolName, string> = {
   casino: "casino.js",
   home: "daemons/home.js",
   corp: "daemons/corp.js",
+  blade: "daemons/blade.js",
 };
 
 // === PRIORITY CONSTANTS ===
@@ -94,7 +96,7 @@ export interface QueueEntry {
 
 export interface Command {
   tool: ToolName;
-  action: "start" | "stop" | "open-tail" | "run-script" | "start-faction-work" | "set-focus" | "start-training" | "install-augments" | "run-backdoors" | "restart-rep-daemon" | "join-faction" | "restart-faction-daemon" | "restart-hack-daemon" | "restart-share-daemon" | "stop-infiltration" | "kill-infiltration" | "configure-infiltration" | "set-gang-strategy" | "pin-gang-member" | "unpin-gang-member" | "ascend-gang-member" | "toggle-gang-purchases" | "toggle-gang-warfare" | "set-gang-wanted-threshold" | "set-gang-ascension-thresholds" | "set-gang-training-threshold" | "set-gang-grow-target" | "set-gang-grow-respect-reserve" | "set-gang-territory-threshold" | "force-buy-equipment" | "restart-gang-daemon" | "buy-selected-augments" | "claim-focus" | "toggle-pserv-autobuy" | "set-pserv-max-ram" | "force-contract-attempt" | "restart-stocks-daemon" | "reset-stocks-pnl" | "stocks-control" | "set-stocks-profile" | "rush-budget-bucket" | "cancel-budget-rush" | "update-budget-weight" | "reset-budget-weights" | "toggle-home-autobuy" | "set-corp-directive" | "cancel-corp-pending" | "toggle-corp-pin" | "restart-corp-daemon" | "toggle-corp-auto-tea" | "set-corp-dividend-rate" | "toggle-corp-enabled";
+  action: "start" | "stop" | "open-tail" | "run-script" | "start-faction-work" | "set-focus" | "start-training" | "install-augments" | "run-backdoors" | "restart-rep-daemon" | "join-faction" | "restart-faction-daemon" | "restart-hack-daemon" | "restart-share-daemon" | "stop-infiltration" | "kill-infiltration" | "configure-infiltration" | "set-gang-strategy" | "pin-gang-member" | "unpin-gang-member" | "ascend-gang-member" | "toggle-gang-purchases" | "toggle-gang-warfare" | "set-gang-wanted-threshold" | "set-gang-ascension-thresholds" | "set-gang-training-threshold" | "set-gang-grow-target" | "set-gang-grow-respect-reserve" | "set-gang-territory-threshold" | "force-buy-equipment" | "restart-gang-daemon" | "buy-selected-augments" | "claim-focus" | "toggle-pserv-autobuy" | "set-pserv-max-ram" | "force-contract-attempt" | "restart-stocks-daemon" | "reset-stocks-pnl" | "stocks-control" | "set-stocks-profile" | "rush-budget-bucket" | "cancel-budget-rush" | "update-budget-weight" | "reset-budget-weights" | "toggle-home-autobuy" | "set-corp-directive" | "cancel-corp-pending" | "toggle-corp-pin" | "restart-corp-daemon" | "toggle-corp-auto-tea" | "set-corp-dividend-rate" | "toggle-corp-enabled" | "restart-blade-daemon" | "blade-buy-skill" | "set-blade-config";
   scriptPath?: string;
   scriptArgs?: string[];
   factionName?: string;
@@ -122,7 +124,7 @@ export interface Command {
   gangGrowRespectReserve?: number;
   gangTerritoryAutoThreshold?: number;
   selectedAugs?: string[];
-  focusTarget?: "work" | "rep";
+  focusTarget?: "work" | "rep" | "blade";
   pservAutoBuy?: boolean;
   pservMaxRam?: number;
   contractHost?: string;
@@ -138,6 +140,9 @@ export interface Command {
   corpEnabled?: boolean;
   stocksControlAction?: string;
   stocksProfile?: string;
+  bladeSkillName?: string;
+  bladeConfigKey?: string;
+  bladeConfigValue?: string;
 }
 
 // === STATUS INTERFACES ===
@@ -299,6 +304,7 @@ export interface RepStatus {
   currentWorkType?: string | null;
   isWorkable?: boolean;
   focusYielding?: boolean;
+  focusHolder?: string;
   pendingBackdoors?: string[];
   repGainRate?: number;
   eta?: string;
@@ -475,6 +481,7 @@ export interface WorkStatus {
     metric: string;
   } | null;
   focusYielding?: boolean;
+  focusHolder?: string;
 }
 
 // === HACK STRATEGY ===
@@ -771,6 +778,8 @@ export type GangStrategy = "respect" | "money" | "territory" | "balanced" | "gro
 export type GangTierName = "lite" | "basic" | "full";
 
 export type WorkTierName = "monitor" | "training" | "crime";
+
+export type BladeTierName = "monitor" | "analysis" | "automation";
 
 export interface GangMemberStatus {
   name: string;
@@ -1281,6 +1290,102 @@ export interface CorpStatus {
   budgetBalanceFormatted: string;
 }
 
+// === BLADEBURNER STATUS ===
+
+export interface BladeActionInfo {
+  name: string;
+  successMin: number;
+  successMax: number;
+  successFormatted: string;
+  count: number;
+  time: number;
+  timeFormatted: string;
+  rankGain: number;
+}
+
+export interface BladeSkillInfo {
+  name: string;
+  level: number;
+  upgradeCost: number;
+  upgradeCostFormatted: string;
+}
+
+export interface BladeCityInfo {
+  name: string;
+  chaos: number;
+  chaosFormatted: string;
+  population: number;
+  populationFormatted: string;
+  communities: number;
+}
+
+export interface BladeburnerStatus {
+  // Tier metadata (always present)
+  tier: number;
+  tierName: BladeTierName;
+  availableFeatures: string[];
+  unavailableFeatures: string[];
+  currentRamUsage: number;
+
+  // Core info (Tier 0+)
+  inBladeburner: boolean;
+  rank: number;
+  rankFormatted: string;
+  stamina: number;
+  maxStamina: number;
+  staminaPercent: number;
+  staminaFormatted: string;
+  skillPoints: number;
+  skillPointsFormatted: string;
+  city: string;
+  cityChaos: number;
+  cityChaosFormatted: string;
+  cityPopulation: number;
+  cityPopulationFormatted: string;
+  bonusTime: number;
+  bonusTimeFormatted: string;
+  currentAction: string;
+  currentActionType: "general" | "contract" | "operation" | "blackop" | "idle";
+  focusHolder?: string;
+
+  // Analysis (Tier 1+)
+  contracts?: BladeActionInfo[];
+  operations?: BladeActionInfo[];
+  nextBlackOp?: {
+    name: string;
+    rankRequired: number;
+    rankMet: boolean;
+    successMin: number;
+    successMax: number;
+    successFormatted: string;
+  } | null;
+  skills?: BladeSkillInfo[];
+  recommendedSkill?: { name: string; cost: number; costFormatted: string } | null;
+  cities?: BladeCityInfo[];
+
+  // Automation state (Tier 2)
+  recommendedAction?: string;
+  focusYielding?: boolean;
+
+  // Config echo (for dashboard controls)
+  config?: {
+    operationThreshold: number;
+    blackOpThreshold: number;
+    contractThreshold: number;
+    staminaMinPercent: number;
+    staminaTrainMax: number;
+    chaosMax: number;
+    chaosTarget: number;
+    successSpreadMax: number;
+    populationMin: number;
+  };
+
+  // Faction rep tracking
+  bladeburnerFactionRep?: number;
+  bladeburnerFactionRepFormatted?: string;
+  bladeburnerAugs?: { name: string; repReq: number; repReqFormatted: string; owned: boolean }[];
+}
+
 // === DASHBOARD STATE ===
 
 export interface DashboardState {
@@ -1310,6 +1415,7 @@ export interface DashboardState {
   homeStatus: HomeStatus | null;
   corpStatus: CorpStatus | null;
   corpEnabled: boolean;
+  bladeburnerStatus: BladeburnerStatus | null;
 }
 
 // === PLUGIN INTERFACE (for dashboard) ===

@@ -45,6 +45,7 @@ import {
   CasinoStatus,
   HomeStatus,
   CorpStatus,
+  BladeburnerStatus,
   Command,
 } from "/types/ports";
 
@@ -162,9 +163,26 @@ export function runBackdoors(): void {
 /**
  * Claim focus priority for a daemon (work or rep).
  */
-export function claimFocus(target: "work" | "rep"): void {
+export function claimFocus(target: "work" | "rep" | "blade" | ""): void {
   if (!commandPort) return;
-  commandPort.write(JSON.stringify({ tool: target, action: "claim-focus", focusTarget: target }));
+  const tool = target === "" ? "work" : target;
+  commandPort.write(JSON.stringify({ tool, action: "claim-focus", focusTarget: target }));
+}
+
+/**
+ * Buy a Bladeburner skill upgrade via the blade daemon.
+ */
+export function buyBladeSkill(skillName: string): void {
+  if (!commandPort) return;
+  commandPort.write(JSON.stringify({ tool: "blade", action: "blade-buy-skill", bladeSkillName: skillName }));
+}
+
+/**
+ * Set a Bladeburner config value.
+ */
+export function setBladeConfig(key: string, value: number): void {
+  if (!commandPort) return;
+  commandPort.write(JSON.stringify({ tool: "blade", action: "set-blade-config", bladeConfigKey: key, bladeConfigValue: String(value) }));
 }
 
 /**
@@ -708,9 +726,13 @@ function executeCommand(ns: NS, cmd: Command): void {
       }
       break;
     case "claim-focus":
-      if (cmd.focusTarget) {
+      if (cmd.focusTarget !== undefined) {
         setConfigValue(ns, "focus", "holder", cmd.focusTarget);
-        ns.toast(`Focus claimed by ${cmd.focusTarget} daemon`, "success", 2000);
+        if (cmd.focusTarget) {
+          ns.toast(`Focus claimed by ${cmd.focusTarget} daemon`, "success", 2000);
+        } else {
+          ns.toast("Focus released", "info", 2000);
+        }
       }
       break;
     case "buy-selected-augments":
@@ -953,6 +975,36 @@ function executeCommand(ns: NS, cmd: Command): void {
         }
       }
       break;
+
+    case "restart-blade-daemon":
+      {
+        const currentBladePid = cachedData.pids.blade;
+        if (currentBladePid > 0) {
+          ns.kill(currentBladePid);
+          cachedData.pids.blade = 0;
+        }
+        cachedData.bladeburnerStatus = null;
+        const bladePid = ns.exec(TOOL_SCRIPTS.blade, "home");
+        if (bladePid > 0) {
+          cachedData.pids.blade = bladePid;
+          ns.toast("Blade daemon restarted", "success", 2000);
+        }
+      }
+      break;
+
+    case "blade-buy-skill":
+      if (cmd.bladeSkillName) {
+        setConfigValue(ns, "blade", "buySkill", cmd.bladeSkillName);
+        ns.toast(`Queued skill purchase: ${cmd.bladeSkillName}`, "info", 2000);
+      }
+      break;
+
+    case "set-blade-config":
+      if (cmd.bladeConfigKey && cmd.bladeConfigValue !== undefined) {
+        setConfigValue(ns, "blade", cmd.bladeConfigKey, cmd.bladeConfigValue);
+        ns.toast(`Blade: ${cmd.bladeConfigKey} = ${cmd.bladeConfigValue}`, "info", 2000);
+      }
+      break;
   }
 }
 
@@ -1011,6 +1063,7 @@ const uiState: UIState = {
     casino: {},
     home: {},
     corp: {},
+    blade: {},
   },
 };
 
@@ -1127,10 +1180,11 @@ interface CachedData {
   homeStatus: HomeStatus | null;
   corpStatus: CorpStatus | null;
   corpEnabled: boolean;
+  bladeburnerStatus: BladeburnerStatus | null;
 }
 
 const cachedData: CachedData = {
-  pids: { nuke: 0, pserv: 0, share: 0, rep: 0, hack: 0, darkweb: 0, work: 0, faction: 0, infiltration: 0, gang: 0, augments: 0, advisor: 0, contracts: 0, budget: 0, stocks: 0, casino: 0, home: 0, corp: 0 },
+  pids: { nuke: 0, pserv: 0, share: 0, rep: 0, hack: 0, darkweb: 0, work: 0, faction: 0, infiltration: 0, gang: 0, augments: 0, advisor: 0, contracts: 0, budget: 0, stocks: 0, casino: 0, home: 0, corp: 0, blade: 0 },
   nukeStatus: null,
   pservStatus: null,
   shareStatus: null,
@@ -1156,6 +1210,7 @@ const cachedData: CachedData = {
   homeStatus: null,
   corpStatus: null,
   corpEnabled: true,
+  bladeburnerStatus: null,
 };
 
 // === PORT-BASED STATUS READING ===
@@ -1233,6 +1288,8 @@ export function readStatusPorts(ns: NS): void {
   cachedData.corpStatus = peekStatus<CorpStatus>(ns, STATUS_PORTS.corp, STALE_THRESHOLD_MS);
 
   cachedData.corpEnabled = getConfigBool(ns, "corp", "enabled", true);
+
+  cachedData.bladeburnerStatus = peekStatus<BladeburnerStatus>(ns, STATUS_PORTS.blade, STALE_THRESHOLD_MS);
 }
 
 // === TOOL CONTROL ===
@@ -1269,6 +1326,7 @@ function clearToolStatus(tool: ToolName): void {
     case "casino": cachedData.casinoStatus = null; break;
     case "home": cachedData.homeStatus = null; break;
     case "corp": cachedData.corpStatus = null; break;
+    case "blade": cachedData.bladeburnerStatus = null; break;
   }
 }
 
@@ -1363,7 +1421,7 @@ function stopTool(ns: NS, tool: ToolName): void {
     cachedData.pids[tool] = 0;
     clearToolStatus(tool);
     // Clear focus holder if the stopped tool was holding focus
-    if (tool === "work" || tool === "rep") {
+    if (tool === "work" || tool === "rep" || tool === "blade") {
       const currentHolder = getConfigString(ns, "focus", "holder", "");
       if (currentHolder === tool) {
         setConfigValue(ns, "focus", "holder", "");
@@ -1447,5 +1505,6 @@ export function getStateSnapshot(): DashboardState {
     homeStatus: cachedData.homeStatus,
     corpStatus: cachedData.corpStatus,
     corpEnabled: cachedData.corpEnabled,
+    bladeburnerStatus: cachedData.bladeburnerStatus,
   };
 }

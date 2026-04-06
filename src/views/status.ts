@@ -64,6 +64,7 @@ const DAEMON_DOCS: Record<ToolName, { start: string; stop: string; flags: string
   casino: { start: "run casino.js", stop: "kill casino.js", flags: null },
   home: { start: "run daemons/home.js", stop: "kill daemons/home.js", flags: "config: /config/home.txt (interval, autoBuy)" },
   corp: { start: "run daemons/corp.js", stop: "kill daemons/corp.js", flags: "config: /config/corp.txt (directive, pinDirective, tier, autoTea, dividendRate, productInvestPct, countdownSeconds)" },
+  blade: { start: "run daemons/blade.js", stop: "kill daemons/blade.js", flags: "config: /config/blade.txt (operationThreshold, blackOpThreshold, staminaMinPercent, chaosMax, populationMin)" },
 };
 
 // === RUNNING STATE ===
