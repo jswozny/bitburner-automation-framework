@@ -17,7 +17,10 @@ export const MANUAL_COMMAND = 'ns.singularity.purchaseAugmentation("FACTION", "N
 
 export async function main(ns: NS): Promise<void> {
   ns.disableLog("ALL");
-
+ if (!ns.getResetInfo().ownedSF.has(4)) {
+  ns.print("Error: SF4.1 is required to purchase NeuroFlux Governor. You do not have SF4.1 unlocked.");
+  return;
+ }
   const flags = ns.flags([
     ["faction", ""],
     ["dry-run", false],
@@ -44,7 +47,7 @@ export async function main(ns: NS): Promise<void> {
   // Check if we have enough reputation
   if (!nfInfo.hasEnoughRep) {
     ns.tprint(`Not enough reputation to purchase NeuroFlux Governor.`);
-    ns.tprint(`  Need ${ns.formatNumber(nfInfo.repRequired)} rep, have ${ns.formatNumber(nfInfo.bestFactionRep)} with ${factionName}.`);
+    ns.tprint(`  Need ${ns.format.number(nfInfo.repRequired)} rep, have ${ns.format.number(nfInfo.bestFactionRep)} with ${factionName}.`);
     return;
   }
 
@@ -62,7 +65,7 @@ export async function main(ns: NS): Promise<void> {
 
   ns.tprint(`Levels available: ${plan.purchases}`);
   ns.tprint(`Levels to buy: ${levelsToBuy}`);
-  ns.tprint(`Total cost: ${ns.formatNumber(plan.totalCost, 1)}`);
+  ns.tprint(`Total cost: ${ns.format.number(plan.totalCost, 1)}`);
 
   let purchased = 0;
 
@@ -85,5 +88,5 @@ export async function main(ns: NS): Promise<void> {
   ns.tprint(`\n--- Summary ---`);
   ns.tprint(`  ${dryRun ? "Would purchase" : "Purchased"}: ${purchased} levels`);
   ns.tprint(`  New NFG level: ${nfInfo.currentLevel + purchased}`);
-  ns.tprint(`  Remaining money: ${ns.formatNumber(ns.getServerMoneyAvailable("home"), 1)}`);
+  ns.tprint(`  Remaining money: ${ns.format.number(ns.getServerMoneyAvailable("home"), 1)}`);
 }

@@ -18,29 +18,49 @@ function isScriptRunning(ns: NS, path: string, host: string): boolean {
   return ns.ps(host).some(p => p.filename === path);
 }
 
+/*
+ * Checks if all the requisite Source Files
+ * listed in the SFArray parameter are available
+ * 
+ * @param {NS} ns 
+ * @param {Array<number>} SFArray 
+ * @returns {boolean} 
+ */
+function hasNeededSourceFiles(ns: NS, SFArray: Array<number>): boolean {
+  if (SFArray.length === 0) { // No SF requirements
+    return true;
+  }
+  for (const SF of SFArray) {
+    if (!ns.getResetInfo().ownedSF.has(SF)) {
+      return false;
+    }
+  }
+  return true;
+}
+
 /** Core daemons to launch after the dashboard, in priority order. */
-const CORE_SCRIPTS: { path: string; args: (string | number | boolean)[] }[] = [
-  { path: "daemons/nuke.js", args: [] },
-  { path: "daemons/hack.js", args: [] },
-  { path: "daemons/queue.js", args: [] },
-  { path: "daemons/darkweb.js", args: [] },
-  { path: "daemons/work.js", args: [] },
-  { path: "daemons/rep.js", args: [] },
-  { path: "daemons/share.js", args: [] },
+const CORE_SCRIPTS: { path: string; args: (string | number | boolean)[];neededSF : number[] }[] = [
+  { path: "daemons/nuke.js", args: [], neededSF: [] },
+  { path: "daemons/hack.js", args: [], neededSF: [] },
+  { path: "daemons/queue.js", args: [], neededSF: [] },
+  { path: "daemons/darkweb.js", args: [],neededSF: [4] },
+  { path: "daemons/work.js", args: [],neededSF: [4] },
+  { path: "daemons/rep.js", args: [],neededSF: [4] },
+  { path: "daemons/share.js", args: [],neededSF: [] },
 ];
 
 /** Optional daemons launched if RAM permits. */
-const OPTIONAL_SCRIPTS: { path: string; args: (string | number | boolean)[] }[] = [
-  { path: "daemons/pserv.js", args: [] },
-  { path: "daemons/faction.js", args: [] },
-  { path: "daemons/augments.js", args: [] },
-  { path: "daemons/advisor.js", args: [] },
-  { path: "daemons/contracts.js", args: [] },
-  { path: "daemons/budget.js", args: [] },
-  { path: "daemons/stocks.js", args: [] },
-  { path: "daemons/gang.js", args: [] },
-  { path: "daemons/home.js", args: [] },
-  { path: "daemons/corp.js", args: [] },
+const OPTIONAL_SCRIPTS: { path: string; args: (string | number | boolean)[];neededSF : number[] }[] = [
+  { path: "daemons/pserv.js", args: [],neededSF: [] },
+  { path: "daemons/faction.js", args: [], neededSF: [4] },
+  { path: "daemons/augments.js", args: [],neededSF: [4] },
+  { path: "daemons/advisor.js", args: [], neededSF: [] },
+  { path: "daemons/contracts.js", args: [], neededSF: [] },
+  { path: "daemons/budget.js", args: [], neededSF: [] },
+  { path: "daemons/stocks.js", args: [], neededSF: [] },
+  { path: "daemons/gang.js", args: [], neededSF: [2] },
+  { path: "daemons/home.js", args: [], neededSF: [4] },
+  { path: "daemons/corp.js", args: [], neededSF: [3] },
 ];
 
 export async function main(ns: NS): Promise<void> {
@@ -67,9 +87,15 @@ export async function main(ns: NS): Promise<void> {
   setConfigValue(ns, "pserv", "autoBuy", "true");
 
   // 2. Launch core daemons
-  for (const { path, args } of CORE_SCRIPTS) {
+  for (const { path, args, neededSF } of CORE_SCRIPTS) {
     if (isScriptRunning(ns, path, "home")) {
       ns.tprint(`INFO: ${path} already running`);
+      continue;
+    }
+    if(hasNeededSourceFiles(ns,neededSF || [])){
+      ns.tprint(`INFO: All SF requirements met for ${path}`);
+    } else {
+      ns.tprint(`INFO: Skipping ${path} — missing required Source Files: ${neededSF?.join(", ")}`);
       continue;
     }
     const pid = ensureRamAndExec(ns, path, "home", 1, ...args);
@@ -81,7 +107,6 @@ export async function main(ns: NS): Promise<void> {
   }
 
   // 3. Launch optional daemons if RAM available
-  const corpEnabled = getConfigBool(ns, "corp", "enabled", true);
   if (!corpEnabled) {
     // Write done marker so budget daemon zeros the corp bucket
     const markerFile = "/data/budget-done.txt";
@@ -92,13 +117,19 @@ export async function main(ns: NS): Promise<void> {
       ns.write(markerFile, doneBuckets.join("\n"), "w");
     }
   }
-
-  for (const { path, args } of OPTIONAL_SCRIPTS) {
-    // Skip corp daemon if disabled in config
-    if (path === "daemons/corp.js" && !corpEnabled) {
-      ns.tprint("INFO: Corp daemon disabled in config — skipping");
-      continue;
+  
+  for (const { path, args, neededSF } of OPTIONAL_SCRIPTS) {
+      // Skip corp daemon if disabled in config
+      if (path === "daemons/corp.js" && !corpEnabled) {
+        ns.tprint("INFO: Corp daemon disabled in config — skipping");
+        continue;
     }
+      if(hasNeededSourceFiles(ns,neededSF || [])){
+        ns.tprint(`INFO: All SF requirements met for ${path}`);
+      } else {
+        ns.tprint(`INFO: Skipping ${path} — missing required Source Files: ${neededSF?.join(", ")}`);
+        continue;
+      }  
     if (isScriptRunning(ns, path, "home")) {
       ns.tprint(`INFO: ${path} already running`);
       continue;

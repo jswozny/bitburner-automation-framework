@@ -21,7 +21,10 @@ export async function main(ns: NS): Promise<void> {
   if (ns.ps("home").some(p => p.filename === "daemons/rep.js")) {
     return;
   }
-
+ if (!ns.getResetInfo().ownedSF.has(4)) {
+  ns.print("Error: SF4.1 is required to check faction rep status. You do not have SF4.1 unlocked.");
+  return;
+ }
   const flags = ns.flags([
     ["faction", ""],
   ]) as { faction: string; _: string[] };
@@ -60,7 +63,7 @@ export async function main(ns: NS): Promise<void> {
     repRequired: 0,
     repRequiredFormatted: "-",
     currentRep: bestRep,
-    currentRepFormatted: ns.formatNumber(bestRep, 1),
+    currentRepFormatted: ns.format.number(bestRep, 1),
     repGap: 0,
     repGapFormatted: "-",
     repGapPositive: false,
@@ -83,5 +86,5 @@ export async function main(ns: NS): Promise<void> {
   };
 
   publishStatus(ns, STATUS_PORTS.rep, status as RepStatus);
-  ns.print(`Published rep status: ${bestFaction} rep=${ns.formatNumber(bestRep, 1)} favor=${bestFavor}`);
+  ns.print(`Published rep status: ${bestFaction} rep=${ns.format.number(bestRep, 1)} favor=${bestFavor}`);
 }

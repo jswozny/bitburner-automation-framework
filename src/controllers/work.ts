@@ -409,7 +409,7 @@ export function startTraining(
     if (!traveled) {
       return false;
     }
-    ns.tprint(`INFO: Work: traveled to ${option.city} (-$${ns.formatNumber(TRAVEL_COST)})`);
+    ns.tprint(`INFO: Work: traveled to ${option.city} (-$${ns.format.number(TRAVEL_COST)})`);
   }
 
   // Start the appropriate training

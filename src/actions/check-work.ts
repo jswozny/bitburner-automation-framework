@@ -20,7 +20,10 @@ export async function main(ns: NS): Promise<void> {
   if (ns.ps("home").some(p => p.filename === "daemons/work.js")) {
     return;
   }
-
+ if (!ns.getResetInfo().ownedSF.has(4)) {
+  ns.print("Error: SF4.1 is required to check work status. You do not have SF4.1 unlocked.");
+  return;
+ }
   const player = ns.getPlayer();
   const currentWork = ns.singularity.getCurrentWork();
   const focused = ns.singularity.isFocused();
@@ -103,7 +106,7 @@ export async function main(ns: NS): Promise<void> {
     focusLabel: focusLabels[currentFocus] || currentFocus.toUpperCase(),
     playerCity: player.city,
     playerMoney: player.money,
-    playerMoneyFormatted: ns.formatNumber(player.money, 1),
+    playerMoneyFormatted: ns.format.number(player.money, 1),
     isFocused: focused,
     skills: {
       strength: player.skills.strength,
@@ -112,12 +115,12 @@ export async function main(ns: NS): Promise<void> {
       agility: player.skills.agility,
       hacking: player.skills.hacking,
       charisma: player.skills.charisma,
-      strengthFormatted: ns.formatNumber(player.skills.strength, 0),
-      defenseFormatted: ns.formatNumber(player.skills.defense, 0),
-      dexterityFormatted: ns.formatNumber(player.skills.dexterity, 0),
-      agilityFormatted: ns.formatNumber(player.skills.agility, 0),
-      hackingFormatted: ns.formatNumber(player.skills.hacking, 0),
-      charismaFormatted: ns.formatNumber(player.skills.charisma, 0),
+      strengthFormatted: ns.format.number(player.skills.strength, 0),
+      defenseFormatted: ns.format.number(player.skills.defense, 0),
+      dexterityFormatted: ns.format.number(player.skills.dexterity, 0),
+      agilityFormatted: ns.format.number(player.skills.agility, 0),
+      hackingFormatted: ns.format.number(player.skills.hacking, 0),
+      charismaFormatted: ns.format.number(player.skills.charisma, 0),
     },
     activityDisplay,
     activityType,

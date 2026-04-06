@@ -13,7 +13,10 @@ export const MANUAL_COMMAND = 'ns.singularity.travelToCity("CITY_NAME")';
 
 export async function main(ns: NS): Promise<void> {
   ns.disableLog("ALL");
-
+ if (!ns.getResetInfo().ownedSF.has(4)) {
+  ns.print("Error: SF4.1 is required to travel to cities. You do not have SF4.1 unlocked.");
+  return;
+ }
   const flags = ns.flags([
     ["city", ""],
   ]) as { city: string; _: string[] };
@@ -36,7 +39,7 @@ export async function main(ns: NS): Promise<void> {
   const money = ns.getServerMoneyAvailable("home");
 
   if (money < cost) {
-    ns.tprint(`FAILED: Not enough money to travel. Need $200k, have ${ns.formatNumber(money, 1)}`);
+    ns.tprint(`FAILED: Not enough money to travel. Need $200k, have ${ns.format.number(money, 1)}`);
     return;
   }
 
