@@ -42,6 +42,7 @@ export type { ContractsStatus as FormattedContractsStatus } from "/types/ports";
 export type { BudgetStatus as FormattedBudgetStatus } from "/types/ports";
 export type { StocksStatus as FormattedStocksStatus } from "/types/ports";
 export type { HomeStatus as FormattedHomeStatus } from "/types/ports";
+export type { CorpStatus as FormattedCorpStatus } from "/types/ports";
 
 // Legacy plugin interface (kept for any remaining references)
 import React from "lib/react";

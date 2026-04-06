@@ -1,15 +1,14 @@
 /**
- * Budget Daemon (Income-Splitting)
+ * Budget Daemon (Snapshot Allowance Model)
  *
- * Tracks income deltas, splits incoming money across weighted buckets,
- * and lets each bucket accumulate a running balance. Single-tier, no
- * ROI logic. Consumers spend freely up to their bucket's balance.
+ * Each tick: reads current cash + holdings from status ports, computes fresh
+ * allowances per bucket. No accumulated balances to drift out of sync.
  *
  * Usage: run daemons/budget.js
  */
 import { NS } from "@ns";
 import { COLORS } from "/lib/utils";
-import { publishStatus } from "/lib/ports";
+import { publishStatus, peekStatus } from "/lib/ports";
 import { writeDefaultConfig, getConfigNumber } from "/lib/config";
 import {
   STATUS_PORTS,
@@ -17,22 +16,22 @@ import {
   BudgetStatus,
   BucketState,
   BudgetControlMessage,
+  StocksStatus,
+  CorpStatus,
 } from "/types/ports";
 import {
   DEFAULT_WEIGHTS,
   PersistedBudgetState,
   createDefaultPersistedState,
-  calculateIncome,
   isAugReset,
-  splitIncome,
-  computeEffectiveWeights,
+  computeAllowances,
   handleCompletion,
+  HoldingsInfo,
 } from "/controllers/budget";
 
 const C = COLORS;
 const BALANCE_FILE = "/data/budget-balances.json";
 const DONE_MARKER_FILE = "/data/budget-done.txt";
-const INCOME_HISTORY_SIZE = 15;
 
 /** @ram 4 */
 export function main(ns: NS): Promise<void> {
@@ -44,8 +43,6 @@ export function main(ns: NS): Promise<void> {
 
 let state: PersistedBudgetState;
 let prevCash = 0;
-let purchasesThisTick = 0;
-const incomeHistory: number[] = [];
 
 // === PERSISTENCE ===
 
@@ -58,13 +55,22 @@ function loadState(ns: NS): PersistedBudgetState {
 
       // Merge loaded state with defaults (handles new buckets)
       const merged: PersistedBudgetState = {
-        balances: { ...defaults.balances, ...loaded.balances },
         lifetimeSpent: { ...defaults.lifetimeSpent, ...loaded.lifetimeSpent },
         weights: { ...defaults.weights, ...loaded.weights },
         activeFlags: { ...defaults.activeFlags, ...loaded.activeFlags },
         caps: { ...defaults.caps, ...loaded.caps },
         rushBucket: loaded.rushBucket ?? null,
       };
+
+      // Clean up phantom buckets with empty keys
+      for (const key of Object.keys(merged.weights)) {
+        if (!key) {
+          delete merged.lifetimeSpent[key];
+          delete merged.weights[key];
+          delete merged.activeFlags[key];
+          delete merged.caps[key];
+        }
+      }
 
       return merged;
     } catch {
@@ -95,15 +101,13 @@ function drainControlPort(ns: NS): void {
 }
 
 function handleMessage(ns: NS, msg: BudgetControlMessage): void {
-  // Ensure the bucket exists in state
-  ensureBucket(msg.bucket);
+  // Ensure the bucket exists in state (skip empty names)
+  if (msg.bucket) ensureBucket(msg.bucket);
 
   switch (msg.action) {
     case "purchased":
       if (msg.amount !== undefined && msg.amount > 0) {
-        state.balances[msg.bucket] = Math.max(0, (state.balances[msg.bucket] ?? 0) - msg.amount);
         state.lifetimeSpent[msg.bucket] = (state.lifetimeSpent[msg.bucket] ?? 0) + msg.amount;
-        purchasesThisTick += msg.amount;
         ns.print(`  ${C.green}BUY${C.reset} ${msg.bucket}: ${ns.format.number(msg.amount)} (${msg.reason ?? ""})`);
       }
       break;
@@ -111,7 +115,7 @@ function handleMessage(ns: NS, msg: BudgetControlMessage): void {
     case "done":
       if (state.activeFlags[msg.bucket]) {
         ns.print(`  ${C.yellow}DONE${C.reset} ${msg.bucket}: closing bucket`);
-        handleCompletion(msg.bucket, state.balances, state.weights, state.activeFlags);
+        handleCompletion(msg.bucket, state.activeFlags);
       }
       break;
 
@@ -125,7 +129,7 @@ function handleMessage(ns: NS, msg: BudgetControlMessage): void {
 
     case "rush":
       state.rushBucket = msg.bucket;
-      ns.print(`  ${C.yellow}RUSH${C.reset} ${msg.bucket}: 100% income`);
+      ns.print(`  ${C.yellow}RUSH${C.reset} ${msg.bucket}: 100% allowance`);
       break;
 
     case "cancel-rush":
@@ -146,12 +150,19 @@ function handleMessage(ns: NS, msg: BudgetControlMessage): void {
       }
       ns.print(`  ${C.cyan}RESET${C.reset} All weights restored to defaults`);
       break;
+
+    case "reactivate":
+      if (!state.activeFlags[msg.bucket]) {
+        state.activeFlags[msg.bucket] = true;
+        ns.print(`  ${C.green}REACTIVATE${C.reset} ${msg.bucket}: bucket re-enabled`);
+      }
+      break;
   }
 }
 
 function ensureBucket(bucket: string): void {
-  if (state.balances[bucket] === undefined) {
-    state.balances[bucket] = 0;
+  if (!bucket) return;
+  if (state.lifetimeSpent[bucket] === undefined) {
     state.lifetimeSpent[bucket] = 0;
     state.weights[bucket] = DEFAULT_WEIGHTS[bucket] ?? 10;
     state.activeFlags[bucket] = true;
@@ -168,25 +179,30 @@ function checkDoneMarkers(ns: NS): void {
     ensureBucket(bucket);
     if (state.activeFlags[bucket]) {
       ns.print(`  ${C.yellow}DONE${C.reset} ${bucket}: closing bucket (from marker)`);
-      handleCompletion(bucket, state.balances, state.weights, state.activeFlags);
+      handleCompletion(bucket, state.activeFlags);
     }
   }
 }
 
-// === INCOME RATE TRACKING ===
+// === HOLDINGS READERS ===
 
-function updateIncomeRate(income: number): void {
-  incomeHistory.push(income);
-  if (incomeHistory.length > INCOME_HISTORY_SIZE) {
-    incomeHistory.shift();
+function readHoldings(ns: NS): HoldingsInfo {
+  let portfolioValue = 0;
+  let corpFunds = 0;
+
+  // Read stocks portfolio value from status port
+  const stocksStatus = peekStatus<StocksStatus>(ns, STATUS_PORTS.stocks, 30_000);
+  if (stocksStatus) {
+    portfolioValue = stocksStatus.portfolioValue;
   }
-}
 
-function getIncomeRate(intervalMs: number): number {
-  if (incomeHistory.length === 0) return 0;
-  const sum = incomeHistory.reduce((a, b) => a + b, 0);
-  const avgPerTick = sum / incomeHistory.length;
-  return avgPerTick / (intervalMs / 1000);
+  // Read corp funds from status port
+  const corpStatus = peekStatus<CorpStatus>(ns, STATUS_PORTS.corp, 30_000);
+  if (corpStatus && corpStatus.hasCorp) {
+    corpFunds = corpStatus.funds;
+  }
+
+  return { portfolioValue, corpFunds };
 }
 
 // === DAEMON LOOP ===
@@ -204,8 +220,23 @@ async function daemon(ns: NS): Promise<void> {
   state = loadState(ns);
   prevCash = ns.getPlayer().money;
 
-  ns.print(`${C.cyan}Budget daemon started${C.reset} (interval: ${interval}ms, income-splitting)`);
-  ns.print(`  Loaded ${Object.keys(state.balances).length} buckets from disk`);
+  // Clear stale done markers on startup. Each daemon will re-signal done
+  // if its bucket is actually complete. This prevents markers from a
+  // previous bitnode/aug-install from permanently deactivating buckets
+  // (the aug-reset detector can't fire if the daemon restarts after the reset).
+  const staleMarkers = ns.read(DONE_MARKER_FILE);
+  if (staleMarkers) {
+    for (const bucket of staleMarkers.split("\n").filter(Boolean)) {
+      if (state.activeFlags[bucket] === false) {
+        state.activeFlags[bucket] = true;
+        ns.print(`  ${C.yellow}CLEARED${C.reset} stale done marker for ${bucket}`);
+      }
+    }
+    ns.write(DONE_MARKER_FILE, "", "w");
+  }
+
+  ns.print(`${C.cyan}Budget daemon started${C.reset} (interval: ${interval}ms, snapshot-allowance)`);
+  ns.print(`  Loaded ${Object.keys(state.weights).length} buckets from disk`);
 
   // eslint-disable-next-line no-constant-condition
   while (true) {
@@ -218,16 +249,13 @@ async function daemon(ns: NS): Promise<void> {
 
     // 3. Check aug reset (cash drops >90%)
     if (isAugReset(prevCash, currentCash)) {
-      ns.print(`  ${C.yellow}AUG RESET DETECTED${C.reset} — zeroing all balances`);
-      for (const bucket of Object.keys(state.balances)) {
-        state.balances[bucket] = 0;
+      ns.print(`  ${C.yellow}AUG RESET DETECTED${C.reset} — zeroing lifetime spent`);
+      for (const bucket of Object.keys(state.weights)) {
         state.lifetimeSpent[bucket] = 0;
         state.activeFlags[bucket] = true;
         state.caps[bucket] = null;
       }
       state.rushBucket = null;
-      incomeHistory.length = 0;
-      purchasesThisTick = 0;
       prevCash = currentCash;
       ns.write(DONE_MARKER_FILE, "", "w");
       saveState(ns);
@@ -235,50 +263,41 @@ async function daemon(ns: NS): Promise<void> {
       continue;
     }
 
-    // 4. Calculate income delta
-    const income = calculateIncome(prevCash, currentCash, purchasesThisTick);
-    updateIncomeRate(income);
+    // 4. Read holdings from other daemon status ports
+    const holdings = readHoldings(ns);
 
-    // 5. Split income across buckets
-    if (income > 0) {
-      const deltas = splitIncome(income, state.weights, state.activeFlags, state.rushBucket);
-      for (const bucket of Object.keys(deltas)) {
-        state.balances[bucket] = (state.balances[bucket] ?? 0) + deltas[bucket];
-      }
-    }
+    // 5. Compute allowances
+    const allowances = computeAllowances(
+      currentCash, holdings, state.weights, state.activeFlags, state.rushBucket,
+    );
 
-    // 6. Cap tracking (informational only — buckets only close via explicit signalDone)
-    // Caps are still tracked for display purposes but no longer trigger auto-close.
-    // Consumer daemons call signalDone() when they are truly finished.
-
-    // If rush bucket is no longer active, cancel rush
+    // 6. If rush bucket is no longer active, cancel rush
     if (state.rushBucket && !state.activeFlags[state.rushBucket]) {
       state.rushBucket = null;
     }
 
-    // 7. Compute effective weights for display
-    const effectiveWeights = computeEffectiveWeights(state.weights, state.activeFlags, state.rushBucket);
-    const totalIncomeRate = getIncomeRate(interval);
-
-    // 8. Build & publish BudgetStatus
+    // 7. Build & publish BudgetStatus
+    const netWorth = currentCash + holdings.portfolioValue + holdings.corpFunds;
     const buckets: Record<string, BucketState> = {};
-    for (const bucket of Object.keys(state.balances)) {
-      const balance = state.balances[bucket] ?? 0;
+    for (const bucket of Object.keys(state.weights)) {
       const lifetime = state.lifetimeSpent[bucket] ?? 0;
-      const ew = effectiveWeights[bucket] ?? 0;
-      const bucketIncomeRate = totalIncomeRate * ew;
+      const a = allowances[bucket];
       const cap = state.caps[bucket] ?? null;
 
       buckets[bucket] = {
         bucket,
-        balance,
-        balanceFormatted: ns.format.number(balance),
+        allowance: a.allowance,
+        allowanceFormatted: ns.format.number(a.allowance),
         weight: state.weights[bucket] ?? 0,
-        effectiveWeight: ew,
+        effectiveWeight: (state.activeFlags[bucket] ? state.weights[bucket] : 0) / 100,
         lifetimeSpent: lifetime,
         lifetimeSpentFormatted: ns.format.number(lifetime),
-        incomeRate: bucketIncomeRate,
-        incomeRateFormatted: ns.format.number(bucketIncomeRate) + "/s",
+        lifetimeSpentFormatted: ns.format.number(lifetime),
+        isHolder: a.isHolder,
+        currentHolding: a.currentHolding,
+        currentHoldingFormatted: ns.format.number(a.currentHolding),
+        maxAllocation: a.maxAllocation,
+        maxAllocationFormatted: ns.format.number(a.maxAllocation),
         active: state.activeFlags[bucket] ?? false,
         cap,
         capFormatted: cap !== null ? ns.format.number(cap) : null,
@@ -288,8 +307,13 @@ async function daemon(ns: NS): Promise<void> {
     const status: BudgetStatus = {
       totalCash: currentCash,
       totalCashFormatted: ns.format.number(currentCash),
-      totalIncomeRate,
-      totalIncomeRateFormatted: ns.format.number(totalIncomeRate) + "/s",
+      totalCashFormatted: ns.format.number(currentCash),
+      netWorth,
+      netWorthFormatted: ns.format.number(netWorth),
+      portfolioValue: holdings.portfolioValue,
+      portfolioValueFormatted: ns.format.number(holdings.portfolioValue),
+      corpFunds: holdings.corpFunds,
+      corpFundsFormatted: ns.format.number(holdings.corpFunds),
       buckets,
       rushBucket: state.rushBucket,
       lastUpdated: Date.now(),
@@ -297,21 +321,20 @@ async function daemon(ns: NS): Promise<void> {
 
     publishStatus(ns, STATUS_PORTS.budget, status);
 
-    // 9. Save balances to disk
+    // 8. Save state to disk
     saveState(ns);
 
-    // 10. Reset per-tick counters
-    purchasesThisTick = 0;
+    // 9. Update prevCash
     prevCash = currentCash;
 
     // Print summary
     const activeCount = Object.values(state.activeFlags).filter(v => v).length;
-    const totalBuckets = Object.keys(state.balances).length;
+    const totalBuckets = Object.keys(state.weights).length;
     const rushLabel = state.rushBucket ? ` ${C.yellow}RUSH:${state.rushBucket}${C.reset}` : "";
     ns.print(
       `${C.cyan}=== Budget ===${C.reset} ` +
       `Cash: ${ns.format.number(currentCash)} | ` +
-      `Income: ${ns.format.number(totalIncomeRate)}/s | ` +
+      `NW: ${ns.format.number(netWorth)} | ` +
       `Active: ${activeCount}/${totalBuckets}${rushLabel}`
     );
 
@@ -320,8 +343,8 @@ async function daemon(ns: NS): Promise<void> {
       if (!b.active) continue;
       ns.print(
         `  ${C.cyan}${bucket.padEnd(12)}${C.reset} ` +
-        `bal: ${b.balanceFormatted.padStart(8)} | ` +
-        `${b.incomeRateFormatted.padStart(8)} | ` +
+        `allow: ${b.allowanceFormatted.padStart(8)} | ` +
+        `w: ${String(b.weight).padStart(3)}% | ` +
         `spent: ${b.lifetimeSpentFormatted}`
       );
     }

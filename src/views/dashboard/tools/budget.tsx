@@ -1,8 +1,8 @@
 /**
- * Budget Tool Plugin (Income-Splitting)
+ * Budget Tool Plugin (Snapshot Allowance Model)
  *
- * OverviewCard shows income rate, active bucket count, rush indicator.
- * DetailPanel shows balance bars, bucket table, rush toggle, weight settings.
+ * OverviewCard shows net worth, active bucket count, rush indicator.
+ * DetailPanel shows allowance bars, bucket table, rush toggle, weight settings.
  */
 import React from "lib/react";
 import {
@@ -90,8 +90,8 @@ function BudgetOverviewCard({
       {status ? (
         <>
           <div style={styles.stat}>
-            <span style={styles.statLabel}>Income</span>
-            <span style={{ color: "#00ff00" }}>{status.totalIncomeRateFormatted}</span>
+            <span style={styles.statLabel}>Net Worth</span>
+            <span style={{ color: "#00ff00" }}>{status.netWorthFormatted}</span>
           </div>
           <div style={styles.stat}>
             <span style={styles.statLabel}>Buckets</span>
@@ -120,6 +120,7 @@ const barColors: Record<string, string> = {
   stocks: "#0088ff",
   servers: "#00cc44",
   gang: "#ff4444",
+  corp: "#ff8800",
   home: "#44cc88",
   hacknet: "#ffaa00",
   programs: "#aa44ff",
@@ -164,12 +165,9 @@ function BudgetDetailPanel({
   }
 
   const allBuckets = Object.values(status.buckets) as BucketState[];
-  allBuckets.sort((a, b) => b.balance - a.balance);
+  allBuckets.sort((a, b) => b.allowance - a.allowance);
 
-  const maxBalance = Math.max(...allBuckets.map(b => b.balance), 1);
-
-  // Compute weight sum for indicator
-  const weightSum = allBuckets.reduce((sum, b) => sum + b.weight, 0);
+  const maxAllowance = Math.max(...allBuckets.map(b => b.allowance), 1);
 
   return (
     <div style={styles.panel}>
@@ -182,10 +180,28 @@ function BudgetDetailPanel({
             <span style={styles.statLabel}>Cash: </span>
             <span style={{ color: "#00ff00" }}>{status.totalCashFormatted}</span>
           </span>
+          {status.portfolioValue > 0 && (
+            <>
+              <span style={styles.dim}>|</span>
+              <span>
+                <span style={styles.statLabel}>Portfolio: </span>
+                <span style={{ color: "#0088ff" }}>{status.portfolioValueFormatted}</span>
+              </span>
+            </>
+          )}
+          {status.corpFunds > 0 && (
+            <>
+              <span style={styles.dim}>|</span>
+              <span>
+                <span style={styles.statLabel}>Corp: </span>
+                <span style={{ color: "#ff8800" }}>{status.corpFundsFormatted}</span>
+              </span>
+            </>
+          )}
           <span style={styles.dim}>|</span>
           <span>
-            <span style={styles.statLabel}>Income: </span>
-            <span style={{ color: "#00cc44" }}>{status.totalIncomeRateFormatted}</span>
+            <span style={styles.statLabel}>NW: </span>
+            <span style={{ color: "#00ff00", fontWeight: "bold" }}>{status.netWorthFormatted}</span>
           </span>
           {status.rushBucket && (
             <>
@@ -197,11 +213,11 @@ function BudgetDetailPanel({
         <ToolControl tool={toolId} running={running} pid={pid} />
       </div>
 
-      {/* Balance Bar Chart */}
+      {/* Allowance Bar Chart */}
       <div style={{ marginTop: "12px" }}>
-        <div style={styles.sectionTitle}>BALANCES</div>
+        <div style={styles.sectionTitle}>ALLOWANCES</div>
         {allBuckets.map((b: BucketState) => {
-          const barWidth = maxBalance > 0 ? Math.max(1, (b.balance / maxBalance) * 100) : 0;
+          const barWidth = maxAllowance > 0 ? Math.max(1, (b.allowance / maxAllowance) * 100) : 0;
           const color = b.active ? getBarColor(b.bucket) : "#555";
           return (
             <div key={b.bucket} style={{ display: "flex", alignItems: "center", marginBottom: "3px", gap: "8px" }}>
@@ -218,7 +234,7 @@ function BudgetDetailPanel({
                 }} />
               </div>
               <span style={{ width: "70px", fontSize: "11px", color: b.active ? "#fff" : "#666", textAlign: "right" }}>
-                {b.balanceFormatted}
+                {b.allowanceFormatted}
               </span>
             </div>
           );
@@ -232,8 +248,8 @@ function BudgetDetailPanel({
           <thead>
             <tr>
               <th style={styles.tableHeader}>Bucket</th>
-              <th style={{ ...styles.tableHeader, width: "80px", textAlign: "right" }}>Balance</th>
-              <th style={{ ...styles.tableHeader, width: "70px", textAlign: "right" }}>Income/s</th>
+              <th style={{ ...styles.tableHeader, width: "80px", textAlign: "right" }}>Allowance</th>
+              <th style={{ ...styles.tableHeader, width: "70px", textAlign: "right" }}>Holding</th>
               <th style={{ ...styles.tableHeader, width: "70px", textAlign: "right" }}>Lifetime</th>
               <th style={{ ...styles.tableHeader, width: "50px", textAlign: "right" }}>Weight</th>
               <th style={{ ...styles.tableHeader, width: "60px", textAlign: "center" }}>Status</th>
@@ -249,18 +265,21 @@ function BudgetDetailPanel({
 
               return (
                 <tr key={b.bucket} style={rowStyle}>
-                  <td style={{ ...styles.tableCell, color: getBarColor(b.bucket) }}>{b.bucket}</td>
-                  <td style={{ ...styles.tableCell, textAlign: "right", color: b.balance > 0 ? "#00ff00" : "#888" }}>
-                    {b.balanceFormatted}
+                  <td style={{ ...styles.tableCell, color: getBarColor(b.bucket) }}>
+                    {b.bucket}
+                    {b.isHolder && <span style={{ color: "#888", fontSize: "10px", marginLeft: "4px" }}>H</span>}
                   </td>
-                  <td style={{ ...styles.tableCell, textAlign: "right", color: "#00cc44" }}>
-                    {b.incomeRateFormatted}
+                  <td style={{ ...styles.tableCell, textAlign: "right", color: b.allowance > 0 ? "#00ff00" : "#888" }}>
+                    {b.allowanceFormatted}
+                  </td>
+                  <td style={{ ...styles.tableCell, textAlign: "right", color: b.isHolder && b.currentHolding > 0 ? "#0088ff" : "#555" }}>
+                    {b.isHolder ? b.currentHoldingFormatted : "\u2014"}
                   </td>
                   <td style={{ ...styles.tableCell, textAlign: "right", color: "#888" }}>
                     {b.lifetimeSpentFormatted}
                   </td>
                   <td style={{ ...styles.tableCell, textAlign: "right", color: "#ddd" }}>
-                    {b.weight}
+                    {b.weight}%
                   </td>
                   <td style={{ ...styles.tableCell, textAlign: "center", color: statusColor, fontSize: "11px" }}>
                     {statusLabel}
@@ -319,21 +338,21 @@ function BudgetDetailPanel({
       <div style={styles.section}>
         <div style={styles.sectionTitle}>SETTINGS</div>
 
-        {/* Weight sum indicator */}
         <div style={{
           marginBottom: "8px",
           fontSize: "11px",
-          color: weightSum === 100 ? "#00ff00" : "#ffaa00",
+          color: "#888",
         }}>
-          {weightSum === 100
-            ? "Weights sum to 100"
-            : `Weights sum to ${weightSum} \u2014 not 100%`}
+          Weights are independent caps (% of cash for spenders, % of net worth for holders)
         </div>
 
         {/* Per-bucket weight editors */}
         {allBuckets.map((b: BucketState) => (
           <div key={b.bucket} style={{ ...styles.stat, display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-            <span style={{ ...styles.statLabel, color: getBarColor(b.bucket) }}>{b.bucket}</span>
+            <span style={{ ...styles.statLabel, color: getBarColor(b.bucket) }}>
+              {b.bucket}
+              {b.isHolder && <span style={{ color: "#666", fontSize: "10px", marginLeft: "4px" }}>(NW)</span>}
+            </span>
             <EditableNumber
               value={b.weight}
               onCommit={(v) => { if (running) updateBudgetWeight(b.bucket, v); }}

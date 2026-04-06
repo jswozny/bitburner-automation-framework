@@ -46,6 +46,7 @@ import { budgetPlugin } from "views/dashboard/tools/budget";
 import { stocksPlugin } from "views/dashboard/tools/stocks";
 import { casinoPlugin } from "views/dashboard/tools/casino";
 import { homePlugin } from "views/dashboard/tools/home";
+import { corpPlugin } from "views/dashboard/tools/corp";
 
 // === PLUGIN REGISTRY ===
 
@@ -81,6 +82,7 @@ const PLUGIN_REGISTRY: PluginEntry[] = [
   { toolId: "stocks",       plugin: stocksPlugin,       tabLabel: "Stocks",     getStatus: pick("stocksStatus"),       getError: () => null },
   { toolId: "casino",       plugin: casinoPlugin,       tabLabel: "Casino",     getStatus: pick("casinoStatus"),       getError: () => null },
   { toolId: "home",         plugin: homePlugin,         tabLabel: "Home",       getStatus: pick("homeStatus"),         getError: () => null },
+  { toolId: "corp",         plugin: corpPlugin,         tabLabel: "Corp",       getStatus: pick("corpStatus"),         getError: () => null },
 ];
 
 /** Lookup a PluginEntry by toolId. */
@@ -97,7 +99,7 @@ interface TabGroupDef {
 const TAB_GROUPS: TabGroupDef[] = [
   { label: "Servers",        entries: [findEntry("home"), findEntry("nuke"), findEntry("hack"), findEntry("pserv"), findEntry("darkweb")] },
   { label: "Rep & Factions", entries: [findEntry("faction"), findEntry("rep"), findEntry("share"), findEntry("augments")] },
-  { label: "Money",          entries: [findEntry("work"), findEntry("budget"), findEntry("stocks"), findEntry("gang")] },
+  { label: "Money",          entries: [findEntry("work"), findEntry("budget"), findEntry("stocks"), findEntry("gang"), findEntry("corp")] },
   { label: "Tools",          entries: [findEntry("casino"), findEntry("infiltration"), findEntry("contracts")] },
 ];
 

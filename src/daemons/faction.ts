@@ -396,6 +396,8 @@ export async function main(ns: NS): Promise<void> {
         dexterity: player.skills.dexterity,
         agility: player.skills.agility,
         augsInstalled,
+        karma: player.karma,
+        numPeopleKilled: player.numPeopleKilled,
       };
     }
 

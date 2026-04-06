@@ -9,7 +9,7 @@
  */
 import { NetscriptPort, NS } from "@ns";
 import { peekStatus } from "/lib/ports";
-import { setConfigValue, getConfigString } from "/lib/config";
+import { setConfigValue, getConfigString, getConfigBool } from "/lib/config";
 import {
   ToolName,
   DashboardState,
@@ -21,6 +21,8 @@ import {
   GANG_CONTROL_PORT,
   CONTRACTS_CONTROL_PORT,
   BUDGET_CONTROL_PORT,
+  CORP_CONTROL_PORT,
+  STOCKS_CONTROL_PORT,
   NukeStatus,
   PservStatus,
   ShareStatus,
@@ -42,6 +44,7 @@ import {
   StocksStatus,
   CasinoStatus,
   HomeStatus,
+  CorpStatus,
   Command,
 } from "/types/ports";
 
@@ -82,6 +85,30 @@ export function openToolTail(tool: ToolName): void {
  */
 export function runScript(tool: ToolName, scriptPath: string, scriptArgs: string[] = []): void {
   writeCommand(tool, "run-script", scriptPath, scriptArgs);
+}
+
+/**
+ * Send a control message to the stocks daemon.
+ */
+export function sendStocksControl(action: string): void {
+  if (!commandPort) return;
+  commandPort.write(JSON.stringify({ tool: "stocks", action: "stocks-control", stocksControlAction: action }));
+}
+
+/**
+ * Reset stocks P&L and trade history.
+ */
+export function resetStocksPnl(): void {
+  if (!commandPort) return;
+  commandPort.write(JSON.stringify({ tool: "stocks", action: "reset-stocks-pnl" }));
+}
+
+/**
+ * Set stocks trading profile.
+ */
+export function setStocksProfile(profile: string): void {
+  if (!commandPort) return;
+  commandPort.write(JSON.stringify({ tool: "stocks", action: "set-stocks-profile", stocksProfile: profile }));
 }
 
 /**
@@ -146,6 +173,14 @@ export function claimFocus(target: "work" | "rep"): void {
 export function togglePservAutoBuy(enabled: boolean): void {
   if (!commandPort) return;
   commandPort.write(JSON.stringify({ tool: "pserv", action: "toggle-pserv-autobuy", pservAutoBuy: enabled }));
+}
+
+/**
+ * Set pserv max RAM cap (0 = game max, positive = power of 2 cap).
+ */
+export function setPservMaxRam(ram: number): void {
+  if (!commandPort) return;
+  commandPort.write(JSON.stringify({ tool: "pserv", action: "set-pserv-max-ram", pservMaxRam: ram }));
 }
 
 /**
@@ -357,6 +392,64 @@ export function resetBudgetWeights(): void {
 export function toggleHomeAutoBuy(enabled: boolean): void {
   if (!commandPort) return;
   commandPort.write(JSON.stringify({ tool: "home", action: "toggle-home-autobuy", homeAutoBuy: enabled }));
+}
+
+/**
+ * Accept a corp recommendation.
+ */
+export function acceptCorpRecommendation(id: string): void {
+  if (!commandPort) return;
+  commandPort.write(JSON.stringify({ tool: "corp", action: "accept-corp-recommendation", corpRecommendationId: id }));
+}
+
+/**
+ * Dismiss a corp recommendation.
+ */
+export function dismissCorpRecommendation(id: string): void {
+  if (!commandPort) return;
+  commandPort.write(JSON.stringify({ tool: "corp", action: "dismiss-corp-recommendation", corpRecommendationId: id }));
+}
+
+/**
+ * Restart the corp daemon.
+ */
+export function restartCorpDaemon(): void {
+  if (!commandPort) return;
+  commandPort.write(JSON.stringify({ tool: "corp", action: "restart-corp-daemon" }));
+}
+
+/**
+ * Toggle corp auto-products mode.
+ */
+export function toggleCorpAutoProducts(enabled: boolean): void {
+  if (!commandPort) return;
+  commandPort.write(JSON.stringify({ tool: "corp", action: "toggle-corp-auto-products", corpAutoProducts: enabled }));
+}
+
+/**
+ * Toggle corp auto-tea mode.
+ */
+export function toggleCorpAutoTea(enabled: boolean): void {
+  if (!commandPort) return;
+  commandPort.write(JSON.stringify({ tool: "corp", action: "toggle-corp-auto-tea", corpAutoTea: enabled }));
+}
+
+/**
+ * Set corp dividend rate.
+ */
+export function setCorpDividendRate(rate: number): void {
+  if (!commandPort) return;
+  commandPort.write(JSON.stringify({ tool: "corp", action: "set-corp-dividend-rate", corpDividendRate: rate }));
+}
+
+/**
+ * Toggle corp enabled/disabled state.
+ * When disabled: stops daemon, signals budget done, skips on next aug install.
+ * When enabled: starts daemon, reactivates budget bucket.
+ */
+export function toggleCorpEnabled(enabled: boolean): void {
+  if (!commandPort) return;
+  commandPort.write(JSON.stringify({ tool: "corp", action: "toggle-corp-enabled", corpEnabled: enabled }));
 }
 
 /**
@@ -611,6 +704,10 @@ function executeCommand(ns: NS, cmd: Command): void {
       setConfigValue(ns, "pserv", "autoBuy", cmd.pservAutoBuy ? "true" : "false");
       ns.toast(`Pserv: ${cmd.pservAutoBuy ? "auto-buy ON" : "monitor only"}`, "info", 2000);
       break;
+    case "set-pserv-max-ram":
+      setConfigValue(ns, "pserv", "maxRam", String(cmd.pservMaxRam ?? 0));
+      ns.toast(`Pserv: RAM cap ${cmd.pservMaxRam ? ns.formatRam(cmd.pservMaxRam) : "removed (game max)"}`, "info", 2000);
+      break;
     case "force-contract-attempt":
       if (cmd.contractHost && cmd.contractFile) {
         const contractsCtrl = ns.getPortHandle(CONTRACTS_CONTROL_PORT);
@@ -683,6 +780,46 @@ function executeCommand(ns: NS, cmd: Command): void {
         }
       }
       break;
+    case "reset-stocks-pnl":
+      {
+        const stocksCtrl = ns.getPortHandle(STOCKS_CONTROL_PORT);
+        stocksCtrl.write(JSON.stringify({ action: "reset-pnl" }));
+        ns.toast("Stocks: P&L and trade history reset", "info", 2000);
+      }
+      break;
+    case "stocks-control":
+      {
+        const stocksCtrl = ns.getPortHandle(STOCKS_CONTROL_PORT);
+        stocksCtrl.write(JSON.stringify({ action: cmd.stocksControlAction }));
+      }
+      break;
+    case "set-stocks-profile":
+      {
+        const profiles: Record<string, Record<string, string>> = {
+          aggressive: {
+            minForecastDeviation: "0.055", sellForecastDeviation: "0.02",
+            stopLossPercent: "0.10", trailingStopPercent: "0.06", maxHoldTicks: "45", maxPositions: "10",
+          },
+          moderate: {
+            minForecastDeviation: "0.10", sellForecastDeviation: "0.05",
+            stopLossPercent: "0.15", trailingStopPercent: "0.08", maxHoldTicks: "60", maxPositions: "8",
+          },
+          conservative: {
+            minForecastDeviation: "0.15", sellForecastDeviation: "0.08",
+            stopLossPercent: "0.20", trailingStopPercent: "0.10", maxHoldTicks: "75", maxPositions: "6",
+          },
+        };
+        const profile = cmd.stocksProfile ? profiles[cmd.stocksProfile] : null;
+        if (profile) {
+          for (const [key, value] of Object.entries(profile)) {
+            setConfigValue(ns, "stocks", key, value);
+          }
+          const stocksCtrl = ns.getPortHandle(STOCKS_CONTROL_PORT);
+          stocksCtrl.write(JSON.stringify({ action: "reload-config" }));
+          ns.toast(`Stocks: ${cmd.stocksProfile} profile applied`, "success", 2000);
+        }
+      }
+      break;
     case "restart-gang-daemon":
       {
         const currentGangPid = cachedData.pids.gang;
@@ -732,6 +869,86 @@ function executeCommand(ns: NS, cmd: Command): void {
     case "toggle-home-autobuy":
       setConfigValue(ns, "home", "autoBuy", cmd.homeAutoBuy ? "true" : "false");
       ns.toast(`Home: ${cmd.homeAutoBuy ? "auto-buy ON" : "monitor only"}`, "info", 2000);
+      break;
+    case "accept-corp-recommendation":
+    case "dismiss-corp-recommendation":
+    case "toggle-corp-auto-products":
+    case "toggle-corp-auto-tea":
+    case "set-corp-dividend-rate":
+      {
+        const corpCtrl = ns.getPortHandle(CORP_CONTROL_PORT);
+        if (cmd.action === "accept-corp-recommendation") {
+          corpCtrl.write(JSON.stringify({ action: "accept-recommendation", recommendationId: cmd.corpRecommendationId }));
+          ns.toast("Corp: recommendation accepted", "success", 2000);
+        } else if (cmd.action === "dismiss-corp-recommendation") {
+          corpCtrl.write(JSON.stringify({ action: "dismiss-recommendation", recommendationId: cmd.corpRecommendationId }));
+          ns.toast("Corp: recommendation dismissed", "info", 2000);
+        } else if (cmd.action === "toggle-corp-auto-products") {
+          corpCtrl.write(JSON.stringify({ action: "toggle-auto-products", autoProducts: cmd.corpAutoProducts }));
+          setConfigValue(ns, "corp", "autoProducts", cmd.corpAutoProducts ? "true" : "false");
+          ns.toast(`Corp: auto-products ${cmd.corpAutoProducts ? "ON" : "OFF"}`, "info", 2000);
+        } else if (cmd.action === "toggle-corp-auto-tea") {
+          corpCtrl.write(JSON.stringify({ action: "toggle-auto-tea", autoTea: cmd.corpAutoTea }));
+          setConfigValue(ns, "corp", "autoTea", cmd.corpAutoTea ? "true" : "false");
+          ns.toast(`Corp: auto-tea ${cmd.corpAutoTea ? "ON" : "OFF"}`, "info", 2000);
+        } else if (cmd.action === "set-corp-dividend-rate") {
+          corpCtrl.write(JSON.stringify({ action: "set-dividend-rate", dividendRate: cmd.corpDividendRate }));
+          ns.toast(`Corp: dividend rate → ${((cmd.corpDividendRate ?? 0) * 100).toFixed(1)}%`, "info", 2000);
+        }
+      }
+      break;
+    case "restart-corp-daemon":
+      {
+        const currentCorpPid = cachedData.pids.corp;
+        if (currentCorpPid > 0) {
+          ns.kill(currentCorpPid);
+          cachedData.pids.corp = 0;
+        }
+        const corpPid = ns.exec("daemons/corp.js", "home", 1);
+        if (corpPid > 0) {
+          cachedData.pids.corp = corpPid;
+          ns.toast("Corp daemon restarted", "success", 2000);
+        } else {
+          ns.toast("Failed to restart corp daemon (not enough RAM)", "error", 3000);
+        }
+      }
+      break;
+    case "toggle-corp-enabled":
+      {
+        const enabled = cmd.corpEnabled ?? true;
+        setConfigValue(ns, "corp", "enabled", enabled ? "true" : "false");
+        cachedData.corpEnabled = enabled;
+
+        if (enabled) {
+          // Remove "corp" from budget done markers
+          const markerFile = "/data/budget-done.txt";
+          const existing = ns.read(markerFile);
+          if (existing) {
+            const filtered = existing.split("\n").filter(Boolean).filter(b => b !== "corp");
+            ns.write(markerFile, filtered.join("\n"), "w");
+          }
+          // Reactivate budget bucket
+          const budgetCtrl = ns.getPortHandle(BUDGET_CONTROL_PORT);
+          budgetCtrl.write(JSON.stringify({ action: "reactivate", bucket: "corp" }));
+          // Start daemon
+          startTool(ns, "corp");
+          ns.toast("Corp enabled — daemon starting", "success", 2000);
+        } else {
+          // Stop daemon
+          stopTool(ns, "corp");
+          // Signal budget to deactivate corp bucket
+          const markerFile = "/data/budget-done.txt";
+          const existing = ns.read(markerFile);
+          const doneBuckets = existing ? existing.split("\n").filter(Boolean) : [];
+          if (!doneBuckets.includes("corp")) {
+            doneBuckets.push("corp");
+            ns.write(markerFile, doneBuckets.join("\n"), "w");
+          }
+          const budgetCtrl = ns.getPortHandle(BUDGET_CONTROL_PORT);
+          budgetCtrl.write(JSON.stringify({ action: "done", bucket: "corp" }));
+          ns.toast("Corp disabled — will not run on aug install", "warning", 3000);
+        }
+      }
       break;
   }
 }
@@ -790,6 +1007,7 @@ const uiState: UIState = {
     stocks: {},
     casino: {},
     home: {},
+    corp: {},
   },
 };
 
@@ -904,10 +1122,12 @@ interface CachedData {
   stocksStatus: StocksStatus | null;
   casinoStatus: CasinoStatus | null;
   homeStatus: HomeStatus | null;
+  corpStatus: CorpStatus | null;
+  corpEnabled: boolean;
 }
 
 const cachedData: CachedData = {
-  pids: { nuke: 0, pserv: 0, share: 0, rep: 0, hack: 0, darkweb: 0, work: 0, faction: 0, infiltration: 0, gang: 0, augments: 0, advisor: 0, contracts: 0, budget: 0, stocks: 0, casino: 0, home: 0 },
+  pids: { nuke: 0, pserv: 0, share: 0, rep: 0, hack: 0, darkweb: 0, work: 0, faction: 0, infiltration: 0, gang: 0, augments: 0, advisor: 0, contracts: 0, budget: 0, stocks: 0, casino: 0, home: 0, corp: 0 },
   nukeStatus: null,
   pservStatus: null,
   shareStatus: null,
@@ -931,6 +1151,8 @@ const cachedData: CachedData = {
   stocksStatus: null,
   casinoStatus: null,
   homeStatus: null,
+  corpStatus: null,
+  corpEnabled: true,
 };
 
 // === PORT-BASED STATUS READING ===
@@ -1004,6 +1226,10 @@ export function readStatusPorts(ns: NS): void {
   cachedData.stocksStatus = peekStatus<StocksStatus>(ns, STATUS_PORTS.stocks, STALE_THRESHOLD_MS);
 
   cachedData.homeStatus = peekStatus<HomeStatus>(ns, STATUS_PORTS.home, STALE_THRESHOLD_MS);
+
+  cachedData.corpStatus = peekStatus<CorpStatus>(ns, STATUS_PORTS.corp, STALE_THRESHOLD_MS);
+
+  cachedData.corpEnabled = getConfigBool(ns, "corp", "enabled", true);
 }
 
 // === TOOL CONTROL ===
@@ -1039,6 +1265,7 @@ function clearToolStatus(tool: ToolName): void {
     case "stocks": cachedData.stocksStatus = null; break;
     case "casino": cachedData.casinoStatus = null; break;
     case "home": cachedData.homeStatus = null; break;
+    case "corp": cachedData.corpStatus = null; break;
   }
 }
 
@@ -1147,6 +1374,10 @@ export function getFleetAllocation(): FleetAllocation | null {
   return cachedData.fleetAllocation;
 }
 
+export function isCorpEnabled(): boolean {
+  return cachedData.corpEnabled;
+}
+
 export function isToolRunning(tool: ToolName): boolean {
   return cachedData.pids[tool] > 0;
 }
@@ -1211,5 +1442,7 @@ export function getStateSnapshot(): DashboardState {
     stocksStatus: cachedData.stocksStatus,
     casinoStatus: cachedData.casinoStatus,
     homeStatus: cachedData.homeStatus,
+    corpStatus: cachedData.corpStatus,
+    corpEnabled: cachedData.corpEnabled,
   };
 }

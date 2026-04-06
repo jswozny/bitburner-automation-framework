@@ -17,15 +17,17 @@ import { getPservStatus, PservConfig, PservCallbacks, runPservCycle } from "/con
 import { publishStatus } from "/lib/ports";
 import { STATUS_PORTS, PservStatus } from "/types/ports";
 import { writeDefaultConfig, getConfigString, getConfigNumber, getConfigBool } from "/lib/config";
-import { getBudgetBalance, notifyPurchase, reportCap, signalDone } from "/lib/budget";
+import { getBudgetBalance, notifyPurchase, reportCap, reactivateBucket, setBudgetWeight, signalDone } from "/lib/budget";
+import { DEFAULT_WEIGHTS } from "/controllers/budget";
 
 /**
  * Build a PservStatus object with formatted values for the dashboard.
  * Bridges raw controller data to the port type expected by the UI.
  */
-function computePservStatus(ns: NS, reserve: number, autoBuy: boolean): PservStatus {
+function computePservStatus(ns: NS, reserve: number, autoBuy: boolean, maxRamCap: number): PservStatus {
   const raw = getPservStatus(ns);
-  const maxPossibleRam = ns.cloud.getRamLimit() 
+  const maxPossibleRam = ns.cloud.getRamLimit()
+  const effectiveMaxRam = maxRamCap > 0 ? maxRamCap : maxPossibleRam;
 
   // Map servers to formatted entries
   const servers = raw.servers.map((hostname) => {
@@ -37,8 +39,9 @@ function computePservStatus(ns: NS, reserve: number, autoBuy: boolean): PservSta
     };
   });
 
-  // Count how many servers are at max RAM
-  const maxedCount = servers.filter((s) => s.ram >= maxPossibleRam).length;
+  // Count how many servers are at effective max RAM (respects cap)
+  const maxedCount = servers.filter((s) => s.ram >= effectiveMaxRam).length;
+  const allMaxed = raw.serverCount > 0 && raw.minRam >= effectiveMaxRam;
 
   // Upgrade progress: percentage of servers at max
   const upgradeProgress =
@@ -48,10 +51,10 @@ function computePservStatus(ns: NS, reserve: number, autoBuy: boolean): PservSta
 
   // Find next upgrade: locate smallest server and check if we can afford its next tier
   let nextUpgrade: PservStatus["nextUpgrade"] = null;
-  if (raw.serverCount > 0 && !raw.allMaxed) {
+  if (raw.serverCount > 0 && !allMaxed) {
     const smallest = servers.reduce((min, s) => (s.ram < min.ram ? s : min));
     if (smallest.ram < maxPossibleRam) {
-      const nextRam = smallest.ram * 2;
+      const nextRam = Math.min(smallest.ram * 2, effectiveMaxRam);
       const cost = ns.cloud.getServerUpgradeCost(smallest.hostname, nextRam);
       const budget = ns.getServerMoneyAvailable("home") - reserve;
 
@@ -74,7 +77,10 @@ function computePservStatus(ns: NS, reserve: number, autoBuy: boolean): PservSta
     maxRam: ns.format.ram(raw.maxRam),
     maxPossibleRam: ns.format.ram(maxPossibleRam),
     maxPossibleRamNum: maxPossibleRam,
-    allMaxed: raw.allMaxed,
+    maxRamCap,
+    maxRamCapFormatted: maxRamCap > 0 ? ns.formatRam(maxRamCap) : "Game Max",
+    effectiveMaxRam,
+    allMaxed,
     autoBuy,
     servers,
     upgradeProgress,
@@ -129,22 +135,40 @@ export async function main(ns: NS): Promise<void> {
   writeDefaultConfig(ns, "pserv", {
     prefix: "pserv",
     minRam: "8",
+    maxRam: "0",
     reserve: "0",
     oneShot: "false",
     interval: "10000",
     autoBuy: "true",
   });
 
+  let wasMonitorMode = false;
+
   do {
     const config: PservConfig = {
       prefix: getConfigString(ns, "pserv", "prefix", "pserv"),
       minRam: getConfigNumber(ns, "pserv", "minRam", 8),
+      maxRam: getConfigNumber(ns, "pserv", "maxRam", 0),
       reserve: getConfigNumber(ns, "pserv", "reserve", 0),
       oneShot: getConfigBool(ns, "pserv", "oneShot", false),
       interval: getConfigNumber(ns, "pserv", "interval", 10000),
       autoBuy: getConfigBool(ns, "pserv", "autoBuy", true),
     };
     ns.clearLog();
+
+    // Monitor mode: signal budget done and skip purchase cycle
+    if (!config.autoBuy) {
+      if (!wasMonitorMode) {
+        signalDone(ns, "servers");
+      }
+      wasMonitorMode = true;
+    } else {
+      if (wasMonitorMode) {
+        reactivateBucket(ns, "servers");
+      }
+      setBudgetWeight(ns, "servers", DEFAULT_WEIGHTS.servers);
+      wasMonitorMode = false;
+    }
 
     // Budget integration: constrain spending by balance
     const budgetFn = (): number => {
@@ -156,9 +180,12 @@ export async function main(ns: NS): Promise<void> {
       notifyPurchase(ns, "servers", cost, desc);
     };
 
-    // Report remaining cost cap to budget daemon
+    // Report remaining cost cap to budget daemon (only when actively buying)
+    if (config.autoBuy) {
     const pstat = getPservStatus(ns);
-    const isFullyDone = pstat.allMaxed && pstat.serverCount >= pstat.serverCap;
+    const effectiveMax = config.maxRam > 0 ? config.maxRam : pstat.maxPossibleRam;
+    const allAtCap = pstat.serverCount > 0 && pstat.minRam >= effectiveMax;
+    const isFullyDone = allAtCap && pstat.serverCount >= pstat.serverCap;
     if (!isFullyDone) {
       let totalRemainingCost = 0;
       if (pstat.serverCount < pstat.serverCap) {
@@ -167,7 +194,7 @@ export async function main(ns: NS): Promise<void> {
         totalRemainingCost += ns.cloud.getServerCost(config.minRam) * slotsLeft;
         // Cost to upgrade each new server from minRam to max
         let ram = config.minRam;
-        while (ram < pstat.maxPossibleRam) {
+        while (ram < effectiveMax) {
           const nextRam = ram * 2;
           totalRemainingCost += ns.cloud.getServerUpgradeCost(`${config.prefix}-0`, nextRam) * slotsLeft;
           ram = nextRam;
@@ -183,9 +210,19 @@ export async function main(ns: NS): Promise<void> {
             ram = nextRam;
           }
         }
-      }
-      if (totalRemainingCost > 0) {
-        reportCap(ns, "servers", totalRemainingCost);
+        if (pstat.servers.length > 0) {
+          for (const hostname of pstat.servers) {
+            let ram = ns.getServerMaxRam(hostname);
+            while (ram < effectiveMax) {
+              const nextRam = ram * 2;
+              totalRemainingCost += ns.getPurchasedServerUpgradeCost(hostname, nextRam);
+              ram = nextRam;
+            }
+          }
+        }
+        if (totalRemainingCost > 0) {
+          reportCap(ns, "servers", totalRemainingCost);
+        }
       }
     }
 
@@ -197,7 +234,7 @@ export async function main(ns: NS): Promise<void> {
       : { bought: 0, upgraded: 0, waitingFor: null };
 
     // Compute formatted status for the dashboard
-    const pservStatus = computePservStatus(ns, config.reserve, config.autoBuy);
+    const pservStatus = computePservStatus(ns, config.reserve, config.autoBuy, config.maxRam);
 
     // Publish to port for dashboard consumption
     publishStatus(ns, STATUS_PORTS.pserv, pservStatus);

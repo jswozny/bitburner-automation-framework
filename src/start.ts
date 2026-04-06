@@ -11,9 +11,7 @@
  */
 import { NS } from "@ns";
 import { ensureRamAndExec } from "/lib/launcher";
-import { setConfigValue } from "/lib/config";
-import { resetBudgetWeights } from './views/dashboard/state-store';
-import { getNextUpgradeInfo } from './controllers/pserv';
+import { setConfigValue, getConfigBool } from "/lib/config";
 
 /** Check if any instance of a script is running, regardless of arguments. */
 function isScriptRunning(ns: NS, path: string, host: string): boolean {
@@ -62,6 +60,7 @@ const OPTIONAL_SCRIPTS: { path: string; args: (string | number | boolean)[];need
   { path: "daemons/stocks.js", args: [], neededSF: [] },
   { path: "daemons/gang.js", args: [], neededSF: [2] },
   { path: "daemons/home.js", args: [], neededSF: [4] },
+  { path: "daemons/corp.js", args: [], neededSF: [3] },
 ];
 
 export async function main(ns: NS): Promise<void> {
@@ -108,7 +107,23 @@ export async function main(ns: NS): Promise<void> {
   }
 
   // 3. Launch optional daemons if RAM available
+  if (!corpEnabled) {
+    // Write done marker so budget daemon zeros the corp bucket
+    const markerFile = "/data/budget-done.txt";
+    const existing = ns.read(markerFile);
+    const doneBuckets = existing ? existing.split("\n").filter(Boolean) : [];
+    if (!doneBuckets.includes("corp")) {
+      doneBuckets.push("corp");
+      ns.write(markerFile, doneBuckets.join("\n"), "w");
+    }
+  }
+  
   for (const { path, args, neededSF } of OPTIONAL_SCRIPTS) {
+      // Skip corp daemon if disabled in config
+      if (path === "daemons/corp.js" && !corpEnabled) {
+        ns.tprint("INFO: Corp daemon disabled in config — skipping");
+        continue;
+    }
       if(hasNeededSourceFiles(ns,neededSF || [])){
         ns.tprint(`INFO: All SF requirements met for ${path}`);
       } else {
