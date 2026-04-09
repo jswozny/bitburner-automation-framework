@@ -20,10 +20,7 @@ export async function main(ns: NS): Promise<void> {
   if (ns.ps("home").some(p => p.filename === "daemons/darkweb.js")) {
     return;
   }
- if (!ns.getResetInfo().ownedSF.has(4)) {
-  ns.print("Error: SF4.1 is required to check darkweb status. You do not have SF4.1 unlocked.");
-  return;
- }
+
   // Check if TOR router is owned - getDarkwebPrograms returns [] without it
   let programNames: string[];
   let hasTor = false;
