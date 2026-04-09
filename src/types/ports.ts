@@ -1373,6 +1373,7 @@ export interface BladeburnerStatus {
     blackOpThreshold: number;
     contractThreshold: number;
     staminaMinPercent: number;
+    staminaRestoreTo: number;
     staminaTrainMax: number;
     chaosMax: number;
     chaosTarget: number;

@@ -172,6 +172,7 @@ function readBladeConfig(ns: NS): BladeConfig {
     blackOpThreshold: getConfigNumber(ns, "blade", "blackOpThreshold", DEFAULT_BLADE_CONFIG.blackOpThreshold),
     contractThreshold: getConfigNumber(ns, "blade", "contractThreshold", DEFAULT_BLADE_CONFIG.contractThreshold),
     staminaMinPercent: getConfigNumber(ns, "blade", "staminaMinPercent", DEFAULT_BLADE_CONFIG.staminaMinPercent),
+    staminaRestoreTo: getConfigNumber(ns, "blade", "staminaRestoreTo", DEFAULT_BLADE_CONFIG.staminaRestoreTo),
     staminaTrainMax: getConfigNumber(ns, "blade", "staminaTrainMax", DEFAULT_BLADE_CONFIG.staminaTrainMax),
     chaosMax: getConfigNumber(ns, "blade", "chaosMax", DEFAULT_BLADE_CONFIG.chaosMax),
     chaosTarget: getConfigNumber(ns, "blade", "chaosTarget", DEFAULT_BLADE_CONFIG.chaosTarget),
@@ -401,6 +402,7 @@ async function runAutomationMode(
   currentRam: number,
 ): Promise<void> {
   let isDiplomacyActive = false;
+  let isResting = false;
 
   // Try to join BB division if not already in
   if (!ns.bladeburner.inBladeburner()) {
@@ -487,11 +489,13 @@ async function runAutomationMode(
       skills,
       cities,
       isDiplomacyActive,
+      isResting,
     };
 
     // Determine recommended action
     const recommended = selectAction(bladeState, config);
     isDiplomacyActive = recommended?.name === "Diplomacy";
+    isResting = recommended?.name === "Hyperbolic Regeneration Chamber";
 
     // City switching
     const targetCity = shouldSwitchCity(city, cities, config.populationMin);
@@ -764,6 +768,7 @@ export async function main(ns: NS): Promise<void> {
     blackOpThreshold: String(DEFAULT_BLADE_CONFIG.blackOpThreshold),
     contractThreshold: String(DEFAULT_BLADE_CONFIG.contractThreshold),
     staminaMinPercent: String(DEFAULT_BLADE_CONFIG.staminaMinPercent),
+    staminaRestoreTo: String(DEFAULT_BLADE_CONFIG.staminaRestoreTo),
     staminaTrainMax: String(DEFAULT_BLADE_CONFIG.staminaTrainMax),
     chaosMax: String(DEFAULT_BLADE_CONFIG.chaosMax),
     chaosTarget: String(DEFAULT_BLADE_CONFIG.chaosTarget),

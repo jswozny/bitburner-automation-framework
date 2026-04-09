@@ -40,7 +40,8 @@ export interface BladeConfig {
   operationThreshold: number;   // min success % for operations (default 80)
   blackOpThreshold: number;     // min success % for black ops (default 95)
   contractThreshold: number;    // min success % for contracts (default 60)
-  staminaMinPercent: number;    // % below which to rest (default 50)
+  staminaMinPercent: number;    // % below which to start resting (default 50)
+  staminaRestoreTo: number;     // % to restore stamina to before resuming ops (default 95)
   staminaTrainMax: number;      // max stamina threshold for training (default 400)
   chaosMax: number;             // chaos level that triggers diplomacy (default 50)
   chaosTarget: number;          // chaos level to reduce to (default 40)
@@ -53,6 +54,7 @@ export const DEFAULT_BLADE_CONFIG: BladeConfig = {
   blackOpThreshold: 95,
   contractThreshold: 60,
   staminaMinPercent: 50,
+  staminaRestoreTo: 95,
   staminaTrainMax: 0,
   chaosMax: 50,
   chaosTarget: 40,
@@ -82,6 +84,7 @@ export interface BladeState {
 
   // Automation state
   isDiplomacyActive?: boolean;
+  isResting?: boolean;
 }
 
 // === CONSTANTS ===
@@ -106,8 +109,11 @@ const SKILL_PRIORITY: { names: string[]; maxLevel?: number }[] = [
  * Returns null if no valid action is available.
  */
 export function selectAction(state: BladeState, config: BladeConfig): BladeAction | null {
-  // Rest if stamina is low
-  if (state.staminaPercent < config.staminaMinPercent) {
+  // Rest if stamina is low — hysteresis: drop below min triggers rest,
+  // stay in rest until we hit the restore threshold (prevents thrashing
+  // that would reset action progress on every nextUpdate tick).
+  if (state.staminaPercent < config.staminaMinPercent ||
+      (state.isResting && state.staminaPercent < config.staminaRestoreTo)) {
     return { type: "General", name: "Hyperbolic Regeneration Chamber" };
   }
 
