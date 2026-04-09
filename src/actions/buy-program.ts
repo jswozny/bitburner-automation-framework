@@ -18,7 +18,7 @@ export async function main(ns: NS): Promise<void> {
   ]) as { program: string; _: string[] };
 
   const programName = flags.program || (flags._.length > 0 ? String(flags._[0]) : "");
-  
+
   if (!programName) {
     ns.tprint("ERROR: No program specified. Usage: run actions/buy-program.js --program BruteSSH.exe");
     return;
