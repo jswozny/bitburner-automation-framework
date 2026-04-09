@@ -17,10 +17,7 @@ export const MANUAL_COMMAND = 'ns.singularity.purchaseAugmentation("FACTION", "N
 
 export async function main(ns: NS): Promise<void> {
   ns.disableLog("ALL");
- if (!ns.getResetInfo().ownedSF.has(4)) {
-  ns.print("Error: SF4.1 is required to purchase NeuroFlux Governor. You do not have SF4.1 unlocked.");
-  return;
- }
+
   const flags = ns.flags([
     ["faction", ""],
     ["dry-run", false],
