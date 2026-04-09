@@ -21,10 +21,7 @@ export async function main(ns: NS): Promise<void> {
   if (ns.ps("home").some(p => p.filename === "daemons/rep.js")) {
     return;
   }
- if (!ns.getResetInfo().ownedSF.has(4)) {
-  ns.print("Error: SF4.1 is required to check faction rep status. You do not have SF4.1 unlocked.");
-  return;
- }
+
   const flags = ns.flags([
     ["faction", ""],
   ]) as { faction: string; _: string[] };
