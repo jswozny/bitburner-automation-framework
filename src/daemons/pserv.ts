@@ -182,24 +182,24 @@ export async function main(ns: NS): Promise<void> {
 
     // Report remaining cost cap to budget daemon (only when actively buying)
     if (config.autoBuy) {
-    const pstat = getPservStatus(ns);
-    const effectiveMax = config.maxRam > 0 ? config.maxRam : pstat.maxPossibleRam;
-    const allAtCap = pstat.serverCount > 0 && pstat.minRam >= effectiveMax;
-    const isFullyDone = allAtCap && pstat.serverCount >= pstat.serverCap;
-    if (!isFullyDone) {
-      let totalRemainingCost = 0;
-      if (pstat.serverCount < pstat.serverCap) {
+      const pstat = getPservStatus(ns);
+      const effectiveMax = config.maxRam > 0 ? config.maxRam : pstat.maxPossibleRam;
+      const allAtCap = pstat.serverCount > 0 && pstat.minRam >= effectiveMax;
+      const isFullyDone = allAtCap && pstat.serverCount >= pstat.serverCap;
+      if (!isFullyDone) {
+        let totalRemainingCost = 0;
+        if (pstat.serverCount < pstat.serverCap) {
         // Cost for new servers (buy + upgrade each to max)
-        const slotsLeft = pstat.serverCap - pstat.serverCount;
-        totalRemainingCost += ns.cloud.getServerCost(config.minRam) * slotsLeft;
+          const slotsLeft = pstat.serverCap - pstat.serverCount;
+          totalRemainingCost += ns.cloud.getServerCost(config.minRam) * slotsLeft;
         // Cost to upgrade each new server from minRam to max
-        let ram = config.minRam;
-        while (ram < effectiveMax) {
-          const nextRam = ram * 2;
-          totalRemainingCost += ns.cloud.getServerUpgradeCost(`${config.prefix}-0`, nextRam) * slotsLeft;
-          ram = nextRam;
+          let ram = config.minRam;
+          while (ram < effectiveMax) {
+            const nextRam = ram * 2;
+            totalRemainingCost += ns.cloud.getServerUpgradeCost(`${config.prefix}-0`, nextRam) * slotsLeft;
+            ram = nextRam;
+          }
         }
-      }
       if (pstat.servers.length > 0) {
         // Cost to max all existing servers
         for (const hostname of pstat.servers) {
