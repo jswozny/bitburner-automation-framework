@@ -19,11 +19,6 @@ export async function main(ns: NS): Promise<void> {
 
   const programName = flags.program || (flags._.length > 0 ? String(flags._[0]) : "");
   
-  if (!ns.getResetInfo().ownedSF.has(4)) {
-    ns.print("Error: SF4.1 is required to purchase programs. You do not have SF4.1 unlocked.");
-    return;
-  }
-  
   if (!programName) {
     ns.tprint("ERROR: No program specified. Usage: run actions/buy-program.js --program BruteSSH.exe");
     return;
