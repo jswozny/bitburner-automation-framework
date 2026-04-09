@@ -189,7 +189,6 @@ export async function main(ns: NS): Promise<void> {
       if (!isFullyDone) {
         let totalRemainingCost = 0;
         if (pstat.serverCount < pstat.serverCap) {
-        // Cost for new servers (buy + upgrade each to max)
           const slotsLeft = pstat.serverCap - pstat.serverCount;
           totalRemainingCost += ns.cloud.getServerCost(config.minRam) * slotsLeft;
         // Cost to upgrade each new server from minRam to max
