@@ -509,7 +509,9 @@ function HighTierDetailPanel({
           alignItems: "center",
         }}>
           <span style={{ color: "#ffaa00", fontSize: "12px" }}>
-            Yielding to {status.focusHolder || "other"} daemon
+            {status.focusHolder === "none"
+              ? "Focus disabled (parked)"
+              : `Yielding to ${status.focusHolder || "other"} daemon`}
           </span>
           <button
             style={{

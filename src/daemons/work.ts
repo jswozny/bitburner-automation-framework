@@ -595,9 +595,10 @@ async function runTrainingMode(
       ns.print(`${C.yellow}Crime mode requested but insufficient RAM for crime tier${C.reset}`);
     }
 
-    // Run training cycle (skip when yielding focus to rep daemon)
+    // Run training cycle (skip when yielding focus)
     if (focusYielding) {
-      ns.print(`${C.yellow}Yielding focus to ${focusHolder} daemon${C.reset}`);
+      const label = focusHolder === "none" ? "focus disabled" : `${focusHolder} daemon`;
+      ns.print(`${C.yellow}Yielding focus to ${label}${C.reset}`);
     } else {
       const started = runWorkCycle(ns, 1);
       if (!started) {
@@ -635,7 +636,8 @@ async function runCrimeMode(
 
     // Run training/crime cycle (skip when yielding focus)
     if (focusYielding) {
-      ns.print(`${COLORS.yellow}Yielding focus to Rep daemon${COLORS.reset}`);
+      const label = focusHolder === "none" ? "focus disabled" : `${focusHolder} daemon`;
+      ns.print(`${COLORS.yellow}Yielding focus to ${label}${COLORS.reset}`);
     } else {
       const started = runWorkCycle(ns, 2);
       if (!started) {

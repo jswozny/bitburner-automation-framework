@@ -124,7 +124,7 @@ export interface Command {
   gangGrowRespectReserve?: number;
   gangTerritoryAutoThreshold?: number;
   selectedAugs?: string[];
-  focusTarget?: "work" | "rep" | "blade";
+  focusTarget?: "work" | "rep" | "blade" | "none";
   pservAutoBuy?: boolean;
   pservMaxRam?: number;
   contractHost?: string;

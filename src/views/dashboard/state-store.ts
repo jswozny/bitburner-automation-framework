@@ -161,11 +161,12 @@ export function runBackdoors(): void {
 }
 
 /**
- * Claim focus priority for a daemon (work or rep).
+ * Claim focus priority for a daemon, or pass "none" to park all daemons
+ * so nothing tries to take the player's focus.
  */
-export function claimFocus(target: "work" | "rep" | "blade" | ""): void {
+export function claimFocus(target: "work" | "rep" | "blade" | "none"): void {
   if (!commandPort) return;
-  const tool = target === "" ? "work" : target;
+  const tool = target === "none" ? "work" : target;
   commandPort.write(JSON.stringify({ tool, action: "claim-focus", focusTarget: target }));
 }
 
@@ -728,7 +729,9 @@ function executeCommand(ns: NS, cmd: Command): void {
     case "claim-focus":
       if (cmd.focusTarget !== undefined) {
         setConfigValue(ns, "focus", "holder", cmd.focusTarget);
-        if (cmd.focusTarget) {
+        if (cmd.focusTarget === "none") {
+          ns.toast("Focus disabled — all daemons yielding", "info", 2000);
+        } else if (cmd.focusTarget) {
           ns.toast(`Focus claimed by ${cmd.focusTarget} daemon`, "success", 2000);
         } else {
           ns.toast("Focus released", "info", 2000);

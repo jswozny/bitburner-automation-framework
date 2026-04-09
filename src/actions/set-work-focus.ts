@@ -2,13 +2,16 @@
  * Set Work Focus Action
  *
  * Writes work focus to the daemon config (/config/work.txt) so the
- * work daemon picks it up on its next cycle.
+ * work daemon picks it up on its next cycle. Passing --focus none
+ * instead parks all daemons by setting focus.holder to "none" so
+ * nothing tries to take the player's focus.
  * Does NOT use any Singularity functions — always works regardless of RAM.
  * Target RAM: ~2 GB (no Singularity)
  *
  * Usage: run actions/set-work-focus.js --focus strength
  *        run actions/set-work-focus.js --focus balance-combat
  *        run actions/set-work-focus.js --focus crime-money
+ *        run actions/set-work-focus.js --focus none
  */
 import { NS } from "@ns";
 import { setConfigValue } from "/lib/config";
@@ -21,6 +24,7 @@ const VALID_FOCUSES = [
   "balance-all", "balance-combat",
   "crime-money", "crime-stats",
   "crime-karma", "crime-kills",
+  "none",
 ] as const;
 
 export async function main(ns: NS): Promise<void> {
@@ -42,6 +46,13 @@ export async function main(ns: NS): Promise<void> {
   if (!(VALID_FOCUSES as readonly string[]).includes(focus)) {
     ns.tprint(`ERROR: Invalid focus "${focus}".`);
     ns.tprint(`  Valid: ${VALID_FOCUSES.join(", ")}`);
+    return;
+  }
+
+  if (focus === "none") {
+    // Park all daemons — they see holder != self/"" and yield.
+    setConfigValue(ns, "focus", "holder", "none");
+    ns.tprint(`SUCCESS: Focus disabled — all daemons will yield`);
     return;
   }
 

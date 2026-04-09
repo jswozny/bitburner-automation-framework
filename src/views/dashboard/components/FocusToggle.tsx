@@ -29,31 +29,31 @@ const containerStyle: React.CSSProperties = {
 };
 
 export function FocusToggle(): React.ReactElement {
-  // Read current focus holder from any available status
+  // Read current focus holder from any available status.
+  // An unset holder (legacy default) and the explicit "none" sentinel both
+  // surface in the dropdown as "None", but only "none" actually parks all
+  // daemons — "" still lets whichever daemon starts first auto-claim.
   const snap = getStateSnapshot();
-  const holder =
+  const rawHolder =
     snap.workStatus?.focusHolder ??
     snap.repStatus?.focusHolder ??
     snap.bladeburnerStatus?.focusHolder ??
     "";
+  const selectValue = rawHolder === "" ? "none" : rawHolder;
 
   const handleChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
-    const val = e.target.value;
-    if (val === "") {
-      claimFocus("");
-    } else {
-      claimFocus(val as "work" | "rep" | "blade");
-    }
+    const val = e.target.value as "work" | "rep" | "blade" | "none";
+    claimFocus(val);
   };
 
   return (
     <div style={containerStyle}>
       <span style={{ ...styles.statLabel, fontSize: "11px" }}>Active:</span>
-      <select value={holder} onChange={handleChange} style={selectStyle}>
+      <select value={selectValue} onChange={handleChange} style={selectStyle}>
         <option value="work">Work</option>
         <option value="rep">Rep</option>
         <option value="blade">Blade</option>
-        <option value="">None</option>
+        <option value="none">None</option>
       </select>
     </div>
   );
