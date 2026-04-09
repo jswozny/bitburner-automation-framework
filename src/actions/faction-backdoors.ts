@@ -2,10 +2,7 @@ import { NS } from "@ns";
 import {discoverAllWithDepthAndPath, pathTo, pathToArray} from "/lib/utils";
 
 export async function main(ns: NS): Promise<void> {
-  if (!ns.getResetInfo().ownedSF.has(4)) {
-    ns.print("Error: SF4.1 is required to install faction backdoors. You do not have SF4.1 unlocked.");
-    return;
-  }
+
   const BACKDOOR = [
         "CSEC",
         "avmnite-02h",
