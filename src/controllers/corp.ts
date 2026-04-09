@@ -1,15 +1,15 @@
 /**
  * Corporation Controller (Pure Logic)
  *
- * Phase evaluation, material optimization, employee distribution,
- * investment analysis, and upgrade prioritization.
+ * Directive evaluation, ROI-based upgrade scoring, material optimization,
+ * employee distribution, investment analysis, and product management.
  *
  * Zero NS imports — safe to import without RAM cost.
  *
- * Import with: import { evaluatePhase, ... } from "/controllers/corp";
+ * Import with: import { evaluateDirective, ... } from "/controllers/corp";
  */
 
-import { CorpPhase } from "/types/ports";
+import { CorpDirective } from "/types/ports";
 
 // === CONSTANTS ===
 
@@ -20,57 +20,142 @@ export const CITIES = [
 
 export type CityName = typeof CITIES[number];
 
-/** Optimal material ratios for Agriculture warehouses (fills remaining space). */
-export const AGRI_MATERIAL_RATIOS: Record<string, number> = {
-  Water: 0.5,
-  Chemicals: 0.5,
-};
+export const CREATION_CITY = "Sector-12";
 
-/** Material ratios for Tobacco production warehouses. */
-export const TOBACCO_MATERIAL_RATIOS: Record<string, number> = {
-  Plants: 0.4,
-  Water: 0.3,
-  Chemicals: 0.15,
-  Robots: 0.05,
-  "AI Cores": 0.05,
-  "Real Estate": 0.05,
-};
+/** Division names used throughout the corp system. */
+export const DIVISION_NAMES = {
+  agriculture: "AgriCo",
+  chemical: "ChemCo",
+  tobacco: "TobaccoCo",
+} as const;
 
-/** Corp upgrades in priority order. */
-export const UPGRADE_PRIORITY: string[] = [
-  "Smart Factories",
-  "Smart Storage",
-  "DreamSense",
-  "Wilson Analytics",
-  "FocusWires",
-  "Neural Accelerators",
-  "Speech Processor Implants",
-  "Nuoptimal Nootropic Injector Implants",
-  "ABC SalesBots",
-  "Project Insight",
-];
+/** Division industry types (Bitburner API names). */
+export const DIVISION_TYPES = {
+  agriculture: "Agriculture",
+  chemical: "Chemical",
+  tobacco: "Tobacco",
+} as const;
 
-/** Research priorities (ordered). */
-export const RESEARCH_PRIORITY: string[] = [
-  "Hi-Tech R&D Laboratory",
-  "Market-TA.I",
-  "Market-TA.II",
-  "uPgrade: Fulcrum",
-  "uPgrade: Capacity.I",
-  "uPgrade: Capacity.II",
-];
+/** Division creation costs. */
+export const DIVISION_COSTS = {
+  Agriculture: 40e9,
+  Chemical: 70e9,
+  Tobacco: 20e9,
+} as const;
 
 /** Employee job names. */
 export const EMPLOYEE_JOBS = [
   "Operations", "Engineer", "Business", "Management", "Research & Development",
 ] as const;
 
-// === PHASE THRESHOLDS ===
+// === INDUSTRY DATA ===
 
-const INVESTMENT_1_THRESHOLD = 200e9;    // Accept round 1 at $200B+
-const INVESTMENT_2_THRESHOLD = 5e12;     // Accept round 2 at $5T+
-const INVESTMENT_3_THRESHOLD = 800e12;   // Accept round 3 at $800T+
-const CORP_CREATION_COST = 150e9;
+/** Production material factors per industry — determines production multiplier. */
+export const INDUSTRY_FACTORS: Record<string, Record<string, number>> = {
+  Agriculture: { Hardware: 0.20, Robots: 0.30, "AI Cores": 0.30, "Real Estate": 0.72 },
+  Chemical:    { Hardware: 0.20, Robots: 0.25, "AI Cores": 0.20, "Real Estate": 0.05 },
+  Tobacco:     { Hardware: 0.15, Robots: 0.20, "AI Cores": 0.15, "Real Estate": 0.15 },
+};
+
+/** Storage cost per unit of production material. */
+export const MATERIAL_SIZES: Record<string, number> = {
+  Hardware: 0.06,
+  Robots: 0.5,
+  "AI Cores": 0.1,
+  "Real Estate": 0.005,
+};
+
+/** Materials that divisions produce as output (set sell orders on these). */
+export const DIVISION_OUTPUTS: Record<string, string[]> = {
+  Agriculture: ["Plants", "Food"],
+  Chemical: ["Chemicals"],
+  Tobacco: [],  // Products are the output, not materials
+};
+
+/** Export formula string — proven community formula. */
+export const EXPORT_FORMULA = "(IPROD+IINV/10)*(-1)";
+
+/**
+ * Export routes: [fromDivType, toDivType, material]
+ * These define the full supply chain.
+ */
+export const EXPORT_ROUTES: [string, string, string][] = [
+  ["Agriculture", "Tobacco", "Plants"],
+  ["Agriculture", "Chemical", "Plants"],
+  ["Chemical", "Agriculture", "Chemicals"],
+  ["Chemical", "Tobacco", "Chemicals"],
+];
+
+// === INVESTMENT THRESHOLDS ===
+
+export const INVESTMENT_THRESHOLDS: Record<number, number> = {
+  1: 200e9,     // Accept round 1 at $200B+
+  2: 5e12,      // Accept round 2 at $5T+
+  3: 800e12,    // Accept round 3 at $800T+
+};
+
+export const CORP_CREATION_COST = 150e9;
+
+// === UPGRADE DATA ===
+
+export interface UpgradeInfo {
+  name: string;
+  baseCost: number;
+  priceMult: number;
+  effectDesc: string;
+}
+
+export const UPGRADES: UpgradeInfo[] = [
+  { name: "Smart Factories",                     baseCost: 2e9,  priceMult: 1.06, effectDesc: "+3% production" },
+  { name: "Smart Storage",                       baseCost: 2e9,  priceMult: 1.06, effectDesc: "+10% warehouse" },
+  { name: "Wilson Analytics",                     baseCost: 4e9,  priceMult: 2.0,  effectDesc: "+0.5% ad effectiveness" },
+  { name: "Nuoptimal Nootropic Injector Implants", baseCost: 1e9, priceMult: 1.06, effectDesc: "+10% creativity" },
+  { name: "Speech Processor Implants",            baseCost: 1e9,  priceMult: 1.06, effectDesc: "+10% charisma" },
+  { name: "Neural Accelerators",                  baseCost: 1e9,  priceMult: 1.06, effectDesc: "+10% intelligence" },
+  { name: "FocusWires",                           baseCost: 1e9,  priceMult: 1.06, effectDesc: "+10% efficiency" },
+  { name: "ABC SalesBots",                        baseCost: 1e9,  priceMult: 1.07, effectDesc: "+1% sales" },
+  { name: "Project Insight",                      baseCost: 5e9,  priceMult: 1.07, effectDesc: "+5% research" },
+];
+
+/** One-time unlocks in priority order. */
+export const UNLOCK_PRIORITY: { name: string; cost: number }[] = [
+  { name: "Smart Supply",           cost: 25e9 },
+  { name: "Export",                 cost: 20e9 },
+  { name: "Warehouse API",          cost: 50e9 },
+  { name: "Office API",             cost: 50e9 },
+  { name: "Shady Accounting",       cost: 500e12 },
+  { name: "Government Partnership", cost: 2e15 },
+];
+
+// === RESEARCH DATA ===
+
+export interface ResearchInfo {
+  name: string;
+  cost: number;
+}
+
+/** Research priorities in order (per division). */
+export const RESEARCH_PRIORITY: ResearchInfo[] = [
+  { name: "Hi-Tech R&D Laboratory",   cost: 5000 },
+  { name: "Market-TA.I",              cost: 20000 },
+  { name: "Market-TA.II",             cost: 50000 },
+  { name: "AutoBrew",                 cost: 12000 },
+  { name: "AutoPartyManager",         cost: 15000 },
+  { name: "Self-Correcting Assemblers", cost: 25000 },
+  { name: "Drones",                   cost: 5000 },
+  { name: "Drones - Assembly",        cost: 25000 },
+  { name: "uPgrade: Fulcrum",         cost: 10000 },
+  { name: "uPgrade: Capacity.I",      cost: 20000 },
+  { name: "uPgrade: Capacity.II",     cost: 30000 },
+];
+
+// === DIRECTIVE ADVANCEMENT THRESHOLDS ===
+
+/** Wilson Analytics level that signals mature advertising. */
+const WILSON_MATURITY_LEVEL = 10;
+
+/** Minimum profit/s to consider corp mature for Harvest. */
+const HARVEST_PROFIT_THRESHOLD = 1e12;  // $1T/s
 
 // === STATE SNAPSHOTS (controller inputs) ===
 
@@ -125,30 +210,20 @@ export interface CorpStateSnapshot {
   isPublic: boolean;
   investmentRound: number;
   currentOffer: number;
-  investmentShares: number;
   sharePrice: number;
   dividendRate: number;
+  ownedShares: number;
   issuedShares: number;
   divisions: DivisionSnapshot[];
   upgradeLevels: Record<string, number>;
   upgradeCosts: Record<string, number>;
   unlocks: Record<string, boolean>;
   playerMoney: number;
+  wilsonLevel: number;
+  adVertCount: number;
 }
 
-// === ACTION TYPES ===
-
-export interface CorpAction {
-  type: string;
-  description: string;
-  params: Record<string, string | number | boolean>;
-  priority: "high" | "medium" | "low";
-  estimatedValue: number;
-}
-
-export interface MaterialPurchases {
-  [material: string]: number;
-}
+// === OUTPUT TYPES ===
 
 export interface EmployeeAssignment {
   Operations: number;
@@ -159,195 +234,288 @@ export interface EmployeeAssignment {
 }
 
 export interface InvestmentEvaluation {
-  shouldAccept: boolean;
+  acceptable: boolean;
   reason: string;
   round: number;
   offer: number;
   threshold: number;
 }
 
-export interface UpgradePriority {
-  name: string;
-  level: number;
-  cost: number;
-  score: number;
+export interface MaterialTargets {
+  [material: string]: number;
 }
 
-// === PHASE EVALUATION ===
+// === DIRECTIVE EVALUATION ===
 
 /**
- * Determine current corporation phase from game state.
- *
- * NOTE: investmentRound is 1-based from Bitburner API (getInvestmentOffer().round).
- *   round=1 → round 1 offer available (not yet accepted)
- *   round=2 → round 1 accepted, round 2 offer available
- *   round=3 → round 2 accepted, round 3 offer available
- *   round=4 → round 3 accepted, round 4 offer available (go public)
+ * Determine what directive the corp SHOULD be in based on current state.
+ * Used for initial evaluation and auto-advance.
  */
-export function evaluatePhase(snapshot: CorpStateSnapshot): CorpPhase {
-  if (!snapshot.hasCorp) return "not-created";
+export function evaluateDirective(snapshot: CorpStateSnapshot): CorpDirective {
+  if (!snapshot.hasCorp) return "bootstrap";
 
   const agri = snapshot.divisions.find(d => d.type === "Agriculture");
+  const chem = snapshot.divisions.find(d => d.type === "Chemical");
   const tobacco = snapshot.divisions.find(d => d.type === "Tobacco");
 
-  // No Agriculture division yet = still setting up
-  if (!agri) return "setup";
+  // Still setting up divisions
+  if (!agri || agri.cities.length < 6) return "bootstrap";
+  if (!chem || chem.cities.length < 6) return "bootstrap";
+  if (!tobacco || tobacco.cities.length < 6) return "bootstrap";
 
-  // Agriculture exists but not fully expanded
-  if (agri.cities.length < 6) return "setup";
+  // Missing critical unlocks
+  if (!snapshot.unlocks["Smart Supply"]) return "bootstrap";
 
-  if (snapshot.isPublic) return "profit";
+  // Not yet accepted Round 1
+  if (snapshot.investmentRound < 2) return "bootstrap";
 
-  // Round 4+ available (round 3 accepted) → go public
-  if (snapshot.investmentRound >= 4) return "public";
-
-  // Round 3 available (round 2 accepted)
-  if (snapshot.investmentRound === 3) {
-    if (tobacco && tobacco.products.length > 0) return "investment-3";
-    return "product-dev";
+  // Public and mature → harvest
+  if (snapshot.isPublic) {
+    const profit = snapshot.revenue - snapshot.expenses;
+    if (profit >= HARVEST_PROFIT_THRESHOLD && snapshot.wilsonLevel >= WILSON_MATURITY_LEVEL) {
+      return "harvest";
+    }
+    // Public but not yet mature — keep scaling
+    return "scale";
   }
 
-  // Round 2 available (round 1 accepted) → need Tobacco
-  if (snapshot.investmentRound === 2) {
-    if (!tobacco) return "tobacco-setup";
-    if (tobacco.cities.length < 6) return "tobacco-setup";
-    if (tobacco.products.length === 0) return "product-dev";
-    return "investment-2";
-  }
-
-  // Round 1 available (no investments accepted yet)
-  // GUARD: Don't advance past agriculture if it's not profitable yet.
-  const agriProfit = agri.revenue - agri.expenses;
-  if (agriProfit <= 0) return "agriculture";
-
-  return "investment-1";
+  return "scale";
 }
 
 /**
- * Get a human-readable label for a phase.
+ * Check if directive should auto-advance. Returns new directive or null.
  */
-export function getPhaseLabel(phase: CorpPhase): string {
-  switch (phase) {
-    case "not-created": return "No Corporation";
-    case "setup": return "Initial Setup";
-    case "agriculture": return "Agriculture Growth";
-    case "investment-1": return "Investment Round 1";
-    case "investment-2": return "Investment Round 2";
-    case "tobacco-setup": return "Tobacco Setup";
-    case "product-dev": return "Product Development";
-    case "investment-3": return "Investment Round 3";
-    case "public": return "Going Public";
-    case "profit": return "Profit Optimization";
-  }
+export function shouldAdvanceDirective(
+  current: CorpDirective,
+  snapshot: CorpStateSnapshot,
+  pinned: boolean,
+): CorpDirective | null {
+  if (pinned) return null;
+
+  const target = evaluateDirective(snapshot);
+  if (target === current) return null;
+
+  // Only advance forward, never backward
+  const order: CorpDirective[] = ["bootstrap", "scale", "harvest"];
+  const currentIdx = order.indexOf(current);
+  const targetIdx = order.indexOf(target);
+  if (targetIdx <= currentIdx) return null;
+
+  return target;
 }
 
 // === MATERIAL CALCULATIONS ===
 
 /**
- * Calculate optimal material buy amounts for Agriculture warehouses.
+ * Calculate optimal production material targets for a given industry and warehouse.
+ *
+ * Uses industry factors weighted by storage efficiency to determine the best ratio.
+ * The formula: cityMult = prod((0.002*amt + 1)^factor) for each material.
+ * To maximize this, we allocate proportional to factor/storageSize (efficiency).
  */
-export function calculateAgriMaterials(
+export function calculateOptimalMaterials(
+  industry: string,
   warehouseSize: number,
-  warehouseUsed: number,
-): MaterialPurchases {
-  const available = warehouseSize - warehouseUsed;
-  if (available <= 0) return {};
+  reservePercent: number = 0.2,
+): MaterialTargets {
+  const factors = INDUSTRY_FACTORS[industry];
+  if (!factors) return {};
 
-  const purchases: MaterialPurchases = {};
-  for (const [material, ratio] of Object.entries(AGRI_MATERIAL_RATIOS)) {
-    const amount = Math.floor(available * ratio);
-    if (amount > 0) purchases[material] = amount;
+  const availableSpace = warehouseSize * (1 - reservePercent);
+  if (availableSpace <= 0) return {};
+
+  // Calculate efficiency: factor / storageSize for each material
+  const efficiencies: { name: string; efficiency: number; size: number }[] = [];
+  let totalEfficiency = 0;
+  for (const [name, factor] of Object.entries(factors)) {
+    const size = MATERIAL_SIZES[name] ?? 0.1;
+    const eff = factor / size;
+    efficiencies.push({ name, efficiency: eff, size });
+    totalEfficiency += eff;
   }
-  return purchases;
+
+  // Allocate space proportional to efficiency
+  const targets: MaterialTargets = {};
+  for (const { name, efficiency, size } of efficiencies) {
+    const spaceAllocation = availableSpace * (efficiency / totalEfficiency);
+    const units = Math.floor(spaceAllocation / size);
+    if (units > 0) targets[name] = units;
+  }
+
+  return targets;
+}
+
+// === UPGRADE SCORING ===
+
+/**
+ * Score an upgrade by estimated ROI. Higher = better buy.
+ *
+ * Wilson Analytics gets exponential scoring because it enables the AdVert loop.
+ * Employee upgrades get multiplicative scoring.
+ * Production upgrades get linear scoring.
+ */
+export function scoreUpgrade(
+  name: string,
+  currentLevel: number,
+  cost: number,
+  corpProfit: number,
+  wilsonLevel: number,
+): number {
+  if (cost <= 0 || corpProfit <= 0) return 0;
+
+  // Base score: how many seconds of profit does this cost?
+  // Lower = better (cheaper relative to income)
+  const paybackTicks = cost / corpProfit;
+  if (paybackTicks <= 0) return 0;
+
+  let multiplier = 1;
+
+  if (name === "Wilson Analytics") {
+    // Wilson is exponentially valuable because it powers the AdVert loop
+    // More valuable at lower levels (diminishing returns but still dominant)
+    multiplier = 50 / (1 + currentLevel * 0.3);
+  } else if (name === "ABC SalesBots") {
+    multiplier = 3;
+  } else if (name === "Smart Factories") {
+    multiplier = 4;
+  } else if (name === "Smart Storage") {
+    // Valuable early for warehouse space, less later
+    multiplier = 2 / (1 + currentLevel * 0.1);
+  } else if (name === "Project Insight") {
+    multiplier = 2;
+  } else {
+    // Employee upgrades (FocusWires, Neural Accelerators, etc.)
+    multiplier = 2.5;
+  }
+
+  // Score: higher is better
+  return (multiplier * 100) / paybackTicks;
 }
 
 /**
- * Calculate material buy amounts for Tobacco production warehouses.
+ * Score an AdVert purchase for a division.
+ * Value depends heavily on Wilson Analytics level.
  */
-export function calculateProductionMaterials(
-  warehouseSize: number,
-  warehouseUsed: number,
-): MaterialPurchases {
-  const available = warehouseSize - warehouseUsed;
-  if (available <= 0) return {};
+export function scoreAdVert(
+  adVertCost: number,
+  corpProfit: number,
+  wilsonLevel: number,
+): number {
+  if (adVertCost <= 0 || corpProfit <= 0) return 0;
 
-  const purchases: MaterialPurchases = {};
-  for (const [material, ratio] of Object.entries(TOBACCO_MATERIAL_RATIOS)) {
-    const amount = Math.floor(available * ratio);
-    if (amount > 0) purchases[material] = amount;
-  }
-  return purchases;
+  const paybackTicks = adVertCost / corpProfit;
+  if (paybackTicks <= 0) return 0;
+
+  // AdVert value scales with Wilson level
+  const wilsonMult = 1 + wilsonLevel * 0.5;
+  return (wilsonMult * 30) / paybackTicks;
 }
 
 // === EMPLOYEE DISTRIBUTION ===
 
+export interface EmployeeContext {
+  hasProducts: boolean;
+  isResearchPhase: boolean;
+  isCreationCity: boolean;
+}
+
 /**
  * Calculate optimal employee distribution for a given count.
+ * Uses floor rounding with remainder assigned to highest-priority role.
+ * Guarantees assignments sum === count.
  */
 export function calculateEmployeeDistribution(
   count: number,
-  hasProducts: boolean,
-  isResearchPhase: boolean,
+  context: EmployeeContext,
 ): EmployeeAssignment {
   if (count === 0) {
     return { Operations: 0, Engineer: 0, Business: 0, Management: 0, "Research & Development": 0 };
   }
 
-  // Minimal staffing (3 employees)
   if (count <= 3) {
-    return {
-      Operations: 1,
-      Engineer: 1,
-      Business: 1,
-      Management: 0,
-      "Research & Development": 0,
-    };
+    // Minimal: 1 each to the most important roles
+    const ops = Math.min(1, count);
+    const eng = Math.min(1, count - ops);
+    const biz = Math.min(1, count - ops - eng);
+    return { Operations: ops, Engineer: eng, Business: biz, Management: 0, "Research & Development": 0 };
   }
 
-  if (isResearchPhase) {
-    // Heavy R&D focus
-    const rd = Math.ceil(count * 0.4);
-    const eng = Math.ceil(count * 0.2);
-    const ops = Math.ceil(count * 0.15);
-    const biz = Math.ceil(count * 0.1);
-    const mgmt = count - rd - eng - ops - biz;
-    return {
-      Operations: Math.max(1, ops),
-      Engineer: Math.max(1, eng),
-      Business: Math.max(1, biz),
-      Management: Math.max(0, mgmt),
-      "Research & Development": Math.max(1, rd),
-    };
+  // Define ratios as [role, weight] pairs, ordered by priority for remainder assignment
+  let ratios: [string, number][];
+
+  if (context.isResearchPhase && !context.isCreationCity) {
+    // Non-creation cities in research phase: maximize R&D
+    ratios = [
+      ["Research & Development", 0.70],
+      ["Operations", 0.10],
+      ["Engineer", 0.10],
+      ["Business", 0.05],
+      ["Management", 0.05],
+    ];
+  } else if (context.hasProducts && context.isCreationCity) {
+    // Creation city with products: quality-focused
+    ratios = [
+      ["Engineer", 0.30],
+      ["Operations", 0.25],
+      ["Management", 0.15],
+      ["Business", 0.15],
+      ["Research & Development", 0.15],
+    ];
+  } else if (context.hasProducts) {
+    // Non-creation cities with products: production + some R&D
+    ratios = [
+      ["Operations", 0.25],
+      ["Engineer", 0.25],
+      ["Management", 0.15],
+      ["Business", 0.15],
+      ["Research & Development", 0.20],
+    ];
+  } else {
+    // Material production (Agriculture, Chemicals)
+    ratios = [
+      ["Operations", 0.30],
+      ["Engineer", 0.25],
+      ["Business", 0.20],
+      ["Management", 0.15],
+      ["Research & Development", 0.10],
+    ];
   }
 
-  if (hasProducts) {
-    // Product-focused: balanced with more engineering
-    const eng = Math.ceil(count * 0.25);
-    const ops = Math.ceil(count * 0.25);
-    const biz = Math.ceil(count * 0.2);
-    const mgmt = Math.ceil(count * 0.15);
-    const rd = count - eng - ops - biz - mgmt;
-    return {
-      Operations: Math.max(1, ops),
-      Engineer: Math.max(1, eng),
-      Business: Math.max(1, biz),
-      Management: Math.max(1, mgmt),
-      "Research & Development": Math.max(1, rd),
-    };
+  // Floor-assign each role
+  const assignment: Record<string, number> = {};
+  let assigned = 0;
+  for (const [role, weight] of ratios) {
+    const n = Math.floor(count * weight);
+    assignment[role] = Math.max(n, 1);  // Minimum 1 per role
+    assigned += assignment[role];
   }
 
-  // Default material production focus
-  const ops = Math.ceil(count * 0.3);
-  const eng = Math.ceil(count * 0.25);
-  const biz = Math.ceil(count * 0.2);
-  const mgmt = Math.ceil(count * 0.15);
-  const rd = count - ops - eng - biz - mgmt;
+  // Distribute remainder to highest-priority role
+  let remainder = count - assigned;
+  for (const [role] of ratios) {
+    if (remainder <= 0) break;
+    assignment[role] += remainder;
+    remainder = 0;
+  }
+
+  // If we over-assigned (from min-1 guarantees), take from lowest priority
+  while (assigned > count) {
+    for (let i = ratios.length - 1; i >= 0; i--) {
+      const role = ratios[i][0];
+      if (assignment[role] > 1) {
+        assignment[role]--;
+        assigned--;
+        if (assigned <= count) break;
+      }
+    }
+  }
+
   return {
-    Operations: Math.max(1, ops),
-    Engineer: Math.max(1, eng),
-    Business: Math.max(1, biz),
-    Management: Math.max(0, mgmt),
-    "Research & Development": Math.max(0, rd),
+    Operations: assignment["Operations"] ?? 0,
+    Engineer: assignment["Engineer"] ?? 0,
+    Business: assignment["Business"] ?? 0,
+    Management: assignment["Management"] ?? 0,
+    "Research & Development": assignment["Research & Development"] ?? 0,
   };
 }
 
@@ -363,13 +531,13 @@ export function shouldStartNewProduct(
   const completed = products.filter(p => p.progress >= 100);
   const inDev = products.filter(p => p.progress < 100);
 
-  // If something is still developing, don't start another
+  // Don't start while one is developing
   if (inDev.length > 0) return { shouldStart: false, retireName: null };
 
-  // If under the cap, start a new one
+  // Under cap — start new
   if (products.length < maxProducts) return { shouldStart: true, retireName: null };
 
-  // At cap — retire the worst rated product
+  // At cap — retire worst rated completed product
   if (completed.length > 0) {
     const worst = completed.reduce((a, b) => a.rating < b.rating ? a : b);
     return { shouldStart: true, retireName: worst.name };
@@ -379,239 +547,160 @@ export function shouldStartNewProduct(
 }
 
 /**
- * Get sell price/amount strings for a product.
+ * Calculate product investment amount (split equally between design and marketing).
  */
-export function getProductPricing(
-  product: ProductSnapshot,
-  hasMarketTA2: boolean,
-): { sellAmount: string; sellPrice: string } {
-  if (hasMarketTA2) {
-    return { sellAmount: "MAX", sellPrice: "MP" };
+export function calculateProductInvestment(funds: number, pct: number): number {
+  return Math.max(1e6, Math.floor(funds * pct));
+}
+
+// === RESEARCH ===
+
+/**
+ * Get next research to buy for a division.
+ * Only returns research when the division has >= 2x the cost in stored points.
+ */
+export function getNextResearch(
+  divisionResearch: number,
+  hasResearch: (name: string) => boolean,
+): ResearchInfo | null {
+  for (const r of RESEARCH_PRIORITY) {
+    if (hasResearch(r.name)) continue;
+    if (divisionResearch >= r.cost * 2) {
+      return r;
+    }
+    // Don't skip ahead — research tree has dependencies
+    break;
   }
-  return { sellAmount: "MAX", sellPrice: "MP" };
+  return null;
 }
 
 // === INVESTMENT EVALUATION ===
 
 /**
  * Evaluate whether to accept an investment offer.
+ *
+ * NOTE: investmentRound from API is the CURRENT available round (1-based).
+ *   round=1 → first offer available (not yet accepted any)
+ *   round=2 → round 1 accepted, round 2 available
  */
 export function evaluateInvestmentOffer(
   round: number,
   offer: number,
 ): InvestmentEvaluation {
-  let threshold: number;
-  switch (round) {
-    case 1: threshold = INVESTMENT_1_THRESHOLD; break;
-    case 2: threshold = INVESTMENT_2_THRESHOLD; break;
-    case 3: threshold = INVESTMENT_3_THRESHOLD; break;
-    default: threshold = Infinity; break;
-  }
+  const threshold = INVESTMENT_THRESHOLDS[round] ?? Infinity;
 
-  const shouldAccept = offer >= threshold;
-  const reason = shouldAccept
-    ? `Offer ${formatMoney(offer)} exceeds threshold ${formatMoney(threshold)}`
-    : `Offer ${formatMoney(offer)} below threshold ${formatMoney(threshold)}`;
+  const acceptable = offer >= threshold;
+  const pct = threshold > 0 ? Math.round((offer / threshold) * 100) : 0;
+  const reason = acceptable
+    ? `Offer ${formatMoney(offer)} meets threshold (${pct}%)`
+    : `Offer ${formatMoney(offer)} at ${pct}% of ${formatMoney(threshold)} threshold`;
 
-  return { shouldAccept, reason, round, offer, threshold };
+  return { acceptable, reason, round, offer, threshold };
 }
 
-// === UPGRADE PRIORITIZATION ===
-
-/** Minimum funds reserve — never spend below this on upgrades/ads. */
-const MIN_FUNDS_RESERVE = 10e6; // $10M
+// === STATUS TEXT GENERATION ===
 
 /**
- * Return ranked upgrade list, highest priority first.
- * Only includes upgrades we can afford while keeping a reserve.
- * @param hasSmartSupply - if false, block ALL upgrades (save funds for Smart Supply first)
+ * Generate the one-line status for the overview card.
  */
-export function prioritizeUpgrades(
-  phase: CorpPhase,
-  currentLevels: Record<string, number>,
-  costs: Record<string, number>,
-  funds: number,
-  profit: number,
-  hasSmartSupply: boolean = true,
-): UpgradePriority[] {
-  // Smart Supply is the #1 priority — don't waste corp funds on upgrades until we have it
-  if (!hasSmartSupply) return [];
-
-  // Don't buy upgrades when losing money (except during early setup where initial investment funds cover it)
-  if (profit < 0 && phase !== "setup") return [];
-
-  // Budget for upgrades: max 20% of funds above reserve
-  const spendable = Math.max(0, (funds - MIN_FUNDS_RESERVE) * 0.2);
-  if (spendable <= 0) return [];
-
-  const list: UpgradePriority[] = [];
-
-  for (let i = 0; i < UPGRADE_PRIORITY.length; i++) {
-    const name = UPGRADE_PRIORITY[i];
-    const level = currentLevels[name] ?? 0;
-    const cost = costs[name] ?? Infinity;
-    if (cost > spendable) continue;
-
-    // Score: higher priority index = lower score, cheaper = higher score
-    const positionScore = (UPGRADE_PRIORITY.length - i) * 10;
-    const levelPenalty = level * 2;
-    const score = positionScore - levelPenalty;
-
-    list.push({ name, level, cost, score });
-  }
-
-  list.sort((a, b) => b.score - a.score);
-  return list;
-}
-
-// === NEXT ACTION ===
-
-/**
- * Determine the best next action for continuous optimization.
- */
-export function getNextAction(
-  phase: CorpPhase,
+export function generateStatusLine(
+  directive: CorpDirective,
   snapshot: CorpStateSnapshot,
-): CorpAction | null {
-  switch (phase) {
-    case "not-created":
-      if (snapshot.playerMoney >= CORP_CREATION_COST) {
-        return {
-          type: "create-corp",
-          description: "Create corporation and start Agriculture division",
-          params: { selfFund: true },
-          priority: "high",
-          estimatedValue: 0,
-        };
-      }
-      return null;
+): string {
+  if (!snapshot.hasCorp) return "Saving to create corporation";
 
-    case "setup": {
-      const agri = snapshot.divisions.find(d => d.type === "Agriculture");
-      if (!agri) {
-        return {
-          type: "expand-division",
-          description: "Create Agriculture division",
-          params: { type: "Agriculture", name: "AgriCo" },
-          priority: "high",
-          estimatedValue: 0,
-        };
+  const agri = snapshot.divisions.find(d => d.type === "Agriculture");
+  const chem = snapshot.divisions.find(d => d.type === "Chemical");
+  const tobacco = snapshot.divisions.find(d => d.type === "Tobacco");
+
+  switch (directive) {
+    case "bootstrap": {
+      if (!agri) return "Creating Agriculture division";
+      if (agri.cities.length < 6) return `Expanding Agriculture (${agri.cities.length}/6)`;
+      if (!snapshot.unlocks["Smart Supply"]) return "Saving for Smart Supply";
+      if (!chem) return "Creating Chemical division";
+      if (chem.cities.length < 6) return `Expanding Chemical (${chem.cities.length}/6)`;
+      if (!tobacco) return "Creating Tobacco division";
+      if (tobacco.cities.length < 6) return `Expanding Tobacco (${tobacco.cities.length}/6)`;
+      if (snapshot.investmentRound < 2) {
+        const eval_ = evaluateInvestmentOffer(snapshot.investmentRound, snapshot.currentOffer);
+        return `Waiting for R1 (${Math.round((eval_.offer / eval_.threshold) * 100)}%)`;
       }
-      const missingCities = CITIES.filter(c => !agri.cities.includes(c));
-      if (missingCities.length > 0) {
-        return {
-          type: "expand-city",
-          description: `Expand Agriculture to ${missingCities[0]}`,
-          params: { division: agri.name, city: missingCities[0] },
-          priority: "high",
-          estimatedValue: 0,
-        };
-      }
-      return null;
+      return "Completing bootstrap";
     }
-
-    case "agriculture": {
-      const upgrades = prioritizeUpgrades(phase, snapshot.upgradeLevels, snapshot.upgradeCosts, snapshot.funds, snapshot.revenue - snapshot.expenses);
-      if (upgrades.length > 0) {
-        return {
-          type: "buy-upgrade",
-          description: `Buy ${upgrades[0].name} (level ${upgrades[0].level + 1})`,
-          params: { name: upgrades[0].name },
-          priority: "medium",
-          estimatedValue: 0,
-        };
+    case "scale": {
+      if (!snapshot.isPublic && snapshot.investmentRound <= 3) {
+        const eval_ = evaluateInvestmentOffer(snapshot.investmentRound, snapshot.currentOffer);
+        return `Scaling \u2022 R${snapshot.investmentRound} at ${Math.round((eval_.offer / eval_.threshold) * 100)}%`;
       }
-      return null;
+      if (!snapshot.isPublic && snapshot.investmentRound >= 4) return "Ready to go public";
+      return `Scaling \u2022 Wilson Lv${snapshot.wilsonLevel}`;
     }
-
-    case "investment-1":
-    case "investment-2":
-    case "investment-3": {
-      const eval_ = evaluateInvestmentOffer(snapshot.investmentRound + 1, snapshot.currentOffer);
-      if (eval_.shouldAccept) {
-        return {
-          type: "accept-investment",
-          description: `Accept round ${snapshot.investmentRound + 1} investment (${formatMoney(snapshot.currentOffer)})`,
-          params: {},
-          priority: "high",
-          estimatedValue: snapshot.currentOffer,
-        };
-      }
-      return null;
-    }
-
-    case "tobacco-setup": {
-      const tobacco = snapshot.divisions.find(d => d.type === "Tobacco");
-      if (!tobacco) {
-        return {
-          type: "expand-division",
-          description: "Create Tobacco division",
-          params: { type: "Tobacco", name: "TobaccoCo" },
-          priority: "high",
-          estimatedValue: 0,
-        };
-      }
-      const missingCities = CITIES.filter(c => !tobacco.cities.includes(c));
-      if (missingCities.length > 0) {
-        return {
-          type: "expand-city",
-          description: `Expand Tobacco to ${missingCities[0]}`,
-          params: { division: tobacco.name, city: missingCities[0] },
-          priority: "high",
-          estimatedValue: 0,
-        };
-      }
-      return null;
-    }
-
-    case "product-dev": {
-      const tobacco = snapshot.divisions.find(d => d.type === "Tobacco");
-      if (!tobacco) return null;
-      const result = shouldStartNewProduct(tobacco.products, tobacco.maxProducts);
-      if (result.shouldStart) {
-        return {
-          type: "make-product",
-          description: `Start developing new product`,
-          params: { division: tobacco.name, invest: 1e9, retireName: result.retireName ?? "" },
-          priority: "medium",
-          estimatedValue: 0,
-        };
-      }
-      return null;
-    }
-
-    case "public":
-      return {
-        type: "go-public",
-        description: "Take corporation public",
-        params: { shares: 0 },
-        priority: "high",
-        estimatedValue: 0,
-      };
-
-    case "profit": {
-      const upgrades = prioritizeUpgrades(phase, snapshot.upgradeLevels, snapshot.upgradeCosts, snapshot.funds, snapshot.revenue - snapshot.expenses);
-      if (upgrades.length > 0) {
-        return {
-          type: "buy-upgrade",
-          description: `Buy ${upgrades[0].name} (level ${upgrades[0].level + 1})`,
-          params: { name: upgrades[0].name },
-          priority: "low",
-          estimatedValue: 0,
-        };
-      }
-      return null;
+    case "harvest": {
+      const profit = snapshot.revenue - snapshot.expenses;
+      return `Harvesting \u2022 ${formatMoney(profit)}/s`;
     }
   }
+}
+
+/**
+ * Generate the "next step" detail text.
+ */
+export function generateNextStep(
+  directive: CorpDirective,
+  snapshot: CorpStateSnapshot,
+): string {
+  if (!snapshot.hasCorp) {
+    return `Need ${formatMoney(CORP_CREATION_COST)} to create corporation`;
+  }
+
+  switch (directive) {
+    case "bootstrap":
+      if (!snapshot.unlocks["Smart Supply"]) {
+        return "Priority: Smart Supply unlock ($25B)";
+      }
+      if (!snapshot.unlocks["Export"]) {
+        return "Priority: Export unlock ($20B)";
+      }
+      return "Expanding divisions and waiting for Round 1";
+
+    case "scale": {
+      // Find highest-ROI next purchase
+      const profit = snapshot.revenue - snapshot.expenses;
+      if (profit > 0) {
+        const wilsonCost = snapshot.upgradeCosts["Wilson Analytics"] ?? 0;
+        if (wilsonCost > 0 && wilsonCost <= snapshot.funds * 0.5) {
+          return `Next: Wilson Lv${snapshot.wilsonLevel + 1} (${formatMoney(wilsonCost)})`;
+        }
+      }
+      return "Optimizing upgrades and products";
+    }
+
+    case "harvest":
+      return "Maximizing dividend income";
+  }
+}
+
+// === INVESTMENT FREEZE ===
+
+/**
+ * Whether discretionary spending should be frozen during investment windows.
+ * Freeze when we're within 60% of the threshold — preserve funds for offer.
+ */
+export function shouldFreezeSpending(snapshot: CorpStateSnapshot): boolean {
+  if (snapshot.isPublic) return false;
+  const threshold = INVESTMENT_THRESHOLDS[snapshot.investmentRound];
+  if (!threshold) return false;
+  return snapshot.currentOffer >= threshold * 0.6;
 }
 
 // === HELPERS ===
 
-function formatMoney(n: number): string {
-  if (n >= 1e15) return `$${(n / 1e15).toFixed(2)}q`;
-  if (n >= 1e12) return `$${(n / 1e12).toFixed(2)}t`;
-  if (n >= 1e9) return `$${(n / 1e9).toFixed(2)}b`;
-  if (n >= 1e6) return `$${(n / 1e6).toFixed(2)}m`;
-  if (n >= 1e3) return `$${(n / 1e3).toFixed(2)}k`;
-  return `$${n.toFixed(2)}`;
+export function formatMoney(n: number): string {
+  if (n >= 1e15) return `$${(n / 1e15).toFixed(1)}q`;
+  if (n >= 1e12) return `$${(n / 1e12).toFixed(1)}t`;
+  if (n >= 1e9) return `$${(n / 1e9).toFixed(1)}b`;
+  if (n >= 1e6) return `$${(n / 1e6).toFixed(1)}m`;
+  if (n >= 1e3) return `$${(n / 1e3).toFixed(1)}k`;
+  return `$${n.toFixed(0)}`;
 }

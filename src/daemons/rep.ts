@@ -426,7 +426,8 @@ function computeHighTierStatus(
   repGainRate: number,
   noWork: boolean,
   targetFactionOverride = "",
-  focusYielding = false
+  focusYielding = false,
+  focusHolder = "",
 ): RepStatus {
   const player = ns.getPlayer();
   const ownedAugs = getOwnedAugs(ns);
@@ -567,6 +568,7 @@ function computeHighTierStatus(
     currentWorkType: workStatus.currentWorkType,
     isWorkable: workStatus.isWorkable,
     focusYielding,
+    focusHolder,
   };
 }
 
@@ -659,7 +661,7 @@ function printHighTierStatus(
 
   // Focus yielding indicator
   if (status.focusYielding) {
-    ns.print(`${C.yellow}YIELDING: Focus held by Work daemon${C.reset}`);
+    ns.print(`${C.yellow}YIELDING: Focus held by ${status.focusHolder || "other"} daemon${C.reset}`);
   }
 
   // Work status (Tier 6)
@@ -858,7 +860,7 @@ async function runFullMode(
 
     // Check focus priority
     const focusHolder = getConfigString(ns, "focus", "holder", "");
-    const focusYielding = focusHolder === "work";
+    const focusYielding = focusHolder !== "" && focusHolder !== "rep";
 
     ns.clearLog();
 
@@ -968,7 +970,7 @@ async function runFullMode(
     // Compute and publish RepStatus
     // Calculate next tier RAM for display
     const nextTierRam = tier.tier < 6 ? tierRamCosts[tier.tier + 1] : null;
-    const repStatus = computeHighTierStatus(ns, tier, currentTierRam, nextTierRam, repGainRate, noWork, targetFactionOverride, focusYielding);
+    const repStatus = computeHighTierStatus(ns, tier, currentTierRam, nextTierRam, repGainRate, noWork, targetFactionOverride, focusYielding, focusHolder);
     publishStatus(ns, STATUS_PORTS.rep, repStatus);
 
     // Compute and publish BitnodeStatus

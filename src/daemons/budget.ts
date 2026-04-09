@@ -81,6 +81,7 @@ function loadState(ns: NS): PersistedBudgetState {
 }
 
 function saveState(ns: NS): void {
+  state.lastCash = prevCash;
   ns.write(BALANCE_FILE, JSON.stringify(state), "w");
 }
 
@@ -198,7 +199,7 @@ function readHoldings(ns: NS): HoldingsInfo {
 
   // Read corp funds from status port
   const corpStatus = peekStatus<CorpStatus>(ns, STATUS_PORTS.corp, 30_000);
-  if (corpStatus && corpStatus.hasCorp) {
+  if (corpStatus && corpStatus.exists) {
     corpFunds = corpStatus.funds;
   }
 
@@ -218,21 +219,23 @@ async function daemon(ns: NS): Promise<void> {
 
   // Load persisted state
   state = loadState(ns);
-  prevCash = ns.getPlayer().money;
+  const currentCash = ns.getPlayer().money;
 
-  // Clear stale done markers on startup. Each daemon will re-signal done
-  // if its bucket is actually complete. This prevents markers from a
-  // previous bitnode/aug-install from permanently deactivating buckets
-  // (the aug-reset detector can't fire if the daemon restarts after the reset).
-  const staleMarkers = ns.read(DONE_MARKER_FILE);
-  if (staleMarkers) {
-    for (const bucket of staleMarkers.split("\n").filter(Boolean)) {
-      if (state.activeFlags[bucket] === false) {
-        state.activeFlags[bucket] = true;
-        ns.print(`  ${C.yellow}CLEARED${C.reset} stale done marker for ${bucket}`);
-      }
+  // Use persisted lastCash for aug-reset detection across daemon restarts.
+  // Without this, prevCash = currentCash on first tick and the reset is missed.
+  prevCash = state.lastCash ?? currentCash;
+
+  if (isAugReset(prevCash, currentCash)) {
+    ns.print(`  ${C.yellow}AUG RESET DETECTED (startup)${C.reset} — zeroing lifetime spent`);
+    for (const bucket of Object.keys(state.weights)) {
+      state.lifetimeSpent[bucket] = 0;
+      state.activeFlags[bucket] = true;
+      state.caps[bucket] = null;
     }
+    state.rushBucket = null;
     ns.write(DONE_MARKER_FILE, "", "w");
+    prevCash = currentCash;
+    saveState(ns);
   }
 
   ns.print(`${C.cyan}Budget daemon started${C.reset} (interval: ${interval}ms, snapshot-allowance)`);

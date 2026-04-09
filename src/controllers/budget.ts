@@ -22,7 +22,7 @@ export const HOLDER_BUCKETS = new Set(["stocks", "corp"]);
 export const DEFAULT_WEIGHTS: Record<string, number> = {
   stocks: 30,
   servers: 25,
-  corp: 15,
+  corp: 22,
   home: 15,
   gang: 10,
   hacknet: 5,
@@ -38,6 +38,7 @@ export interface PersistedBudgetState {
   activeFlags: Record<string, boolean>;
   caps: Record<string, number | null>;
   rushBucket: string | null;
+  lastCash?: number;
 }
 
 export function createDefaultPersistedState(): PersistedBudgetState {

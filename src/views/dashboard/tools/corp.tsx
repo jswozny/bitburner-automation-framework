@@ -1,10 +1,9 @@
 /**
  * Corporation Tool Plugin
  *
- * OverviewCard shows corp name, phase, profit, and next step.
- * DetailPanel is a single scrollable panel with sections:
- * Roadmap, Status, Financials, Divisions, Products, Unlocks, Upgrades,
- * Investment, Recommendations, Settings, TierFooter.
+ * Directive-driven UI with contextual detail panels.
+ * OverviewCard: directive + profit/s + status line.
+ * DetailPanel: sections change based on active directive (Bootstrap/Scale/Harvest).
  */
 import React from "lib/react";
 import {
@@ -16,16 +15,16 @@ import {
   CorpStatus,
   CorpDivisionStatus,
   CorpProductStatus,
-  CorpRecommendation,
-  CorpPhase,
+  CorpPendingAction,
+  CorpDirective,
 } from "/types/ports";
 import { styles } from "views/dashboard/styles";
 import { ToolControl } from "views/dashboard/components/ToolControl";
 import { TierFooter } from "views/dashboard/components/TierFooter";
 import {
-  acceptCorpRecommendation,
-  dismissCorpRecommendation,
-  toggleCorpAutoProducts,
+  setCorpDirective,
+  cancelCorpPending,
+  toggleCorpPin,
   toggleCorpAutoTea,
   setCorpDividendRate,
   toggleCorpEnabled,
@@ -33,190 +32,6 @@ import {
 } from "views/dashboard/state-store";
 
 export type FormattedCorpStatus = CorpStatus;
-
-// === PHASE ROADMAP ===
-
-const PHASE_ORDER: { phase: CorpPhase; label: string }[] = [
-  { phase: "not-created", label: "Create" },
-  { phase: "setup", label: "Setup" },
-  { phase: "agriculture", label: "Agriculture" },
-  { phase: "investment-1", label: "Invest 1" },
-  { phase: "investment-2", label: "Invest 2" },
-  { phase: "tobacco-setup", label: "Tobacco" },
-  { phase: "product-dev", label: "Products" },
-  { phase: "investment-3", label: "Invest 3" },
-  { phase: "public", label: "Public" },
-  { phase: "profit", label: "Profit" },
-];
-
-function PhaseRoadmap({ currentPhase }: { currentPhase: CorpPhase }): React.ReactElement {
-  const currentIdx = PHASE_ORDER.findIndex(p => p.phase === currentPhase);
-
-  return (
-    <div style={{ ...styles.section, marginTop: "8px" }}>
-      <div style={styles.sectionTitle}>ROADMAP</div>
-      <div style={{ display: "flex", flexWrap: "wrap", gap: "2px", alignItems: "center" }}>
-        {PHASE_ORDER.map((entry, i) => {
-          let icon: string;
-          let color: string;
-          if (i < currentIdx) {
-            icon = "\u2713"; // checkmark
-            color = "#00cc44";
-          } else if (i === currentIdx) {
-            icon = "\u25CF"; // filled circle
-            color = "#00ccff";
-          } else {
-            icon = "\u25CB"; // empty circle
-            color = "#555";
-          }
-
-          return (
-            <React.Fragment key={entry.phase}>
-              {i > 0 && <span style={{ color: "#333", fontSize: "10px" }}>{"\u2192"}</span>}
-              <span style={{
-                fontSize: "11px",
-                color,
-                fontWeight: i === currentIdx ? "bold" : "normal",
-                whiteSpace: "nowrap",
-              }}>
-                {icon} {entry.label}
-              </span>
-            </React.Fragment>
-          );
-        })}
-      </div>
-    </div>
-  );
-}
-
-// === STATUS CARD ===
-
-function StatusCard({ status }: { status: CorpStatus }): React.ReactElement {
-  const hasManualAction = status.manualAction != null;
-  const isLosing = status.hasCorp && status.profit < 0 && !status.savingFor;
-  const borderColor = hasManualAction ? "#ffaa00" : isLosing ? "#ff4444" : "#00cc44";
-
-  return (
-    <div style={{
-      ...styles.section,
-      border: `1px solid ${borderColor}`,
-      borderRadius: "4px",
-      padding: "8px 10px",
-      background: "#1a1a1a",
-    }}>
-      <div style={styles.sectionTitle}>STATUS</div>
-      <div style={{ fontSize: "12px", color: "#ddd", marginBottom: status.savingFor || hasManualAction ? "6px" : "0" }}>
-        {status.nextStep}
-      </div>
-      {status.nextStepDetail && (
-        <div style={{ fontSize: "11px", color: "#888", marginBottom: status.savingFor || hasManualAction ? "6px" : "0" }}>
-          {status.nextStepDetail}
-        </div>
-      )}
-      {status.savingFor && (
-        <div style={{ marginTop: "4px" }}>
-          <div style={{ height: "8px", background: "#222", borderRadius: "2px", overflow: "hidden" }}>
-            <div style={{
-              width: `${Math.min(100, status.savingForProgress * 100)}%`,
-              height: "100%",
-              background: borderColor,
-              borderRadius: "2px",
-              transition: "width 0.3s ease",
-            }} />
-          </div>
-          <div style={{ fontSize: "10px", color: "#888", marginTop: "2px", textAlign: "right" }}>
-            {(status.savingForProgress * 100).toFixed(0)}%
-          </div>
-        </div>
-      )}
-      {hasManualAction && (
-        <div style={{ fontSize: "11px", color: "#ffaa00", marginTop: "4px" }}>
-          {"\u26A0"} {status.manualAction}
-        </div>
-      )}
-    </div>
-  );
-}
-
-// === RECOMMENDATION CARD ===
-
-function RecommendationCard({ rec }: { rec: CorpRecommendation }): React.ReactElement {
-  const borderColor = rec.priority === "high" ? "#ff4444" : rec.priority === "medium" ? "#ffaa00" : "#666";
-  return (
-    <div style={{
-      border: `1px solid ${borderColor}`,
-      borderRadius: "4px",
-      padding: "8px 10px",
-      marginBottom: "6px",
-      background: "#1a1a1a",
-    }}>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "4px" }}>
-        <span style={{ fontWeight: "bold", color: borderColor, fontSize: "12px" }}>{rec.title}</span>
-        <span style={{ fontSize: "10px", color: "#888" }}>{rec.priority}</span>
-      </div>
-      <div style={{ fontSize: "11px", color: "#aaa", marginBottom: "6px" }}>{rec.description}</div>
-      {rec.estimatedValue > 0 && (
-        <div style={{ fontSize: "11px", color: "#00ff00", marginBottom: "6px" }}>
-          Value: {rec.estimatedValueFormatted}
-        </div>
-      )}
-      <div style={{ display: "flex", gap: "6px" }}>
-        <button
-          style={{
-            backgroundColor: "#1a2a1a",
-            color: "#00ff00",
-            border: "1px solid #00ff00",
-            borderRadius: "3px",
-            padding: "2px 10px",
-            fontSize: "11px",
-            fontFamily: "inherit",
-            cursor: "pointer",
-          }}
-          onClick={() => acceptCorpRecommendation(rec.id)}
-        >
-          Accept
-        </button>
-        <button
-          style={{
-            backgroundColor: "#1a1a1a",
-            color: "#888",
-            border: "1px solid #444",
-            borderRadius: "3px",
-            padding: "2px 10px",
-            fontSize: "11px",
-            fontFamily: "inherit",
-            cursor: "pointer",
-          }}
-          onClick={() => dismissCorpRecommendation(rec.id)}
-        >
-          Dismiss
-        </button>
-      </div>
-    </div>
-  );
-}
-
-// === TOGGLE BUTTON ===
-
-function ToggleButton({ on, onToggle }: { on: boolean; onToggle: (v: boolean) => void }): React.ReactElement {
-  return (
-    <button
-      style={{
-        backgroundColor: "#1a1a1a",
-        color: on ? "#00ff00" : "#ff8800",
-        border: `1px solid ${on ? "#00ff00" : "#ff8800"}`,
-        borderRadius: "3px",
-        padding: "1px 6px",
-        fontSize: "10px",
-        fontFamily: "inherit",
-        cursor: "pointer",
-      }}
-      onClick={() => onToggle(!on)}
-    >
-      {on ? "ON" : "OFF"}
-    </button>
-  );
-}
 
 // === OVERVIEW CARD ===
 
@@ -226,48 +41,429 @@ function CorpOverviewCard({
   toolId,
   pid,
 }: OverviewCardProps<FormattedCorpStatus>): React.ReactElement {
-  const enabled = isCorpEnabled();
-
   return (
     <div style={styles.cardOverview}>
       <div style={styles.cardTitle}>
-        <span>CORP</span>
+        <span>{status?.corpName || "CORP"}</span>
         <ToolControl tool={toolId} running={running} pid={pid} />
       </div>
       {status ? (
-        status.hasCorp ? (
-          <>
-            <div style={styles.stat}>
-              <span style={styles.statLabel}>{status.corpName}</span>
-              <span style={{ color: "#00ccff", fontSize: "11px" }}>{status.phaseLabel}</span>
-            </div>
-            <div style={styles.stat}>
-              <span style={styles.statLabel}>Profit</span>
-              <span style={{ color: status.profit >= 0 ? "#00ff00" : "#ff4444" }}>
-                {status.profitFormatted}/s
-              </span>
-            </div>
-            {status.recommendations.length > 0 && (
-              <div style={styles.stat}>
-                <span style={styles.statLabel}>Actions</span>
-                <span style={{ color: "#ffaa00" }}>{status.recommendations.length} pending</span>
-              </div>
-            )}
-          </>
-        ) : (
+        <>
           <div style={styles.stat}>
-            <span style={styles.statLabel}>Status</span>
-            <span style={styles.dim}>No Corporation</span>
+            <span style={styles.statLabel}>Profit</span>
+            <span style={{ color: status.profit >= 0 ? "#00ff00" : "#ff4444" }}>
+              {status.profitFormatted}/s
+            </span>
           </div>
-        )
+          <div style={styles.stat}>
+            <span style={styles.statLabel}>
+              {status.directive.charAt(0).toUpperCase() + status.directive.slice(1)}
+            </span>
+            <span style={{ color: "#aaa", fontSize: "11px" }}>
+              {status.statusLine}
+            </span>
+          </div>
+        </>
       ) : (
         <div style={styles.stat}>
           <span style={styles.statLabel}>Status</span>
-          <span style={!enabled ? { color: "#ff4444" } : styles.dim}>
-            {!enabled ? "Disabled" : running ? "Starting..." : "Stopped"}
-          </span>
+          <span style={styles.dim}>{running ? "Starting..." : "Stopped"}</span>
         </div>
       )}
+    </div>
+  );
+}
+
+// === COUNTDOWN BANNER ===
+
+function CountdownBanner({ action }: { action: CorpPendingAction }): React.ReactElement {
+  const remaining = Math.max(0, Math.ceil((action.expiresAt - Date.now()) / 1000));
+
+  return (
+    <div style={{
+      padding: "6px 10px",
+      marginBottom: "8px",
+      background: "#332200",
+      border: "1px solid #664400",
+      borderRadius: "4px",
+    }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+        <div>
+          <span style={{ color: "#ffaa00", fontWeight: "bold", fontSize: "12px" }}>
+            {"\u26A0"} {action.description}
+          </span>
+          <span style={{ color: "#888", fontSize: "11px", marginLeft: "8px" }}>
+            in {remaining}s
+          </span>
+        </div>
+        <button
+          onClick={() => cancelCorpPending()}
+          style={{
+            background: "#442200",
+            color: "#ffaa00",
+            border: "1px solid #664400",
+            borderRadius: "3px",
+            padding: "2px 8px",
+            fontSize: "11px",
+            cursor: "pointer",
+          }}
+        >
+          Cancel
+        </button>
+      </div>
+      {Object.entries(action.details).length > 0 && (
+        <div style={{ marginTop: "4px", fontSize: "11px", color: "#888" }}>
+          {Object.entries(action.details).map(([k, v]) => (
+            <span key={k} style={{ marginRight: "12px" }}>{k}: {v}</span>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// === DIRECTIVE SELECTOR ===
+
+function DirectiveSelector({ status }: { status: CorpStatus }): React.ReactElement {
+  const directives: CorpDirective[] = ["bootstrap", "scale", "harvest"];
+
+  return (
+    <div style={{ display: "flex", gap: "8px", alignItems: "center", fontSize: "11px", marginBottom: "6px" }}>
+      <span style={{ color: "#888" }}>Directive:</span>
+      <select
+        value={status.directive}
+        onChange={(e) => setCorpDirective(e.target.value as CorpDirective)}
+        style={{
+          background: "#1a1a2e",
+          color: "#e0e0e0",
+          border: "1px solid #333",
+          borderRadius: "3px",
+          padding: "2px 6px",
+          fontSize: "11px",
+        }}
+      >
+        {directives.map(d => (
+          <option key={d} value={d}>{d.charAt(0).toUpperCase() + d.slice(1)}</option>
+        ))}
+      </select>
+      <label style={{ color: "#888", cursor: "pointer" }}>
+        <input
+          type="checkbox"
+          checked={status.directivePinned}
+          onChange={(e) => toggleCorpPin(e.target.checked)}
+          style={{ marginRight: "4px" }}
+        />
+        Pin
+      </label>
+    </div>
+  );
+}
+
+// === SECTION COMPONENTS ===
+
+function StatusSection({ status }: { status: CorpStatus }): React.ReactElement {
+  return (
+    <div style={styles.section}>
+      <div style={styles.sectionTitle}>STATUS</div>
+      <div style={{ ...styles.stat, marginBottom: "2px" }}>
+        <span style={styles.statLabel}>Current</span>
+        <span style={{ color: "#e0e0e0" }}>{status.statusLine}</span>
+      </div>
+      <div style={styles.stat}>
+        <span style={styles.statLabel}>Next</span>
+        <span style={{ color: "#aaa" }}>{status.nextStep}</span>
+      </div>
+    </div>
+  );
+}
+
+function FinancialsSection({ status }: { status: CorpStatus }): React.ReactElement {
+  return (
+    <div style={styles.section}>
+      <div style={styles.sectionTitle}>FINANCIALS</div>
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "2px", fontSize: "11px" }}>
+        <div style={styles.stat}>
+          <span style={styles.statLabel}>Funds</span>
+          <span>{status.fundsFormatted}</span>
+        </div>
+        <div style={styles.stat}>
+          <span style={styles.statLabel}>Profit</span>
+          <span style={{ color: status.profit >= 0 ? "#00ff00" : "#ff4444" }}>{status.profitFormatted}/s</span>
+        </div>
+        <div style={styles.stat}>
+          <span style={styles.statLabel}>Revenue</span>
+          <span style={{ color: "#00cc44" }}>{status.revenueFormatted}/s</span>
+        </div>
+        <div style={styles.stat}>
+          <span style={styles.statLabel}>Expenses</span>
+          <span style={{ color: "#ff6666" }}>{status.expensesFormatted}/s</span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function DivisionSetupSection({ status }: { status: CorpStatus }): React.ReactElement {
+  const expectedDivs = ["Agriculture", "Chemical", "Tobacco"];
+
+  return (
+    <div style={styles.section}>
+      <div style={styles.sectionTitle}>DIVISION SETUP</div>
+      {expectedDivs.map(type => {
+        const div = status.divisions.find(d => d.type === type);
+        const cities = div?.cities.length ?? 0;
+        const done = cities >= 6;
+        return (
+          <div key={type} style={{ ...styles.stat, marginBottom: "2px" }}>
+            <span style={styles.statLabel}>{type}</span>
+            <span style={{ color: done ? "#00cc44" : div ? "#ffaa00" : "#555" }}>
+              {div ? `${cities}/6 cities` : "Not created"}
+              {done && " \u2713"}
+            </span>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function UnlockChecklistSection({ status }: { status: CorpStatus }): React.ReactElement {
+  return (
+    <div style={styles.section}>
+      <div style={styles.sectionTitle}>UNLOCKS</div>
+      {status.unlocks.map(u => (
+        <div key={u.name} style={{ ...styles.stat, marginBottom: "2px" }}>
+          <span style={styles.statLabel}>{u.name}</span>
+          <span style={{ color: u.owned ? "#00cc44" : "#888" }}>
+            {u.owned ? "\u2713" : u.costFormatted}
+          </span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function InvestmentSection({ status }: { status: CorpStatus }): React.ReactElement {
+  if (status.isPublic) return <React.Fragment />;
+
+  return (
+    <div style={styles.section}>
+      <div style={styles.sectionTitle}>INVESTMENT</div>
+      <div style={styles.stat}>
+        <span style={styles.statLabel}>Round</span>
+        <span>{status.investmentRound}</span>
+      </div>
+      <div style={styles.stat}>
+        <span style={styles.statLabel}>Offer</span>
+        <span style={{ color: "#ffaa00" }}>{status.currentOfferFormatted}</span>
+      </div>
+    </div>
+  );
+}
+
+function UpgradesSection({ status }: { status: CorpStatus }): React.ReactElement {
+  const sorted = [...status.upgrades].sort((a, b) => b.level - a.level);
+
+  return (
+    <div style={styles.section}>
+      <div style={styles.sectionTitle}>UPGRADES</div>
+      <table style={styles.table}>
+        <thead>
+          <tr>
+            <th style={styles.tableHeader}>Name</th>
+            <th style={{ ...styles.tableHeader, textAlign: "right" }}>Lv</th>
+            <th style={{ ...styles.tableHeader, textAlign: "right" }}>Next</th>
+          </tr>
+        </thead>
+        <tbody>
+          {sorted.map(u => (
+            <tr key={u.name}>
+              <td style={styles.tableCell}>{u.name}</td>
+              <td style={{ ...styles.tableCell, textAlign: "right" }}>{u.level}</td>
+              <td style={{ ...styles.tableCell, textAlign: "right", color: "#888" }}>{u.costFormatted}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function ProductPipelineSection({ status }: { status: CorpStatus }): React.ReactElement {
+  if (status.products.length === 0) return <React.Fragment />;
+
+  return (
+    <div style={styles.section}>
+      <div style={styles.sectionTitle}>PRODUCTS ({status.products.length})</div>
+      <table style={styles.table}>
+        <thead>
+          <tr>
+            <th style={styles.tableHeader}>Name</th>
+            <th style={{ ...styles.tableHeader, textAlign: "right" }}>Rating</th>
+            <th style={{ ...styles.tableHeader, textAlign: "right" }}>Progress</th>
+          </tr>
+        </thead>
+        <tbody>
+          {status.products.map(p => (
+            <tr key={p.name}>
+              <td style={styles.tableCell}>{p.name}</td>
+              <td style={{ ...styles.tableCell, textAlign: "right" }}>
+                {p.progress >= 100 ? p.rating.toFixed(1) : "-"}
+              </td>
+              <td style={{ ...styles.tableCell, textAlign: "right" }}>
+                {p.progress >= 100 ? (
+                  <span style={{ color: "#00cc44" }}>{"\u2713"}</span>
+                ) : (
+                  <span style={{ color: "#ffaa00" }}>{p.progress.toFixed(0)}%</span>
+                )}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function DivisionPerformanceSection({ status }: { status: CorpStatus }): React.ReactElement {
+  return (
+    <div style={styles.section}>
+      <div style={styles.sectionTitle}>DIVISIONS ({status.divisions.length})</div>
+      {status.divisions.map(div => (
+        <div key={div.name} style={{ marginBottom: "8px" }}>
+          <div style={{ display: "flex", justifyContent: "space-between", fontSize: "11px", fontWeight: "bold" }}>
+            <span style={{ color: "#e0e0e0" }}>{div.name}</span>
+            <span style={{ color: div.profit >= 0 ? "#00cc44" : "#ff4444" }}>
+              {div.profitFormatted}/s
+            </span>
+          </div>
+          {div.warehouses.length > 0 && (
+            <div style={{ fontSize: "10px", color: "#888", marginTop: "2px" }}>
+              {div.warehouses.map(wh => (
+                <span key={wh.city} style={{ marginRight: "8px" }}>
+                  {wh.city.substring(0, 3)}: {wh.usedPercent}%
+                </span>
+              ))}
+            </div>
+          )}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function DividendSection({ status }: { status: CorpStatus }): React.ReactElement {
+  if (!status.isPublic) return <React.Fragment />;
+
+  return (
+    <div style={styles.section}>
+      <div style={styles.sectionTitle}>DIVIDENDS</div>
+      <div style={styles.stat}>
+        <span style={styles.statLabel}>Rate</span>
+        <span>{(status.dividendRate * 100).toFixed(1)}%</span>
+      </div>
+      <div style={styles.stat}>
+        <span style={styles.statLabel}>Income</span>
+        <span style={{ color: "#00cc44" }}>{status.dividendIncomeFormatted}/s</span>
+      </div>
+    </div>
+  );
+}
+
+function ShareSection({ status }: { status: CorpStatus }): React.ReactElement {
+  if (!status.isPublic) return <React.Fragment />;
+
+  return (
+    <div style={styles.section}>
+      <div style={styles.sectionTitle}>SHARES</div>
+      <div style={styles.stat}>
+        <span style={styles.statLabel}>Price</span>
+        <span>{status.sharePriceFormatted}</span>
+      </div>
+      <div style={styles.stat}>
+        <span style={styles.statLabel}>Owned</span>
+        <span>{status.ownedShares.toLocaleString()}</span>
+      </div>
+      <div style={styles.stat}>
+        <span style={styles.statLabel}>Issued</span>
+        <span>{status.issuedShares.toLocaleString()}</span>
+      </div>
+    </div>
+  );
+}
+
+function BudgetSection({ status }: { status: CorpStatus }): React.ReactElement {
+  return (
+    <div style={styles.section}>
+      <div style={styles.sectionTitle}>BUDGET</div>
+      <div style={styles.stat}>
+        <span style={styles.statLabel}>Allocation</span>
+        <span>{status.budgetBalanceFormatted}</span>
+      </div>
+    </div>
+  );
+}
+
+// === SETTINGS ===
+
+function SettingsSection({ status }: { status: CorpStatus }): React.ReactElement {
+  const enabled = isCorpEnabled();
+
+  return (
+    <div style={styles.section}>
+      <div style={styles.sectionTitle}>SETTINGS</div>
+      <div style={{ display: "flex", flexWrap: "wrap", gap: "8px", fontSize: "11px", marginTop: "4px" }}>
+        <label style={{ color: "#888", cursor: "pointer" }}>
+          <input
+            type="checkbox"
+            checked={status.autoTea}
+            onChange={(e) => toggleCorpAutoTea(e.target.checked)}
+            style={{ marginRight: "4px" }}
+          />
+          Auto Tea
+        </label>
+      </div>
+
+      {status.isPublic && (
+        <div style={{ marginTop: "6px" }}>
+          <span style={{ color: "#888", fontSize: "11px", marginRight: "6px" }}>Dividends:</span>
+          {[0, 0.05, 0.1, 0.25, 0.5, 1.0].map(rate => (
+            <button
+              key={rate}
+              onClick={() => setCorpDividendRate(rate)}
+              style={{
+                background: Math.abs(status.dividendRate - rate) < 0.001 ? "#003366" : "#1a1a2e",
+                color: Math.abs(status.dividendRate - rate) < 0.001 ? "#00ccff" : "#888",
+                border: "1px solid #333",
+                borderRadius: "3px",
+                padding: "2px 6px",
+                fontSize: "10px",
+                cursor: "pointer",
+                marginRight: "4px",
+              }}
+            >
+              {(rate * 100).toFixed(0)}%
+            </button>
+          ))}
+        </div>
+      )}
+
+      <div style={{ marginTop: "8px" }}>
+        <button
+          onClick={() => toggleCorpEnabled(!enabled)}
+          style={{
+            background: enabled ? "#330000" : "#003300",
+            color: enabled ? "#ff4444" : "#00cc44",
+            border: `1px solid ${enabled ? "#660000" : "#006600"}`,
+            borderRadius: "3px",
+            padding: "3px 10px",
+            fontSize: "11px",
+            cursor: "pointer",
+          }}
+        >
+          {enabled ? "Disable Corp" : "Enable Corp"}
+        </button>
+      </div>
     </div>
   );
 }
@@ -280,107 +476,15 @@ function CorpDetailPanel({
   toolId,
   pid,
 }: DetailPanelProps<FormattedCorpStatus>): React.ReactElement {
-  const enabled = isCorpEnabled();
-
   if (!status) {
     return (
       <div style={styles.panel}>
         <div style={styles.row}>
-          <div style={styles.rowLeft}>
-            <span style={styles.statLabel}>Corporation</span>
-            {!enabled && (
-              <>
-                <span style={styles.dim}>|</span>
-                <span style={{ color: "#ff4444", fontSize: "11px" }}>Disabled</span>
-              </>
-            )}
-          </div>
+          <span style={styles.dim}>Corp daemon not running</span>
           <ToolControl tool={toolId} running={running} pid={pid} />
         </div>
-        {!enabled ? (
-          <div style={{ marginTop: "12px" }}>
-            <div style={{ color: "#888", marginBottom: "8px" }}>
-              Corp daemon is disabled. It will not run on augment install and does not claim budget space.
-            </div>
-            <button
-              style={{
-                backgroundColor: "#1a2a1a",
-                color: "#00ff00",
-                border: "1px solid #00ff00",
-                borderRadius: "3px",
-                padding: "4px 16px",
-                fontSize: "12px",
-                fontFamily: "inherit",
-                cursor: "pointer",
-              }}
-              onClick={() => toggleCorpEnabled(true)}
-            >
-              Enable Corp
-            </button>
-          </div>
-        ) : (
-          <div style={{ marginTop: "12px", color: "#ffaa00" }}>
-            {running ? "Waiting for first update..." : "Corp daemon not running."}
-          </div>
-        )}
       </div>
     );
-  }
-
-  if (!status.hasCorp) {
-    return (
-      <div style={styles.panel}>
-        <div style={styles.row}>
-          <div style={styles.rowLeft}>
-            <span style={styles.statLabel}>Corporation</span>
-            <span style={styles.dim}>|</span>
-            <span style={styles.dim}>No Corporation</span>
-          </div>
-          <ToolControl tool={toolId} running={running} pid={pid} />
-        </div>
-
-        <StatusCard status={status} />
-
-        {status.recommendations.length > 0 && (
-          <div style={styles.section}>
-            <div style={styles.sectionTitle}>RECOMMENDATIONS</div>
-            {status.recommendations.map(rec => (
-              <RecommendationCard key={rec.id} rec={rec} />
-            ))}
-          </div>
-        )}
-
-        <div style={styles.section}>
-          <button
-            style={{
-              backgroundColor: "#2a1a1a",
-              color: "#ff4444",
-              border: "1px solid #ff4444",
-              borderRadius: "3px",
-              padding: "3px 12px",
-              fontSize: "11px",
-              fontFamily: "inherit",
-              cursor: "pointer",
-            }}
-            onClick={() => toggleCorpEnabled(false)}
-          >
-            Disable Corp
-          </button>
-          <span style={{ fontSize: "10px", color: "#666", marginLeft: "8px" }}>
-            Stops daemon and frees budget allocation
-          </span>
-        </div>
-
-        <TierFooter tier={status.tier} tierName={status.tierName} />
-      </div>
-    );
-  }
-
-  const allProducts: (CorpProductStatus & { division: string })[] = [];
-  for (const div of status.divisions) {
-    for (const prod of div.products) {
-      allProducts.push({ ...prod, division: div.name });
-    }
   }
 
   return (
@@ -388,312 +492,62 @@ function CorpDetailPanel({
       {/* Header */}
       <div style={styles.row}>
         <div style={styles.rowLeft}>
-          <span style={styles.statLabel}>{status.corpName}</span>
+          <span style={styles.statLabel}>{status.corpName || "Corp"}</span>
           <span style={styles.dim}>|</span>
-          <span style={{ color: "#00ccff" }}>{status.phaseLabel}</span>
-          <span style={styles.dim}>|</span>
-          <span style={{ color: status.profit >= 0 ? "#00ff00" : "#ff4444" }}>
+          <span style={{ color: status.profit >= 0 ? "#00ff00" : "#ff4444", fontSize: "12px" }}>
             {status.profitFormatted}/s
+          </span>
+          <span style={styles.dim}>|</span>
+          <span style={{ color: "#888", fontSize: "11px" }}>
+            Funds: {status.fundsFormatted}
           </span>
         </div>
         <ToolControl tool={toolId} running={running} pid={pid} />
       </div>
 
-      {/* Roadmap */}
-      <PhaseRoadmap currentPhase={status.phase} />
+      {/* Directive selector */}
+      {status.exists && <DirectiveSelector status={status} />}
 
-      {/* Status */}
-      <StatusCard status={status} />
+      {/* Countdown banner */}
+      {status.pendingAction && <CountdownBanner action={status.pendingAction} />}
 
-      {/* Financials */}
-      <div style={styles.section}>
-        <div style={styles.sectionTitle}>FINANCIALS</div>
-        <div style={{ display: "flex", flexWrap: "wrap", gap: "16px" }}>
-          <span style={{ fontSize: "12px" }}>
-            <span style={styles.dim}>Funds: </span>
-            <span style={styles.statValue}>{status.fundsFormatted}</span>
-          </span>
-          <span style={{ fontSize: "12px" }}>
-            <span style={styles.dim}>Revenue: </span>
-            <span style={{ color: "#00ff00" }}>{status.revenueFormatted}/s</span>
-          </span>
-          <span style={{ fontSize: "12px" }}>
-            <span style={styles.dim}>Expenses: </span>
-            <span style={{ color: "#ff8800" }}>{status.expensesFormatted}/s</span>
-          </span>
-          <span style={{ fontSize: "12px" }}>
-            <span style={styles.dim}>Profit: </span>
-            <span style={{ color: status.profit >= 0 ? "#00ff00" : "#ff4444" }}>
-              {status.profitFormatted}/s
-            </span>
-          </span>
-          {status.budgetBalance >= 0 && (
-            <span style={{ fontSize: "12px" }}>
-              <span style={styles.dim}>Budget: </span>
-              <span style={{ color: "#00ff00" }}>{status.budgetBalanceFormatted}</span>
-            </span>
-          )}
-        </div>
-      </div>
+      {/* Status (always shown) */}
+      <StatusSection status={status} />
 
-      {/* Divisions */}
-      {status.divisions.length > 0 && (
-        <div style={styles.section}>
-          <div style={styles.sectionTitle}>DIVISIONS</div>
-          {status.divisions.map((div: CorpDivisionStatus) => (
-            <div key={div.name} style={{
-              border: "1px solid #333",
-              borderRadius: "4px",
-              padding: "8px",
-              marginBottom: "6px",
-              background: "#141414",
-            }}>
-              <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "4px" }}>
-                <span style={{ color: "#00ccff", fontWeight: "bold", fontSize: "12px" }}>{div.name}</span>
-                <span style={styles.dim}>{div.type}</span>
-              </div>
-              <div style={{ display: "flex", flexWrap: "wrap", gap: "12px", marginBottom: "4px" }}>
-                <span style={{ fontSize: "11px" }}>
-                  <span style={styles.dim}>Rev: </span>
-                  <span style={{ color: "#00ff00" }}>{div.revenueFormatted}</span>
-                </span>
-                <span style={{ fontSize: "11px" }}>
-                  <span style={styles.dim}>Profit: </span>
-                  <span style={{ color: div.profit >= 0 ? "#00ff00" : "#ff4444" }}>{div.profitFormatted}</span>
-                </span>
-                <span style={{ fontSize: "11px" }}>
-                  <span style={styles.dim}>Cities: </span>
-                  <span style={styles.statValue}>{div.cities.length}/6</span>
-                </span>
-                <span style={{ fontSize: "11px" }}>
-                  <span style={styles.dim}>Research: </span>
-                  <span style={styles.statValue}>{div.researchFormatted}</span>
-                </span>
-              </div>
-
-              {/* Warehouse bars */}
-              {div.warehouses.length > 0 && (
-                <div style={{ marginTop: "4px" }}>
-                  {div.warehouses.map(wh => (
-                    <div key={wh.city} style={{ display: "flex", alignItems: "center", marginBottom: "2px", gap: "6px" }}>
-                      <span style={{ width: "70px", fontSize: "10px", color: "#aaa" }}>{wh.city}</span>
-                      <div style={{ flex: 1, height: "6px", background: "#222", borderRadius: "2px", overflow: "hidden" }}>
-                        <div style={{
-                          width: `${Math.min(100, wh.usedPercent)}%`,
-                          height: "100%",
-                          background: wh.usedPercent > 90 ? "#ff4444" : wh.usedPercent > 70 ? "#ffaa00" : "#00cc44",
-                          borderRadius: "2px",
-                        }} />
-                      </div>
-                      <span style={{ width: "35px", fontSize: "10px", color: "#888", textAlign: "right" }}>
-                        {wh.usedPercent.toFixed(0)}%
-                      </span>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-          ))}
-        </div>
+      {/* Directive-contextual sections */}
+      {status.directive === "bootstrap" && (
+        <>
+          <DivisionSetupSection status={status} />
+          <UnlockChecklistSection status={status} />
+          <BudgetSection status={status} />
+          {status.divisions.length > 0 && <FinancialsSection status={status} />}
+          <InvestmentSection status={status} />
+        </>
       )}
 
-      {/* Products */}
-      {allProducts.length > 0 && (
-        <div style={styles.section}>
-          <div style={styles.sectionTitle}>PRODUCTS</div>
-          {allProducts.map(prod => (
-            <div key={`${prod.division}-${prod.name}`} style={{
-              border: "1px solid #333",
-              borderRadius: "4px",
-              padding: "8px",
-              marginBottom: "6px",
-              background: "#141414",
-            }}>
-              <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "4px" }}>
-                <span style={{ color: prod.progress >= 100 ? "#00ff00" : "#ffaa00", fontSize: "12px" }}>{prod.name}</span>
-                <span style={styles.dim}>{prod.division}</span>
-              </div>
-              {prod.progress < 100 ? (
-                <div>
-                  <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "2px" }}>
-                    <span style={{ fontSize: "11px", color: "#ffaa00" }}>Developing</span>
-                    <span style={{ fontSize: "11px", color: "#ffaa00" }}>{prod.progress.toFixed(1)}%</span>
-                  </div>
-                  <div style={{ height: "6px", background: "#222", borderRadius: "2px", overflow: "hidden" }}>
-                    <div style={{
-                      width: `${prod.progress}%`,
-                      height: "100%",
-                      background: "#ffaa00",
-                      borderRadius: "2px",
-                    }} />
-                  </div>
-                </div>
-              ) : (
-                <div style={{ display: "flex", flexWrap: "wrap", gap: "10px", fontSize: "11px" }}>
-                  <span><span style={styles.dim}>Rating: </span><span style={{ color: "#00ff00" }}>{prod.rating.toFixed(1)}</span></span>
-                  <span><span style={styles.dim}>Eff: </span><span style={styles.statValue}>{prod.effectiveRating.toFixed(1)}</span></span>
-                  <span><span style={styles.dim}>Demand: </span><span style={styles.dim}>{prod.demand.toFixed(1)}</span></span>
-                  <span><span style={styles.dim}>Prod: </span><span style={styles.statValue}>{prod.produced.toFixed(1)}</span></span>
-                  <span><span style={styles.dim}>Sold: </span><span style={styles.statValue}>{prod.sold.toFixed(1)}</span></span>
-                  {prod.stored > 0 && (
-                    <span><span style={styles.dim}>Stored: </span><span style={{ color: "#ffaa00" }}>{prod.stored.toFixed(1)}</span></span>
-                  )}
-                </div>
-              )}
-            </div>
-          ))}
-        </div>
+      {status.directive === "scale" && (
+        <>
+          <FinancialsSection status={status} />
+          <InvestmentSection status={status} />
+          <UpgradesSection status={status} />
+          <ProductPipelineSection status={status} />
+          <DivisionPerformanceSection status={status} />
+        </>
       )}
 
-      {/* Unlocks */}
-      <div style={styles.section}>
-        <div style={styles.sectionTitle}>UNLOCKS</div>
-        <div style={{ display: "flex", flexWrap: "wrap", gap: "12px" }}>
-          {status.unlocks.map(u => (
-            <span key={u.name} style={{ fontSize: "11px" }}>
-              <span style={{ color: u.unlocked ? "#00ff00" : "#ff4444" }}>
-                {u.unlocked ? "\u2713" : "\u2717"}
-              </span>
-              {" "}
-              <span style={{ color: u.unlocked ? "#aaa" : "#666" }}>{u.name}</span>
-            </span>
-          ))}
-        </div>
-      </div>
-
-      {/* Upgrades */}
-      {status.upgrades.some(u => u.level > 0 || u.cost < status.funds * 2) && (
-        <div style={styles.section}>
-          <div style={styles.sectionTitle}>UPGRADES</div>
-          <div style={{ display: "flex", flexWrap: "wrap", gap: "8px" }}>
-            {status.upgrades.filter(u => u.level > 0 || u.cost < status.funds * 2).map(u => (
-              <span key={u.name} style={{ fontSize: "11px" }}>
-                <span style={styles.dim}>{u.name}</span>
-                {" "}
-                <span style={styles.statValue}>Lv{u.level}</span>
-                {" "}
-                <span style={{ color: "#555" }}>({u.costFormatted})</span>
-              </span>
-            ))}
-          </div>
-        </div>
+      {status.directive === "harvest" && (
+        <>
+          <FinancialsSection status={status} />
+          <DividendSection status={status} />
+          <ShareSection status={status} />
+          <ProductPipelineSection status={status} />
+          <DivisionPerformanceSection status={status} />
+        </>
       )}
 
-      {/* Investment */}
-      {(status.investmentRound > 0 || status.currentOffer > 0) && !status.isPublic && (
-        <div style={styles.section}>
-          <div style={styles.sectionTitle}>INVESTMENT</div>
-          <div style={{ display: "flex", flexWrap: "wrap", gap: "16px", fontSize: "12px" }}>
-            <span>
-              <span style={styles.dim}>Round: </span>
-              <span style={styles.statValue}>{status.investmentRound}</span>
-            </span>
-            {status.currentOffer > 0 && (
-              <span>
-                <span style={styles.dim}>Offer: </span>
-                <span style={{ color: "#00ff00" }}>{status.currentOfferFormatted}</span>
-              </span>
-            )}
-            {status.investmentShares > 0 && (
-              <span>
-                <span style={styles.dim}>Shares: </span>
-                <span style={styles.statValue}>{status.investmentShares.toLocaleString()}</span>
-              </span>
-            )}
-          </div>
-        </div>
-      )}
+      {/* Settings (always shown) */}
+      <SettingsSection status={status} />
 
-      {/* Public state */}
-      {status.isPublic && (
-        <div style={styles.section}>
-          <div style={styles.sectionTitle}>PUBLIC</div>
-          <div style={{ display: "flex", flexWrap: "wrap", gap: "16px", fontSize: "12px" }}>
-            <span>
-              <span style={styles.dim}>Share Price: </span>
-              <span style={styles.statValue}>{status.sharePriceFormatted}</span>
-            </span>
-            <span>
-              <span style={styles.dim}>Issued: </span>
-              <span style={styles.statValue}>{status.issuedShares.toLocaleString()}</span>
-            </span>
-            <span>
-              <span style={styles.dim}>Dividends: </span>
-              <span style={styles.statValue}>{(status.dividendRate * 100).toFixed(1)}%</span>
-            </span>
-          </div>
-        </div>
-      )}
-
-      {/* Recommendations */}
-      {status.recommendations.length > 0 && (
-        <div style={styles.section}>
-          <div style={styles.sectionTitle}>RECOMMENDATIONS</div>
-          {status.recommendations.map(rec => (
-            <RecommendationCard key={rec.id} rec={rec} />
-          ))}
-        </div>
-      )}
-
-      {/* Settings */}
-      <div style={styles.section}>
-        <div style={styles.sectionTitle}>SETTINGS</div>
-        <div style={{ display: "flex", flexWrap: "wrap", gap: "16px", alignItems: "center" }}>
-          <span style={{ fontSize: "11px", display: "flex", alignItems: "center", gap: "6px" }}>
-            <span style={styles.dim}>Auto-Products:</span>
-            <ToggleButton on={status.autoProducts} onToggle={toggleCorpAutoProducts} />
-          </span>
-          <span style={{ fontSize: "11px", display: "flex", alignItems: "center", gap: "6px" }}>
-            <span style={styles.dim}>Auto-Tea:</span>
-            <ToggleButton on={status.autoTea} onToggle={toggleCorpAutoTea} />
-          </span>
-        </div>
-        {status.isPublic && (
-          <div style={{ display: "flex", gap: "4px", marginTop: "8px", alignItems: "center" }}>
-            <span style={{ fontSize: "11px", color: "#888", marginRight: "4px" }}>Dividends:</span>
-            {[0, 0.05, 0.1, 0.25, 0.5].map(rate => (
-              <button
-                key={rate}
-                style={{
-                  backgroundColor: Math.abs(status.dividendRate - rate) < 0.001 ? "#222" : "#1a1a1a",
-                  color: Math.abs(status.dividendRate - rate) < 0.001 ? "#00ccff" : "#888",
-                  border: `1px solid ${Math.abs(status.dividendRate - rate) < 0.001 ? "#00ccff" : "#333"}`,
-                  borderRadius: "3px",
-                  padding: "2px 6px",
-                  fontSize: "10px",
-                  fontFamily: "inherit",
-                  cursor: "pointer",
-                }}
-                onClick={() => setCorpDividendRate(rate)}
-              >
-                {(rate * 100).toFixed(0)}%
-              </button>
-            ))}
-          </div>
-        )}
-        <div style={{ marginTop: "8px" }}>
-          <button
-            style={{
-              backgroundColor: "#2a1a1a",
-              color: "#ff4444",
-              border: "1px solid #ff4444",
-              borderRadius: "3px",
-              padding: "3px 12px",
-              fontSize: "11px",
-              fontFamily: "inherit",
-              cursor: "pointer",
-            }}
-            onClick={() => toggleCorpEnabled(false)}
-          >
-            Disable Corp
-          </button>
-          <span style={{ fontSize: "10px", color: "#666", marginLeft: "8px" }}>
-            Stops daemon and frees budget allocation
-          </span>
-        </div>
-      </div>
-
-      {/* TierFooter */}
       <TierFooter tier={status.tier} tierName={status.tierName} />
     </div>
   );
@@ -701,9 +555,7 @@ function CorpDetailPanel({
 
 // === PLUGIN EXPORT ===
 
-function noopStatus(): null {
-  return null;
-}
+function noopStatus(): null { return null; }
 
 export const corpPlugin: ToolPlugin<FormattedCorpStatus> = {
   name: "CORP",

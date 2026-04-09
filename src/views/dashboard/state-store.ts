@@ -45,6 +45,7 @@ import {
   CasinoStatus,
   HomeStatus,
   CorpStatus,
+  BladeburnerStatus,
   Command,
 } from "/types/ports";
 
@@ -162,9 +163,26 @@ export function runBackdoors(): void {
 /**
  * Claim focus priority for a daemon (work or rep).
  */
-export function claimFocus(target: "work" | "rep"): void {
+export function claimFocus(target: "work" | "rep" | "blade" | ""): void {
   if (!commandPort) return;
-  commandPort.write(JSON.stringify({ tool: target, action: "claim-focus", focusTarget: target }));
+  const tool = target === "" ? "work" : target;
+  commandPort.write(JSON.stringify({ tool, action: "claim-focus", focusTarget: target }));
+}
+
+/**
+ * Buy a Bladeburner skill upgrade via the blade daemon.
+ */
+export function buyBladeSkill(skillName: string): void {
+  if (!commandPort) return;
+  commandPort.write(JSON.stringify({ tool: "blade", action: "blade-buy-skill", bladeSkillName: skillName }));
+}
+
+/**
+ * Set a Bladeburner config value.
+ */
+export function setBladeConfig(key: string, value: number): void {
+  if (!commandPort) return;
+  commandPort.write(JSON.stringify({ tool: "blade", action: "set-blade-config", bladeConfigKey: key, bladeConfigValue: String(value) }));
 }
 
 /**
@@ -395,35 +413,27 @@ export function toggleHomeAutoBuy(enabled: boolean): void {
 }
 
 /**
- * Accept a corp recommendation.
+ * Set corp directive (bootstrap/scale/harvest).
  */
-export function acceptCorpRecommendation(id: string): void {
+export function setCorpDirective(directive: string): void {
   if (!commandPort) return;
-  commandPort.write(JSON.stringify({ tool: "corp", action: "accept-corp-recommendation", corpRecommendationId: id }));
+  commandPort.write(JSON.stringify({ tool: "corp", action: "set-corp-directive", corpDirective: directive }));
 }
 
 /**
- * Dismiss a corp recommendation.
+ * Cancel pending corp action (countdown banner).
  */
-export function dismissCorpRecommendation(id: string): void {
+export function cancelCorpPending(): void {
   if (!commandPort) return;
-  commandPort.write(JSON.stringify({ tool: "corp", action: "dismiss-corp-recommendation", corpRecommendationId: id }));
+  commandPort.write(JSON.stringify({ tool: "corp", action: "cancel-corp-pending" }));
 }
 
 /**
- * Restart the corp daemon.
+ * Pin/unpin corp directive (prevents auto-advance).
  */
-export function restartCorpDaemon(): void {
+export function toggleCorpPin(pinned: boolean): void {
   if (!commandPort) return;
-  commandPort.write(JSON.stringify({ tool: "corp", action: "restart-corp-daemon" }));
-}
-
-/**
- * Toggle corp auto-products mode.
- */
-export function toggleCorpAutoProducts(enabled: boolean): void {
-  if (!commandPort) return;
-  commandPort.write(JSON.stringify({ tool: "corp", action: "toggle-corp-auto-products", corpAutoProducts: enabled }));
+  commandPort.write(JSON.stringify({ tool: "corp", action: "toggle-corp-pin", corpPinned: pinned }));
 }
 
 /**
@@ -716,9 +726,13 @@ function executeCommand(ns: NS, cmd: Command): void {
       }
       break;
     case "claim-focus":
-      if (cmd.focusTarget) {
+      if (cmd.focusTarget !== undefined) {
         setConfigValue(ns, "focus", "holder", cmd.focusTarget);
-        ns.toast(`Focus claimed by ${cmd.focusTarget} daemon`, "success", 2000);
+        if (cmd.focusTarget) {
+          ns.toast(`Focus claimed by ${cmd.focusTarget} daemon`, "success", 2000);
+        } else {
+          ns.toast("Focus released", "info", 2000);
+        }
       }
       break;
     case "buy-selected-augments":
@@ -870,31 +884,42 @@ function executeCommand(ns: NS, cmd: Command): void {
       setConfigValue(ns, "home", "autoBuy", cmd.homeAutoBuy ? "true" : "false");
       ns.toast(`Home: ${cmd.homeAutoBuy ? "auto-buy ON" : "monitor only"}`, "info", 2000);
       break;
-    case "accept-corp-recommendation":
-    case "dismiss-corp-recommendation":
-    case "toggle-corp-auto-products":
+    case "set-corp-directive":
+      {
+        const corpCtrl = ns.getPortHandle(CORP_CONTROL_PORT);
+        setConfigValue(ns, "corp", "directive", cmd.corpDirective ?? "bootstrap");
+        corpCtrl.write(JSON.stringify({ action: "set-directive", directive: cmd.corpDirective }));
+        ns.toast(`Corp: directive → ${cmd.corpDirective}`, "success", 2000);
+      }
+      break;
+    case "cancel-corp-pending":
+      {
+        const corpCtrl = ns.getPortHandle(CORP_CONTROL_PORT);
+        corpCtrl.write(JSON.stringify({ action: "cancel-pending" }));
+        ns.toast("Corp: pending action cancelled", "info", 2000);
+      }
+      break;
+    case "toggle-corp-pin":
+      {
+        const corpCtrl = ns.getPortHandle(CORP_CONTROL_PORT);
+        setConfigValue(ns, "corp", "pinDirective", cmd.corpPinned ? "true" : "false");
+        corpCtrl.write(JSON.stringify({ action: "pin-directive", pinned: cmd.corpPinned }));
+        ns.toast(`Corp: directive ${cmd.corpPinned ? "pinned" : "unpinned"}`, "info", 2000);
+      }
+      break;
     case "toggle-corp-auto-tea":
+      {
+        const corpCtrl = ns.getPortHandle(CORP_CONTROL_PORT);
+        corpCtrl.write(JSON.stringify({ action: "toggle-auto-tea", autoTea: cmd.corpAutoTea }));
+        setConfigValue(ns, "corp", "autoTea", cmd.corpAutoTea ? "true" : "false");
+        ns.toast(`Corp: auto-tea ${cmd.corpAutoTea ? "ON" : "OFF"}`, "info", 2000);
+      }
+      break;
     case "set-corp-dividend-rate":
       {
         const corpCtrl = ns.getPortHandle(CORP_CONTROL_PORT);
-        if (cmd.action === "accept-corp-recommendation") {
-          corpCtrl.write(JSON.stringify({ action: "accept-recommendation", recommendationId: cmd.corpRecommendationId }));
-          ns.toast("Corp: recommendation accepted", "success", 2000);
-        } else if (cmd.action === "dismiss-corp-recommendation") {
-          corpCtrl.write(JSON.stringify({ action: "dismiss-recommendation", recommendationId: cmd.corpRecommendationId }));
-          ns.toast("Corp: recommendation dismissed", "info", 2000);
-        } else if (cmd.action === "toggle-corp-auto-products") {
-          corpCtrl.write(JSON.stringify({ action: "toggle-auto-products", autoProducts: cmd.corpAutoProducts }));
-          setConfigValue(ns, "corp", "autoProducts", cmd.corpAutoProducts ? "true" : "false");
-          ns.toast(`Corp: auto-products ${cmd.corpAutoProducts ? "ON" : "OFF"}`, "info", 2000);
-        } else if (cmd.action === "toggle-corp-auto-tea") {
-          corpCtrl.write(JSON.stringify({ action: "toggle-auto-tea", autoTea: cmd.corpAutoTea }));
-          setConfigValue(ns, "corp", "autoTea", cmd.corpAutoTea ? "true" : "false");
-          ns.toast(`Corp: auto-tea ${cmd.corpAutoTea ? "ON" : "OFF"}`, "info", 2000);
-        } else if (cmd.action === "set-corp-dividend-rate") {
-          corpCtrl.write(JSON.stringify({ action: "set-dividend-rate", dividendRate: cmd.corpDividendRate }));
-          ns.toast(`Corp: dividend rate → ${((cmd.corpDividendRate ?? 0) * 100).toFixed(1)}%`, "info", 2000);
-        }
+        corpCtrl.write(JSON.stringify({ action: "set-dividend-rate", dividendRate: cmd.corpDividendRate }));
+        ns.toast(`Corp: dividend rate → ${((cmd.corpDividendRate ?? 0) * 100).toFixed(1)}%`, "info", 2000);
       }
       break;
     case "restart-corp-daemon":
@@ -948,6 +973,36 @@ function executeCommand(ns: NS, cmd: Command): void {
           budgetCtrl.write(JSON.stringify({ action: "done", bucket: "corp" }));
           ns.toast("Corp disabled — will not run on aug install", "warning", 3000);
         }
+      }
+      break;
+
+    case "restart-blade-daemon":
+      {
+        const currentBladePid = cachedData.pids.blade;
+        if (currentBladePid > 0) {
+          ns.kill(currentBladePid);
+          cachedData.pids.blade = 0;
+        }
+        cachedData.bladeburnerStatus = null;
+        const bladePid = ns.exec(TOOL_SCRIPTS.blade, "home");
+        if (bladePid > 0) {
+          cachedData.pids.blade = bladePid;
+          ns.toast("Blade daemon restarted", "success", 2000);
+        }
+      }
+      break;
+
+    case "blade-buy-skill":
+      if (cmd.bladeSkillName) {
+        setConfigValue(ns, "blade", "buySkill", cmd.bladeSkillName);
+        ns.toast(`Queued skill purchase: ${cmd.bladeSkillName}`, "info", 2000);
+      }
+      break;
+
+    case "set-blade-config":
+      if (cmd.bladeConfigKey && cmd.bladeConfigValue !== undefined) {
+        setConfigValue(ns, "blade", cmd.bladeConfigKey, cmd.bladeConfigValue);
+        ns.toast(`Blade: ${cmd.bladeConfigKey} = ${cmd.bladeConfigValue}`, "info", 2000);
       }
       break;
   }
@@ -1008,6 +1063,7 @@ const uiState: UIState = {
     casino: {},
     home: {},
     corp: {},
+    blade: {},
   },
 };
 
@@ -1124,10 +1180,11 @@ interface CachedData {
   homeStatus: HomeStatus | null;
   corpStatus: CorpStatus | null;
   corpEnabled: boolean;
+  bladeburnerStatus: BladeburnerStatus | null;
 }
 
 const cachedData: CachedData = {
-  pids: { nuke: 0, pserv: 0, share: 0, rep: 0, hack: 0, darkweb: 0, work: 0, faction: 0, infiltration: 0, gang: 0, augments: 0, advisor: 0, contracts: 0, budget: 0, stocks: 0, casino: 0, home: 0, corp: 0 },
+  pids: { nuke: 0, pserv: 0, share: 0, rep: 0, hack: 0, darkweb: 0, work: 0, faction: 0, infiltration: 0, gang: 0, augments: 0, advisor: 0, contracts: 0, budget: 0, stocks: 0, casino: 0, home: 0, corp: 0, blade: 0 },
   nukeStatus: null,
   pservStatus: null,
   shareStatus: null,
@@ -1153,6 +1210,7 @@ const cachedData: CachedData = {
   homeStatus: null,
   corpStatus: null,
   corpEnabled: true,
+  bladeburnerStatus: null,
 };
 
 // === PORT-BASED STATUS READING ===
@@ -1230,6 +1288,8 @@ export function readStatusPorts(ns: NS): void {
   cachedData.corpStatus = peekStatus<CorpStatus>(ns, STATUS_PORTS.corp, STALE_THRESHOLD_MS);
 
   cachedData.corpEnabled = getConfigBool(ns, "corp", "enabled", true);
+
+  cachedData.bladeburnerStatus = peekStatus<BladeburnerStatus>(ns, STATUS_PORTS.blade, STALE_THRESHOLD_MS);
 }
 
 // === TOOL CONTROL ===
@@ -1266,6 +1326,7 @@ function clearToolStatus(tool: ToolName): void {
     case "casino": cachedData.casinoStatus = null; break;
     case "home": cachedData.homeStatus = null; break;
     case "corp": cachedData.corpStatus = null; break;
+    case "blade": cachedData.bladeburnerStatus = null; break;
   }
 }
 
@@ -1360,7 +1421,7 @@ function stopTool(ns: NS, tool: ToolName): void {
     cachedData.pids[tool] = 0;
     clearToolStatus(tool);
     // Clear focus holder if the stopped tool was holding focus
-    if (tool === "work" || tool === "rep") {
+    if (tool === "work" || tool === "rep" || tool === "blade") {
       const currentHolder = getConfigString(ns, "focus", "holder", "");
       if (currentHolder === tool) {
         setConfigValue(ns, "focus", "holder", "");
@@ -1444,5 +1505,6 @@ export function getStateSnapshot(): DashboardState {
     homeStatus: cachedData.homeStatus,
     corpStatus: cachedData.corpStatus,
     corpEnabled: cachedData.corpEnabled,
+    bladeburnerStatus: cachedData.bladeburnerStatus,
   };
 }

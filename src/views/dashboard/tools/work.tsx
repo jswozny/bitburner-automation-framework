@@ -320,7 +320,7 @@ function WorkDetailPanel({
           alignItems: "center",
         }}>
           <span style={{ color: "#ffaa00", fontSize: "12px" }}>
-            Yielding to Rep daemon
+            Yielding to {status?.focusHolder || "other"} daemon
           </span>
           <button
             style={{

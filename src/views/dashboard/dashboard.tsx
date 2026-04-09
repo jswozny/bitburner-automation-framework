@@ -47,6 +47,8 @@ import { stocksPlugin } from "views/dashboard/tools/stocks";
 import { casinoPlugin } from "views/dashboard/tools/casino";
 import { homePlugin } from "views/dashboard/tools/home";
 import { corpPlugin } from "views/dashboard/tools/corp";
+import { bladePlugin } from "views/dashboard/tools/blade";
+import { FocusToggle } from "views/dashboard/components/FocusToggle";
 
 // === PLUGIN REGISTRY ===
 
@@ -83,6 +85,7 @@ const PLUGIN_REGISTRY: PluginEntry[] = [
   { toolId: "casino",       plugin: casinoPlugin,       tabLabel: "Casino",     getStatus: pick("casinoStatus"),       getError: () => null },
   { toolId: "home",         plugin: homePlugin,         tabLabel: "Home",       getStatus: pick("homeStatus"),         getError: () => null },
   { toolId: "corp",         plugin: corpPlugin,         tabLabel: "Corp",       getStatus: pick("corpStatus"),         getError: () => null },
+  { toolId: "blade",        plugin: bladePlugin,        tabLabel: "Blade",      getStatus: pick("bladeburnerStatus"),  getError: () => null },
 ];
 
 /** Lookup a PluginEntry by toolId. */
@@ -96,11 +99,15 @@ interface TabGroupDef {
   entries: PluginEntry[];
 }
 
+/** Index of the Focus group in TAB_GROUPS (used for conditional rendering). */
+const FOCUS_GROUP_INDEX = 1;
+
 const TAB_GROUPS: TabGroupDef[] = [
-  { label: "Servers",        entries: [findEntry("home"), findEntry("nuke"), findEntry("hack"), findEntry("pserv"), findEntry("darkweb")] },
-  { label: "Rep & Factions", entries: [findEntry("faction"), findEntry("rep"), findEntry("share"), findEntry("augments")] },
-  { label: "Money",          entries: [findEntry("work"), findEntry("budget"), findEntry("stocks"), findEntry("gang"), findEntry("corp")] },
-  { label: "Tools",          entries: [findEntry("casino"), findEntry("infiltration"), findEntry("contracts")] },
+  { label: "Servers",  entries: [findEntry("home"), findEntry("nuke"), findEntry("hack"), findEntry("pserv"), findEntry("darkweb")] },
+  { label: "Focus",    entries: [findEntry("work"), findEntry("rep"), findEntry("blade")] },
+  { label: "Factions", entries: [findEntry("faction"), findEntry("share"), findEntry("augments")] },
+  { label: "Money",    entries: [findEntry("budget"), findEntry("stocks"), findEntry("gang"), findEntry("corp")] },
+  { label: "Tools",    entries: [findEntry("casino"), findEntry("infiltration"), findEntry("contracts")] },
 ];
 
 /** Build the TabGroup[] shape needed by GroupedTabBar. */
@@ -235,16 +242,21 @@ function Dashboard(): React.ReactElement {
     if (!entry) return <div style={styles.panel}>Unknown tab</div>;
 
     const Panel = entry.plugin.DetailPanel;
+    const isFocusGroup = tabState.group === FOCUS_GROUP_INDEX;
+
     return (
-      <ErrorBoundary label={entry.tabLabel}>
-        <Panel
-          status={entry.getStatus(state)}
-          running={state.pids[entry.toolId] > 0}
-          toolId={entry.toolId}
-          error={entry.getError(state)}
-          pid={state.pids[entry.toolId]}
-        />
-      </ErrorBoundary>
+      <div>
+        {isFocusGroup && <FocusToggle />}
+        <ErrorBoundary label={entry.tabLabel}>
+          <Panel
+            status={entry.getStatus(state)}
+            running={state.pids[entry.toolId] > 0}
+            toolId={entry.toolId}
+            error={entry.getError(state)}
+            pid={state.pids[entry.toolId]}
+          />
+        </ErrorBoundary>
+      </div>
     );
   };
 

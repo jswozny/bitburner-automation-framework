@@ -19,6 +19,7 @@ import { COLORS } from "/lib/utils";
 import { publishStatus, peekStatus } from "/lib/ports";
 import { writeDefaultConfig, getConfigNumber, getConfigBool } from "/lib/config";
 import { getBudgetBalance, notifyPurchase, canAfford, signalDone } from "/lib/budget";
+import { freeRamForTarget } from "/lib/ram-utils";
 import {
   STATUS_PORTS,
   STOCKS_CONTROL_PORT,
@@ -138,8 +139,10 @@ export async function main(ns: NS): Promise<void> {
     return;
   }
 
-  // Override RAM to the exact amount needed for our tier
-  ns.ramOverride(Math.ceil(tierInfo.totalRam) + 2);
+  // Free RAM and override to the exact amount needed for our tier
+  const requiredRam = Math.ceil(tierInfo.totalRam) + 2;
+  freeRamForTarget(ns, requiredRam);
+  ns.ramOverride(requiredRam);
 
   await daemon(ns, tierInfo.tier, tierInfo.name);
 }
@@ -464,6 +467,13 @@ async function daemon(ns: NS, maxTier: number, tierName: string): Promise<void> 
     // Attempt to purchase APIs
     const apis = tryPurchaseAPIs(ns);
 
+    // Respawn at higher tier if we now have 4S but started at a lower tier
+    if (apis.has4S && maxTier < 3) {
+      ns.tprint("INFO: 4S API acquired — respawning stocks daemon at tier 3");
+      ns.spawn(ns.getScriptName(), { threads: 1, spawnDelay: 100 });
+      return;
+    }
+
     if (!apis.hasTIX) {
       // Can't do anything without TIX API — publish waiting status and sleep
       const waitStatus: StocksStatus = {
@@ -630,12 +640,16 @@ async function daemon(ns: NS, maxTier: number, tierName: string): Promise<void> 
       let maRatio: number | undefined;
       let forecastVal: number | undefined;
 
+      // Display confidence = forecast deviation from 0.5 (meaningful as a %)
+      let displayConfidence = 0;
+
       if (forecast !== null && volatility !== null && volatility > 0) {
         // Expected-return-based signal (4S or scraped mode)
         const sig = forecastSignal(forecast, volatility, minForecastDeviation);
         signalDir = sig.direction;
         signalStrength = sig.strength;
         expectedReturn = sig.expectedReturn;
+        displayConfidence = Math.abs(forecast - 0.5);
         forecastVal = forecast;
       } else if (forecast !== null) {
         // Have forecast but no volatility data yet — use forecast deviation as crude proxy
@@ -645,12 +659,14 @@ async function daemon(ns: NS, maxTier: number, tierName: string): Promise<void> 
           signalStrength = deviation;
           expectedReturn = forecast - 0.5;
         }
+        displayConfidence = deviation;
         forecastVal = forecast;
       } else {
         // Pre-4S mode: tick-count forecast estimation with MA fallback
         const sig = detectTrend(history, preThreshold, minForecastDeviation);
         signalDir = sig.direction;
         signalStrength = sig.strength;
+        displayConfidence = sig.strength;
         maRatio = sig.maRatio;
         // Use estimated forecast for display if available
         const estFc = estimateForecast(history);
@@ -667,6 +683,7 @@ async function daemon(ns: NS, maxTier: number, tierName: string): Promise<void> 
       if (smartMode && signalDir !== "neutral") {
         const adj = getHackAdjustment(sym, signalDir, hackTargets);
         signalStrength *= adj.confidenceMultiplier;
+        displayConfidence *= adj.confidenceMultiplier;
         if (adj.reason) hackAdj = adj.reason;
       }
 
@@ -687,7 +704,7 @@ async function daemon(ns: NS, maxTier: number, tierName: string): Promise<void> 
           direction: "long",
           profit,
           profitFormatted: ns.format.number(profit),
-          confidence: signalStrength,
+          confidence: displayConfidence,
           hackAdjustment: hackAdj || undefined,
         });
 
@@ -760,7 +777,7 @@ async function daemon(ns: NS, maxTier: number, tierName: string): Promise<void> 
           direction: "short",
           profit,
           profitFormatted: ns.format.number(profit),
-          confidence: signalStrength,
+          confidence: displayConfidence,
           hackAdjustment: hackAdj || undefined,
         });
 
@@ -840,8 +857,10 @@ async function daemon(ns: NS, maxTier: number, tierName: string): Promise<void> 
         });
       }
 
-      // Save current position for next tick's external-sale detection
-      previousPositions.set(sym, [longShares, longAvg, shortShares, shortAvg]);
+      // Save current position for next tick's external-sale detection.
+      // Re-read position after daemon sells so we don't double-count next tick.
+      const [curLong, curLongAvg, curShort, curShortAvg] = ns.stock.getPosition(sym);
+      previousPositions.set(sym, [curLong, curLongAvg, curShort, curShortAvg]);
     }
 
     // Execute buy candidates sorted by strength, weighted allocation, respecting diversification cap
