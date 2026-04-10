@@ -219,7 +219,7 @@ function PservDetailPanel({ status, running, toolId, pid }: DetailPanelProps<For
                 fontFamily: "inherit",
                 cursor: "pointer",
               }}
-              onClick={() => { if (running) togglePservAutoBuy(!status.autoBuy); }}
+              onClick={() => togglePservAutoBuy(!status.autoBuy)}
             >
               {status.autoBuy ? "AUTO" : "MONITOR"}
             </button>
@@ -228,9 +228,7 @@ function PservDetailPanel({ status, running, toolId, pid }: DetailPanelProps<For
             <select
               style={controlSelectStyle}
               value={status.maxRamCap}
-              onChange={(e) => {
-                if (running) setPservMaxRam(parseInt((e.target as HTMLSelectElement).value, 10));
-              }}
+              onChange={(e) => setPservMaxRam(parseInt((e.target as HTMLSelectElement).value, 10))}
             >
               <option value={0}>Cap: Max</option>
               {generateRamOptions(status.maxPossibleRamNum).map(ram => (
