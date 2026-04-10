@@ -12,7 +12,7 @@ import { ToolControl } from "views/dashboard/components/ToolControl";
 import { TierFooter } from "views/dashboard/components/TierFooter";
 import { ProgressBar } from "views/dashboard/components/ProgressBar";
 import { BladeburnerStatus, BladeActionInfo } from "/types/ports";
-import { buyBladeSkill, setBladeConfig } from "views/dashboard/state-store";
+import { buyBladeSkill, buyAllBladeSkills, setBladeConfig } from "views/dashboard/state-store";
 
 const { useState } = React;
 
@@ -85,6 +85,17 @@ const buyBtnStyle: React.CSSProperties = {
   backgroundColor: "#003300",
   color: "#00ff00",
   border: "1px solid #005500",
+  borderRadius: "3px",
+  padding: "1px 8px",
+  fontSize: "10px",
+  fontFamily: "inherit",
+  cursor: "pointer",
+};
+
+const buyAllBtnStyle: React.CSSProperties = {
+  backgroundColor: "#002244",
+  color: "#44aaff",
+  border: "1px solid #004488",
   borderRadius: "3px",
   padding: "1px 8px",
   fontSize: "10px",
@@ -416,12 +427,20 @@ function BladeDetailPanel({
               <span style={{ color: "#00ff00", fontSize: "11px" }}>
                 Recommended: {status.recommendedSkill.name} ({status.recommendedSkill.costFormatted} SP)
               </span>
-              <button
-                style={buyBtnStyle}
-                onClick={() => buyBladeSkill(status.recommendedSkill!.name)}
-              >
-                Buy
-              </button>
+              <div style={{ display: "flex", gap: "4px" }}>
+                <button
+                  style={buyBtnStyle}
+                  onClick={() => buyBladeSkill(status.recommendedSkill!.name)}
+                >
+                  Buy
+                </button>
+                <button
+                  style={buyAllBtnStyle}
+                  onClick={() => buyAllBladeSkills()}
+                >
+                  Buy All
+                </button>
+              </div>
             </div>
           )}
           {status.skills.map(s => (

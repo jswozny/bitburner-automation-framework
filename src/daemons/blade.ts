@@ -532,6 +532,24 @@ async function runAutomationMode(
       setConfigValue(ns, "blade", "buySkill", "");
     }
 
+    // Handle "buy all" — loop: recommend → buy → re-read → repeat
+    if (getConfigString(ns, "blade", "buyAllSkills", "") === "true") {
+      setConfigValue(ns, "blade", "buyAllSkills", "");
+      let bought = 0;
+      while (true) {
+        const freshSkills = gatherSkillData(ns);
+        const sp = ns.bladeburner.getSkillPoints();
+        const rec = recommendSkillUpgrade(freshSkills, sp);
+        if (!rec) break;
+        const success = ns.bladeburner.upgradeSkill(rec.name as any);
+        if (!success) break;
+        bought++;
+      }
+      if (bought > 0) {
+        ns.tprint(`SUCCESS: Bought ${bought} skill upgrade${bought > 1 ? "s" : ""}`);
+      }
+    }
+
     // Try to join BB faction if eligible
     ns.bladeburner.joinBladeburnerFaction();
 

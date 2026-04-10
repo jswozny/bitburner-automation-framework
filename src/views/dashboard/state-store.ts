@@ -179,6 +179,16 @@ export function buyBladeSkill(skillName: string): void {
 }
 
 /**
+ * Keep buying the best recommended skill until SP is exhausted.
+ * The daemon loops internally, re-evaluating after each purchase so
+ * that increasing costs are accounted for.
+ */
+export function buyAllBladeSkills(): void {
+  if (!commandPort) return;
+  commandPort.write(JSON.stringify({ tool: "blade", action: "blade-buy-all-skills" }));
+}
+
+/**
  * Set a Bladeburner config value.
  */
 export function setBladeConfig(key: string, value: number): void {
@@ -1000,6 +1010,11 @@ function executeCommand(ns: NS, cmd: Command): void {
         setConfigValue(ns, "blade", "buySkill", cmd.bladeSkillName);
         ns.toast(`Queued skill purchase: ${cmd.bladeSkillName}`, "info", 2000);
       }
+      break;
+
+    case "blade-buy-all-skills":
+      setConfigValue(ns, "blade", "buyAllSkills", "true");
+      ns.toast("Buying all recommended skills...", "info", 2000);
       break;
 
     case "set-blade-config":
