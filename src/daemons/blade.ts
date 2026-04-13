@@ -18,7 +18,7 @@ import { COLORS } from "/lib/utils";
 import {
   selectAction,
   recommendSkillUpgrade,
-  shouldSwitchCity,
+  selectBestCity,
   DEFAULT_BLADE_CONFIG,
   BLADEBURNER_CITIES,
   BladeState,
@@ -471,6 +471,12 @@ async function runAutomationMode(
       };
     }
 
+    // Determine best city before action selection so diplomacy/chaos
+    // checks use the city we'll actually work in
+    const bestCity = selectBestCity(city, cities, config.chaosMax);
+    const effectiveCity = bestCity || city;
+    const effectiveCityData = cities.find(c => c.name === effectiveCity);
+
     const bladeState: BladeState = {
       inBladeburner: true,
       rank,
@@ -478,9 +484,9 @@ async function runAutomationMode(
       maxStamina: maxStam,
       staminaPercent: maxStam > 0 ? (stam / maxStam) * 100 : 0,
       skillPoints: ns.bladeburner.getSkillPoints(),
-      city,
-      cityChaos: ns.bladeburner.getCityChaos(city),
-      cityPopulation: ns.bladeburner.getCityEstimatedPopulation(city),
+      city: effectiveCity,
+      cityChaos: effectiveCityData?.chaos ?? ns.bladeburner.getCityChaos(city),
+      cityPopulation: effectiveCityData?.population ?? ns.bladeburner.getCityEstimatedPopulation(city),
       bonusTime: ns.bladeburner.getBonusTime(),
       currentAction: null,
       contracts,
@@ -497,8 +503,11 @@ async function runAutomationMode(
     isDiplomacyActive = recommended?.name === "Diplomacy";
     isResting = recommended?.name === "Hyperbolic Regeneration Chamber";
 
-    // City switching
-    const targetCity = shouldSwitchCity(city, cities, config.populationMin);
+    // Raid quarantine: override city for Raids to protect high-pop cities
+    let targetCity: string | null = bestCity;
+    if (recommended?.name === "Raid") {
+      targetCity = selectBestCity(city, cities, config.chaosMax, "Raid") || targetCity;
+    }
 
     // Execute actions if we hold focus
     if (!focusYielding && recommended) {
