@@ -266,6 +266,17 @@ function formatCity(ns: NS, city: CityData): BladeCityInfo {
   };
 }
 
+function formatBonusTime(ms: number): string {
+  if (ms <= 1000) return "0s";
+  const totalSec = Math.floor(ms / 1000);
+  const h = Math.floor(totalSec / 3600);
+  const m = Math.floor((totalSec % 3600) / 60);
+  const s = totalSec % 60;
+  if (h > 0) return `${h}h ${m}m`;
+  if (m > 0) return `${m}m ${s}s`;
+  return `${s}s`;
+}
+
 function currentActionDisplay(action: ReturnType<NS["bladeburner"]["getCurrentAction"]>): { text: string; type: BladeburnerStatus["currentActionType"] } {
   if (!action) return { text: "Idle", type: "idle" };
   const typeName = action.type.toLowerCase();
@@ -330,7 +341,7 @@ async function runMonitorMode(
       cityPopulation: pop,
       cityPopulationFormatted: ns.formatNumber(pop, 1),
       bonusTime: bt,
-      bonusTimeFormatted: bt > 1000 ? `${(bt / 1000).toFixed(0)}s` : "0s",
+      bonusTimeFormatted: formatBonusTime(bt),
       currentAction: actionText,
       currentActionType: actionType,
       focusHolder,
@@ -682,7 +693,7 @@ function computeFullStatus(
     cityPopulation: pop,
     cityPopulationFormatted: ns.formatNumber(pop, 1),
     bonusTime: bt,
-    bonusTimeFormatted: bt > 1000 ? `${(bt / 1000).toFixed(0)}s` : "0s",
+    bonusTimeFormatted: formatBonusTime(bt),
     currentAction: actionText,
     currentActionType: actionType,
     focusHolder,

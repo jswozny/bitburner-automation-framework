@@ -247,7 +247,7 @@ function selectBestAction(actions: ActionData[], minSuccess: number): ActionData
   let best: ActionData | null = null;
 
   for (const action of actions) {
-    if (action.count <= 0) continue;
+    if (action.count < 1) continue;
     if (action.successMin < minSuccess) continue;
     if (!best || action.rankGain > best.rankGain) {
       best = action;
