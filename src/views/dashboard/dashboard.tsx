@@ -22,6 +22,7 @@ import {
   detectRunningTools,
   getStateSnapshot,
   loadDashboardSettings,
+  sendResetStartConfig,
 } from "views/dashboard/state-store";
 // Styles and components
 import { styles } from "views/dashboard/styles";
@@ -48,6 +49,7 @@ import { casinoPlugin } from "views/dashboard/tools/casino";
 import { homePlugin } from "views/dashboard/tools/home";
 import { corpPlugin } from "views/dashboard/tools/corp";
 import { bladePlugin } from "views/dashboard/tools/blade";
+import { hacknetPlugin } from "views/dashboard/tools/hacknet";
 import { FocusToggle } from "views/dashboard/components/FocusToggle";
 
 // === PLUGIN REGISTRY ===
@@ -86,6 +88,7 @@ const PLUGIN_REGISTRY: PluginEntry[] = [
   { toolId: "home",         plugin: homePlugin,         tabLabel: "Home",       getStatus: pick("homeStatus"),         getError: () => null },
   { toolId: "corp",         plugin: corpPlugin,         tabLabel: "Corp",       getStatus: pick("corpStatus"),         getError: () => null },
   { toolId: "blade",        plugin: bladePlugin,        tabLabel: "Blade",      getStatus: pick("bladeburnerStatus"),  getError: () => null },
+  { toolId: "hacknet",      plugin: hacknetPlugin,      tabLabel: "Hacknet",    getStatus: pick("hacknetStatus"),      getError: () => null },
 ];
 
 /** Lookup a PluginEntry by toolId. */
@@ -106,7 +109,7 @@ const TAB_GROUPS: TabGroupDef[] = [
   { label: "Servers",  entries: [findEntry("home"), findEntry("nuke"), findEntry("hack"), findEntry("pserv"), findEntry("darkweb")] },
   { label: "Focus",    entries: [findEntry("work"), findEntry("rep"), findEntry("blade")] },
   { label: "Factions", entries: [findEntry("faction"), findEntry("share"), findEntry("augments")] },
-  { label: "Money",    entries: [findEntry("budget"), findEntry("stocks"), findEntry("gang"), findEntry("corp")] },
+  { label: "Money",    entries: [findEntry("budget"), findEntry("stocks"), findEntry("hacknet"), findEntry("gang"), findEntry("corp")] },
   { label: "Tools",    entries: [findEntry("casino"), findEntry("infiltration"), findEntry("contracts")] },
 ];
 
@@ -133,6 +136,75 @@ interface OverviewPanelProps {
   onNavigate: (toolId: ToolName) => void;
 }
 
+function StartupConfigPanel({ config }: { config: DashboardState["startupConfig"] }): React.ReactElement {
+  if (config.length === 0) {
+    return (
+      <div style={{ ...styles.cardOverview, padding: "8px 12px" }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "6px" }}>
+          <span style={{ color: "#888", fontSize: "11px", fontWeight: "bold" }}>STARTUP CONFIG</span>
+        </div>
+        <span style={{ color: "#666", fontSize: "11px" }}>No /config/start.txt found. Run start.js to generate defaults.</span>
+      </div>
+    );
+  }
+
+  const coreEntries = config.filter(e => e.core);
+  const optionalEntries = config.filter(e => !e.core);
+  const disabledCount = config.filter(e => !e.enabled).length;
+
+  const nameFromPath = (path: string) => path.replace(/^daemons\//, "").replace(/\.js$/, "");
+
+  const renderEntries = (entries: typeof config) => (
+    <span style={{ fontSize: "11px", lineHeight: "1.6" }}>
+      {entries.map((e, i) => (
+        <span key={e.path}>
+          <span style={{ color: e.enabled ? "#00ff00" : "#555", textDecoration: e.enabled ? "none" : "line-through" }}>
+            {nameFromPath(e.path)}
+          </span>
+          {i < entries.length - 1 && <span style={{ color: "#333" }}>{" | "}</span>}
+        </span>
+      ))}
+    </span>
+  );
+
+  return (
+    <div style={{ ...styles.cardOverview, padding: "8px 12px" }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "6px" }}>
+        <span style={{ color: "#888", fontSize: "11px", fontWeight: "bold" }}>
+          STARTUP CONFIG
+          {disabledCount > 0 && <span style={{ color: "#ff8800" }}>{" "}({disabledCount} disabled)</span>}
+        </span>
+        <button
+          style={{
+            backgroundColor: "#1a1a1a",
+            color: "#888",
+            border: "1px solid #444",
+            borderRadius: "3px",
+            padding: "1px 6px",
+            fontSize: "10px",
+            fontFamily: "inherit",
+            cursor: "pointer",
+          }}
+          onClick={() => sendResetStartConfig()}
+        >
+          Reset Defaults
+        </button>
+      </div>
+      <div style={{ marginBottom: "4px" }}>
+        <span style={{ color: "#666", fontSize: "10px" }}>CORE: </span>
+        {renderEntries(coreEntries)}
+      </div>
+      <div>
+        <span style={{ color: "#666", fontSize: "10px" }}>OPT: </span>
+        {renderEntries(optionalEntries)}
+      </div>
+      <div style={{ color: "#555", fontSize: "10px", marginTop: "4px" }}>
+        vim /config/start.txt to edit
+      </div>
+    </div>
+  );
+}
+
 function OverviewPanel({ state, onNavigate }: OverviewPanelProps): React.ReactElement {
   const advisorEntry = findEntry("advisor");
   const AdvisorPanel = advisorEntry.plugin.DetailPanel;
@@ -149,6 +221,9 @@ function OverviewPanel({ state, onNavigate }: OverviewPanelProps): React.ReactEl
               pid={state.pids[advisorEntry.toolId]}
           />
         </ErrorBoundary>
+      </div>
+      <div style={{ marginBottom: "12px" }}>
+        <StartupConfigPanel config={state.startupConfig} />
       </div>
       <div style={styles.grid}>
         {PLUGIN_REGISTRY.filter(e => e.toolId !== "advisor").map(entry => {

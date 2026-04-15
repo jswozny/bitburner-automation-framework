@@ -156,6 +156,7 @@ function readHackConfig(ns: NS) {
     moneyThreshold: getConfigNumber(ns, "hack", "moneyThreshold", 0.8),
     securityBuffer: getConfigNumber(ns, "hack", "securityBuffer", 5),
     hackPercent: getConfigNumber(ns, "hack", "hackPercent", 0.25),
+    excludeHacknet: !getConfigBool(ns, "hacknet", "allowWorkers", false),
   };
 }
 
@@ -281,11 +282,11 @@ function determineDisplayAction(
 
 // === LEGACY MODE: STATUS COMPUTATION ===
 
-function computeLegacyHackStatus(ns: NS, homeReserve: number, maxTargets: number): HackStatus | null {
+function computeLegacyHackStatus(ns: NS, homeReserve: number, maxTargets: number, excludeHacknet = false): HackStatus | null {
   const player = ns.getPlayer();
   const playerHacking = player.skills.hacking;
 
-  const servers = getUsableServers(ns, homeReserve);
+  const servers = getUsableServers(ns, homeReserve, excludeHacknet);
   const totalRam = servers.reduce((sum, s) => sum + s.availableRam, 0);
 
   const targets = getTargets(ns, maxTargets);
@@ -443,8 +444,9 @@ function computeBatchHackStatus(
   targetStates: Map<string, BatchTargetState>,
   incomeTracker: IncomeTracker,
   _activeBatchMap: Map<number, { target: string; expectedEnd: number }>,
+  excludeHacknet = false,
 ): HackStatus {
-  const servers = getUsableServers(ns, homeReserve);
+  const servers = getUsableServers(ns, homeReserve, excludeHacknet);
   const totalRam = servers.reduce((sum, s) => sum + s.availableRam, 0);
 
   const runningJobs = getRunningJobs(ns);
@@ -737,7 +739,7 @@ export async function main(ns: NS): Promise<void> {
   const cfg = readHackConfig(ns);
 
   // Bootstrap fleet allocation immediately so share daemon can start working
-  const bootstrapServers = getUsableServers(ns, cfg.homeReserve);
+  const bootstrapServers = getUsableServers(ns, cfg.homeReserve, cfg.excludeHacknet);
   const bootstrapSharePercent = getSharePercentFromPort(ns);
   const bootstrapAllocation = computeFleetAllocation(bootstrapServers, cfg.strategy, bootstrapSharePercent);
   publishStatus(ns, STATUS_PORTS.fleet, bootstrapAllocation);
@@ -815,7 +817,7 @@ async function runStocksMode(ns: NS): Promise<void> {
     targets.sort((a, b) => b.priority - a.priority);
 
     // Get fleet servers
-    const fleetServers = getUsableServers(ns, cfg.homeReserve);
+    const fleetServers = getUsableServers(ns, cfg.homeReserve, cfg.excludeHacknet);
     const sharePercent = getSharePercentFromPort(ns);
     const allocation = computeFleetAllocation(fleetServers, "stocks", sharePercent);
     publishStatus(ns, STATUS_PORTS.fleet, allocation);
@@ -947,7 +949,7 @@ async function runLegacyMode(ns: NS): Promise<void> {
     cycleCount++;
 
     // Compute fleet allocation BEFORE running cycle so we can filter servers
-    const legacyServers = getUsableServers(ns, config.homeReserve);
+    const legacyServers = getUsableServers(ns, config.homeReserve, cfg.excludeHacknet);
     const legacySharePercent = getSharePercentFromPort(ns);
     const legacyAllocation = computeFleetAllocation(legacyServers, "money", legacySharePercent);
     publishStatus(ns, STATUS_PORTS.fleet, legacyAllocation);
@@ -986,7 +988,7 @@ async function runLegacyMode(ns: NS): Promise<void> {
       continue;
     }
 
-    const hackStatus = computeLegacyHackStatus(ns, config.homeReserve, config.maxTargets);
+    const hackStatus = computeLegacyHackStatus(ns, config.homeReserve, config.maxTargets, cfg.excludeHacknet);
     if (hackStatus) {
       hackStatus.strategy = "money";
       hackStatus.sharePercent = legacySharePercent;
@@ -1026,7 +1028,7 @@ async function runBatchMode(ns: NS): Promise<void> {
     cycleCount++;
 
     // Fleet allocation FIRST so we can resolve maxBatches
-    const allServers = getUsableServers(ns, cfg.homeReserve);
+    const allServers = getUsableServers(ns, cfg.homeReserve, cfg.excludeHacknet);
     const sharePercent = getSharePercentFromPort(ns);
     const allocation = computeFleetAllocation(allServers, "money", sharePercent);
     publishStatus(ns, STATUS_PORTS.fleet, allocation);
@@ -1216,7 +1218,7 @@ async function runBatchMode(ns: NS): Promise<void> {
     // 11. Compute and publish status
     const hackStatus = computeBatchHackStatus(
       ns, batchConfig.homeReserve, batchConfig.maxBatches,
-      targetStates, incomeTracker, activeBatchMap,
+      targetStates, incomeTracker, activeBatchMap, cfg.excludeHacknet,
     );
     hackStatus.strategy = "money";
     hackStatus.sharePercent = sharePercent;
@@ -1276,7 +1278,7 @@ async function runXpMode(ns: NS): Promise<void> {
     }
 
     // 2. Get usable servers — force share to 0 (XP mode uses everything)
-    const allServers = getUsableServers(ns, cfg.homeReserve);
+    const allServers = getUsableServers(ns, cfg.homeReserve, cfg.excludeHacknet);
     const allocation = computeFleetAllocation(allServers, "xp", 0);
     publishStatus(ns, STATUS_PORTS.fleet, allocation);
     const hackServerSet = new Set(allocation.hackServers);
@@ -1376,7 +1378,7 @@ async function runDrainMode(ns: NS): Promise<void> {
     ns.clearLog();
 
     // 1. Fleet allocation — 0 share so drain takes 100%
-    const allServers = getUsableServers(ns, cfg.homeReserve);
+    const allServers = getUsableServers(ns, cfg.homeReserve, cfg.excludeHacknet);
     const allocation = computeFleetAllocation(allServers, "drain", 0);
     publishStatus(ns, STATUS_PORTS.fleet, allocation);
 

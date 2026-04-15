@@ -32,6 +32,7 @@ export const STATUS_PORTS = {
   home: 27,
   corp: 28,
   blade: 30,
+  hacknet: 31,
 } as const;
 
 export const GANG_CONTROL_PORT = 15;
@@ -45,7 +46,7 @@ export const COMMAND_PORT = 20;
 
 // === TOOL NAMES ===
 
-export type ToolName = "nuke" | "pserv" | "share" | "rep" | "hack" | "darkweb" | "work" | "faction" | "infiltration" | "gang" | "augments" | "advisor" | "contracts" | "budget" | "stocks" | "casino" | "home" | "corp" | "blade";
+export type ToolName = "nuke" | "pserv" | "share" | "rep" | "hack" | "darkweb" | "work" | "faction" | "infiltration" | "gang" | "augments" | "advisor" | "contracts" | "budget" | "stocks" | "casino" | "home" | "corp" | "blade" | "hacknet";
 
 // === TOOL SCRIPTS (daemon paths) ===
 
@@ -69,6 +70,7 @@ export const TOOL_SCRIPTS: Record<ToolName, string> = {
   home: "daemons/home.js",
   corp: "daemons/corp.js",
   blade: "daemons/blade.js",
+  hacknet: "daemons/hacknet.js",
 };
 
 // === PRIORITY CONSTANTS ===
@@ -96,7 +98,7 @@ export interface QueueEntry {
 
 export interface Command {
   tool: ToolName;
-  action: "start" | "stop" | "open-tail" | "run-script" | "start-faction-work" | "set-focus" | "start-training" | "install-augments" | "run-backdoors" | "restart-rep-daemon" | "join-faction" | "restart-faction-daemon" | "restart-hack-daemon" | "restart-share-daemon" | "stop-infiltration" | "kill-infiltration" | "configure-infiltration" | "set-gang-strategy" | "pin-gang-member" | "unpin-gang-member" | "ascend-gang-member" | "toggle-gang-purchases" | "toggle-gang-warfare" | "set-gang-wanted-threshold" | "set-gang-ascension-thresholds" | "set-gang-training-threshold" | "set-gang-grow-target" | "set-gang-grow-respect-reserve" | "set-gang-territory-threshold" | "force-buy-equipment" | "restart-gang-daemon" | "buy-selected-augments" | "claim-focus" | "toggle-pserv-autobuy" | "set-pserv-max-ram" | "force-contract-attempt" | "restart-stocks-daemon" | "reset-stocks-pnl" | "stocks-control" | "set-stocks-profile" | "rush-budget-bucket" | "cancel-budget-rush" | "update-budget-weight" | "reset-budget-weights" | "toggle-home-autobuy" | "set-corp-directive" | "cancel-corp-pending" | "toggle-corp-pin" | "restart-corp-daemon" | "toggle-corp-auto-tea" | "set-corp-dividend-rate" | "toggle-corp-enabled" | "restart-blade-daemon" | "blade-buy-skill" | "blade-buy-all-skills" | "set-blade-config";
+  action: "start" | "stop" | "open-tail" | "run-script" | "start-faction-work" | "set-focus" | "start-training" | "install-augments" | "run-backdoors" | "restart-rep-daemon" | "join-faction" | "restart-faction-daemon" | "restart-hack-daemon" | "restart-share-daemon" | "stop-infiltration" | "kill-infiltration" | "configure-infiltration" | "set-gang-strategy" | "pin-gang-member" | "unpin-gang-member" | "ascend-gang-member" | "toggle-gang-purchases" | "toggle-gang-warfare" | "set-gang-wanted-threshold" | "set-gang-ascension-thresholds" | "set-gang-training-threshold" | "set-gang-grow-target" | "set-gang-grow-respect-reserve" | "set-gang-territory-threshold" | "force-buy-equipment" | "restart-gang-daemon" | "buy-selected-augments" | "claim-focus" | "claim-sleeve-focus" | "toggle-pserv-autobuy" | "set-pserv-max-ram" | "force-contract-attempt" | "restart-stocks-daemon" | "reset-stocks-pnl" | "stocks-control" | "set-stocks-profile" | "rush-budget-bucket" | "cancel-budget-rush" | "update-budget-weight" | "reset-budget-weights" | "toggle-home-autobuy" | "set-corp-directive" | "cancel-corp-pending" | "toggle-corp-pin" | "restart-corp-daemon" | "toggle-corp-auto-tea" | "set-corp-dividend-rate" | "toggle-corp-enabled" | "restart-blade-daemon" | "blade-buy-skill" | "blade-buy-all-skills" | "set-blade-config" | "reset-start-config";
   scriptPath?: string;
   scriptArgs?: string[];
   factionName?: string;
@@ -125,6 +127,7 @@ export interface Command {
   gangTerritoryAutoThreshold?: number;
   selectedAugs?: string[];
   focusTarget?: "work" | "rep" | "blade" | "none";
+  focusSleeveTarget?: "work" | "rep" | "blade" | "none";
   pservAutoBuy?: boolean;
   pservMaxRam?: number;
   contractHost?: string;
@@ -305,6 +308,7 @@ export interface RepStatus {
   isWorkable?: boolean;
   focusYielding?: boolean;
   focusHolder?: string;
+  sleeveHolder?: string;
   pendingBackdoors?: string[];
   repGainRate?: number;
   eta?: string;
@@ -482,6 +486,7 @@ export interface WorkStatus {
   } | null;
   focusYielding?: boolean;
   focusHolder?: string;
+  sleeveHolder?: string;
 }
 
 // === HACK STRATEGY ===
@@ -1347,6 +1352,7 @@ export interface BladeburnerStatus {
   currentAction: string;
   currentActionType: "general" | "contract" | "operation" | "blackop" | "idle";
   focusHolder?: string;
+  sleeveHolder?: string;
 
   // Analysis (Tier 1+)
   contracts?: BladeActionInfo[];
@@ -1387,6 +1393,67 @@ export interface BladeburnerStatus {
   bladeburnerAugs?: { name: string; repReq: number; repReqFormatted: string; owned: boolean }[];
 }
 
+export interface HacknetServerInfo {
+  index: number;
+  level: number;
+  ram: number;
+  cores: number;
+  cache: number;
+  hashRate: number;
+  hashRateFormatted: string;
+  production: number;
+  productionFormatted: string;
+}
+
+export interface HacknetStatus {
+  // Tier info (standard)
+  tier: number;
+  tierName: "monitor" | "auto-buy" | "hash-spender";
+  currentRamUsage: number;
+  nextTierRam: number | null;
+  canUpgrade: boolean;
+  availableFeatures: string[];
+  unavailableFeatures: string[];
+
+  // Hacknet state
+  serverCount: number;
+  maxServers: number;
+  totalHashRate: number;
+  totalHashRateFormatted: string;
+  currentHashes: number;
+  hashCapacity: number;
+  hashUtilization: number; // 0-1
+  totalProduction: number;
+  totalProductionFormatted: string;
+
+  // Costs
+  nextNodeCost: number | null;
+  nextNodeCostFormatted: string | null;
+  cheapestUpgrade: { type: string; serverIndex: number; cost: number; costFormatted: string } | null;
+
+  // Spending
+  hashesSpentTotal: number;
+  moneyEarnedFromHashes: number;
+  moneyEarnedFormatted: string;
+  spendStrategy: "money";
+  autoBuy: boolean;
+
+  // Per-server breakdown
+  servers: HacknetServerInfo[];
+
+  // Purchase tracking
+  nodesBought: number;
+  upgradesBought: number;
+  totalSpent: number;
+  totalSpentFormatted: string;
+}
+
+export interface StartupConfigEntry {
+  path: string;
+  enabled: boolean;
+  core: boolean;
+}
+
 // === DASHBOARD STATE ===
 
 export interface DashboardState {
@@ -1417,6 +1484,8 @@ export interface DashboardState {
   corpStatus: CorpStatus | null;
   corpEnabled: boolean;
   bladeburnerStatus: BladeburnerStatus | null;
+  hacknetStatus: HacknetStatus | null;
+  startupConfig: StartupConfigEntry[];
 }
 
 // === PLUGIN INTERFACE (for dashboard) ===

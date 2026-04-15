@@ -65,6 +65,7 @@ const DAEMON_DOCS: Record<ToolName, { start: string; stop: string; flags: string
   home: { start: "run daemons/home.js", stop: "kill daemons/home.js", flags: "config: /config/home.txt (interval, autoBuy)" },
   corp: { start: "run daemons/corp.js", stop: "kill daemons/corp.js", flags: "config: /config/corp.txt (directive, pinDirective, tier, autoTea, dividendRate, productInvestPct, countdownSeconds)" },
   blade: { start: "run daemons/blade.js", stop: "kill daemons/blade.js", flags: "config: /config/blade.txt (operationThreshold, blackOpThreshold, staminaMinPercent, chaosMax, populationMin)" },
+  hacknet: { start: "run daemons/hacknet.js", stop: "kill daemons/hacknet.js", flags: "config: /config/hacknet.txt (interval, autoBuy, maxServers, spendThreshold, reserveHashes, allowWorkers)" },
 };
 
 // === RUNNING STATE ===
