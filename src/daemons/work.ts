@@ -180,6 +180,7 @@ function computeWorkStatus(
   currentRam: number,
   focusYielding = false,
   focusHolder = "",
+  sleeveHolder = "",
 ): WorkStatus {
   const rawStatus = getWorkStatus(ns);
 
@@ -386,6 +387,7 @@ function computeWorkStatus(
     pendingCrimeSwitch,
     focusYielding,
     focusHolder,
+    sleeveHolder,
   };
 }
 
@@ -531,7 +533,8 @@ async function runMonitorMode(
   while (true) {
     const interval = getConfigNumber(ns, "work", "interval", 5000);
     const focusHolder = getConfigString(ns, "focus", "holder", "");
-    const focusYielding = focusHolder !== "" && focusHolder !== "work";
+    const sleeveHolder = getConfigString(ns, "focus", "sleeveHolder", "");
+    const focusYielding = focusHolder !== "" && focusHolder !== "work" && sleeveHolder !== "work";
     const focus = readAndApplyFocus(ns);
 
     ns.clearLog();
@@ -539,7 +542,7 @@ async function runMonitorMode(
     // At tier 0 we can't train — just display status
     ns.print(`${C.yellow}Monitor mode (insufficient RAM for training)${C.reset}`);
 
-    const workStatus = computeWorkStatus(ns, 0, "monitor", currentRam, focusYielding, focusHolder);
+    const workStatus = computeWorkStatus(ns, 0, "monitor", currentRam, focusYielding, focusHolder, sleeveHolder);
     publishStatus(ns, STATUS_PORTS.work, workStatus);
     printStatus(ns, workStatus);
 
@@ -577,7 +580,8 @@ async function runTrainingMode(
     const interval = getConfigNumber(ns, "work", "interval", 5000);
     const oneShot = getConfigBool(ns, "work", "oneShot", false);
     const focusHolder = getConfigString(ns, "focus", "holder", "");
-    const focusYielding = focusHolder !== "" && focusHolder !== "work";
+    const sleeveHolder = getConfigString(ns, "focus", "sleeveHolder", "");
+    const focusYielding = focusHolder !== "" && focusHolder !== "work" && sleeveHolder !== "work";
     const focus = readAndApplyFocus(ns);
 
     ns.clearLog();
@@ -606,7 +610,7 @@ async function runTrainingMode(
       }
     }
 
-    const workStatus = computeWorkStatus(ns, 1, "training", currentRam, focusYielding, focusHolder);
+    const workStatus = computeWorkStatus(ns, 1, "training", currentRam, focusYielding, focusHolder, sleeveHolder);
     publishStatus(ns, STATUS_PORTS.work, workStatus);
     printStatus(ns, workStatus);
 
@@ -629,7 +633,8 @@ async function runCrimeMode(
     const interval = getConfigNumber(ns, "work", "interval", 5000);
     const oneShot = getConfigBool(ns, "work", "oneShot", false);
     const focusHolder = getConfigString(ns, "focus", "holder", "");
-    const focusYielding = focusHolder !== "" && focusHolder !== "work";
+    const sleeveHolder = getConfigString(ns, "focus", "sleeveHolder", "");
+    const focusYielding = focusHolder !== "" && focusHolder !== "work" && sleeveHolder !== "work";
     readAndApplyFocus(ns);
 
     ns.clearLog();
@@ -645,7 +650,7 @@ async function runCrimeMode(
       }
     }
 
-    const workStatus = computeWorkStatus(ns, 2, "crime", currentRam, focusYielding, focusHolder);
+    const workStatus = computeWorkStatus(ns, 2, "crime", currentRam, focusYielding, focusHolder, sleeveHolder);
     publishStatus(ns, STATUS_PORTS.work, workStatus);
     printStatus(ns, workStatus);
 

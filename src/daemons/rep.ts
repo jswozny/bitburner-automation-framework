@@ -428,6 +428,7 @@ function computeHighTierStatus(
   targetFactionOverride = "",
   focusYielding = false,
   focusHolder = "",
+  sleeveHolder = "",
 ): RepStatus {
   const player = ns.getPlayer();
   const ownedAugs = getOwnedAugs(ns);
@@ -569,6 +570,7 @@ function computeHighTierStatus(
     isWorkable: workStatus.isWorkable,
     focusYielding,
     focusHolder,
+    sleeveHolder,
   };
 }
 
@@ -860,7 +862,8 @@ async function runFullMode(
 
     // Check focus priority
     const focusHolder = getConfigString(ns, "focus", "holder", "");
-    const focusYielding = focusHolder !== "" && focusHolder !== "rep";
+    const sleeveHolder = getConfigString(ns, "focus", "sleeveHolder", "");
+    const focusYielding = focusHolder !== "" && focusHolder !== "rep" && sleeveHolder !== "rep";
 
     ns.clearLog();
 
@@ -970,7 +973,7 @@ async function runFullMode(
     // Compute and publish RepStatus
     // Calculate next tier RAM for display
     const nextTierRam = tier.tier < 6 ? tierRamCosts[tier.tier + 1] : null;
-    const repStatus = computeHighTierStatus(ns, tier, currentTierRam, nextTierRam, repGainRate, noWork, targetFactionOverride, focusYielding, focusHolder);
+    const repStatus = computeHighTierStatus(ns, tier, currentTierRam, nextTierRam, repGainRate, noWork, targetFactionOverride, focusYielding, focusHolder, sleeveHolder);
     publishStatus(ns, STATUS_PORTS.rep, repStatus);
 
     // Compute and publish BitnodeStatus

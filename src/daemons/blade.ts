@@ -319,6 +319,7 @@ async function runMonitorMode(
     const sp = ns.bladeburner.getSkillPoints();
     const bt = ns.bladeburner.getBonusTime();
     const focusHolder = getConfigString(ns, "focus", "holder", "");
+    const sleeveHolder = getConfigString(ns, "focus", "sleeveHolder", "");
 
     const status: BladeburnerStatus = {
       tier: 0,
@@ -345,6 +346,7 @@ async function runMonitorMode(
       currentAction: actionText,
       currentActionType: actionType,
       focusHolder,
+      sleeveHolder,
     };
 
     publishStatus(ns, STATUS_PORTS.blade, status);
@@ -459,7 +461,8 @@ async function runAutomationMode(
 
     const config = readBladeConfig(ns);
     const focusHolder = getConfigString(ns, "focus", "holder", "");
-    const focusYielding = focusHolder !== "" && focusHolder !== "blade";
+    const sleeveHolder = getConfigString(ns, "focus", "sleeveHolder", "");
+    const focusYielding = focusHolder !== "" && focusHolder !== "blade" && sleeveHolder !== "blade";
 
     // Gather full state
     const contracts = gatherActionData(ns, "Contracts", ns.bladeburner.getContractNames());
@@ -583,6 +586,7 @@ async function runAutomationMode(
       recommended,
       focusYielding,
       focusHolder,
+      sleeveHolder,
       config,
     });
     publishStatus(ns, STATUS_PORTS.blade, status);
@@ -632,6 +636,7 @@ interface FullStatusData {
   recommended?: { type: string; name: string } | null;
   focusYielding?: boolean;
   focusHolder?: string;
+  sleeveHolder?: string;
   config?: BladeConfig;
 }
 
@@ -652,6 +657,7 @@ function computeFullStatus(
   const sp = ns.bladeburner.getSkillPoints();
   const bt = ns.bladeburner.getBonusTime();
   const focusHolder = data?.focusHolder ?? getConfigString(ns, "focus", "holder", "");
+  const sleeveHolder = data?.sleeveHolder ?? getConfigString(ns, "focus", "sleeveHolder", "");
 
   // Gather data at analysis+ tiers if not provided
   const contracts = data?.contracts ?? (tier >= 1 ? gatherActionData(ns, "Contracts", ns.bladeburner.getContractNames()) : undefined);
@@ -697,6 +703,7 @@ function computeFullStatus(
     currentAction: actionText,
     currentActionType: actionType,
     focusHolder,
+    sleeveHolder,
   };
 
   if (contracts) status.contracts = contracts.map(formatAction);
