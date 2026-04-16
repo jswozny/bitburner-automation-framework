@@ -23,6 +23,7 @@ import {
   BUDGET_CONTROL_PORT,
   CORP_CONTROL_PORT,
   STOCKS_CONTROL_PORT,
+  FOCUS_CONTROL_PORT,
   NukeStatus,
   PservStatus,
   ShareStatus,
@@ -47,6 +48,8 @@ import {
   CorpStatus,
   BladeburnerStatus,
   HacknetStatus,
+  FocusStatus,
+  FocusControlMessage,
   HashSpendStrategy,
   StartupConfigEntry,
   Command,
@@ -169,8 +172,7 @@ export function runBackdoors(): void {
  */
 export function claimFocus(target: "work" | "rep" | "blade" | "none"): void {
   if (!commandPort) return;
-  const tool = target === "none" ? "work" : target;
-  commandPort.write(JSON.stringify({ tool, action: "claim-focus", focusTarget: target }));
+  commandPort.write(JSON.stringify({ tool: "focus", action: "claim-focus", focusTarget: target }));
 }
 
 /**
@@ -179,8 +181,7 @@ export function claimFocus(target: "work" | "rep" | "blade" | "none"): void {
  */
 export function claimSleeveFocus(target: "work" | "rep" | "blade" | "none"): void {
   if (!commandPort) return;
-  const tool = target === "none" ? "work" : target;
-  commandPort.write(JSON.stringify({ tool, action: "claim-sleeve-focus", focusSleeveTarget: target }));
+  commandPort.write(JSON.stringify({ tool: "focus", action: "claim-sleeve-focus", focusSleeveTarget: target }));
 }
 
 /**
@@ -418,6 +419,22 @@ export function forceContractAttempt(host: string, file: string): void {
 export function rushBudgetBucket(bucket: string): void {
   if (!commandPort) return;
   commandPort.write(JSON.stringify({ tool: "budget", action: "rush-budget-bucket", budgetBucket: bucket }));
+}
+
+/**
+ * Freeze a budget bucket (saves weight, sets to 0).
+ */
+export function freezeBudgetBucket(bucket: string): void {
+  if (!commandPort) return;
+  commandPort.write(JSON.stringify({ tool: "budget", action: "freeze-budget-bucket", budgetBucket: bucket }));
+}
+
+/**
+ * Unfreeze a budget bucket (restores saved weight).
+ */
+export function unfreezeBudgetBucket(bucket: string): void {
+  if (!commandPort) return;
+  commandPort.write(JSON.stringify({ tool: "budget", action: "unfreeze-budget-bucket", budgetBucket: bucket }));
 }
 
 /**
@@ -771,34 +788,48 @@ function executeCommand(ns: NS, cmd: Command): void {
       break;
     case "claim-focus":
       if (cmd.focusTarget !== undefined) {
-        setConfigValue(ns, "focus", "holder", cmd.focusTarget);
-        // Clear sleeve holder if it conflicts with the new primary holder
-        const currentSleeve = getConfigString(ns, "focus", "sleeveHolder", "");
-        if (currentSleeve && currentSleeve === cmd.focusTarget) {
-          setConfigValue(ns, "focus", "sleeveHolder", "none");
+        if (cachedData.pids.focus > 0) {
+          // Forward to focus daemon via control port
+          const focusCtrl = ns.getPortHandle(FOCUS_CONTROL_PORT);
+          focusCtrl.write(JSON.stringify({ action: "set-holder", holder: cmd.focusTarget } as FocusControlMessage));
+        } else {
+          // Fallback: write config directly when focus daemon not running
+          setConfigValue(ns, "focus", "holder", cmd.focusTarget);
+          const currentSleeve = getConfigString(ns, "focus", "sleeveHolder", "");
+          if (currentSleeve && currentSleeve === cmd.focusTarget) {
+            setConfigValue(ns, "focus", "sleeveHolder", "none");
+          }
         }
         if (cmd.focusTarget === "none") {
           ns.toast("Focus disabled — all daemons yielding", "info", 2000);
-        } else if (cmd.focusTarget) {
-          ns.toast(`Focus claimed by ${cmd.focusTarget} daemon`, "success", 2000);
         } else {
-          ns.toast("Focus released", "info", 2000);
+          ns.toast(`Focus claimed by ${cmd.focusTarget} daemon`, "success", 2000);
         }
       }
       break;
     case "claim-sleeve-focus":
       if (cmd.focusSleeveTarget !== undefined) {
-        // Prevent sleeve holder from duplicating primary holder
-        const primaryHolder = getConfigString(ns, "focus", "holder", "");
-        if (cmd.focusSleeveTarget !== "none" && cmd.focusSleeveTarget === primaryHolder) {
-          ns.toast(`${cmd.focusSleeveTarget} already holds primary focus`, "warning", 2000);
+        if (cachedData.pids.focus > 0) {
+          // Forward to focus daemon via control port
+          const focusCtrl = ns.getPortHandle(FOCUS_CONTROL_PORT);
+          focusCtrl.write(JSON.stringify({
+            action: "set-sleeve",
+            sleeveIndex: 0,
+            sleeveDaemon: cmd.focusSleeveTarget,
+          } as FocusControlMessage));
         } else {
-          setConfigValue(ns, "focus", "sleeveHolder", cmd.focusSleeveTarget);
-          if (cmd.focusSleeveTarget === "none") {
-            ns.toast("Sleeve focus disabled", "info", 2000);
-          } else {
-            ns.toast(`Sleeve focus: ${cmd.focusSleeveTarget} daemon`, "success", 2000);
+          // Fallback: write config directly when focus daemon not running
+          const primaryHolder = getConfigString(ns, "focus", "holder", "");
+          if (cmd.focusSleeveTarget !== "none" && cmd.focusSleeveTarget === primaryHolder) {
+            ns.toast(`${cmd.focusSleeveTarget} already holds primary focus`, "warning", 2000);
+            break;
           }
+          setConfigValue(ns, "focus", "sleeveHolder", cmd.focusSleeveTarget);
+        }
+        if (cmd.focusSleeveTarget === "none") {
+          ns.toast("Sleeve focus disabled", "info", 2000);
+        } else {
+          ns.toast(`Sleeve focus: ${cmd.focusSleeveTarget} daemon`, "success", 2000);
         }
       }
       break;
@@ -945,6 +976,20 @@ function executeCommand(ns: NS, cmd: Command): void {
         const budgetCtrl = ns.getPortHandle(BUDGET_CONTROL_PORT);
         budgetCtrl.write(JSON.stringify({ action: "reset-weights", bucket: "" }));
         ns.toast("Budget: weights reset to defaults", "info", 2000);
+      }
+      break;
+    case "freeze-budget-bucket":
+      {
+        const budgetCtrl = ns.getPortHandle(BUDGET_CONTROL_PORT);
+        budgetCtrl.write(JSON.stringify({ action: "freeze", bucket: cmd.budgetBucket }));
+        ns.toast(`Budget: ${cmd.budgetBucket} frozen`, "info", 2000);
+      }
+      break;
+    case "unfreeze-budget-bucket":
+      {
+        const budgetCtrl = ns.getPortHandle(BUDGET_CONTROL_PORT);
+        budgetCtrl.write(JSON.stringify({ action: "unfreeze", bucket: cmd.budgetBucket }));
+        ns.toast(`Budget: ${cmd.budgetBucket} unfrozen`, "info", 2000);
       }
       break;
     case "toggle-home-autobuy":
@@ -1142,6 +1187,7 @@ const uiState: UIState = {
     corp: {},
     blade: {},
     hacknet: {},
+    focus: {},
   },
 };
 
@@ -1260,11 +1306,12 @@ interface CachedData {
   corpEnabled: boolean;
   bladeburnerStatus: BladeburnerStatus | null;
   hacknetStatus: HacknetStatus | null;
+  focusStatus: FocusStatus | null;
   startupConfig: StartupConfigEntry[];
 }
 
 const cachedData: CachedData = {
-  pids: { nuke: 0, pserv: 0, share: 0, rep: 0, hack: 0, darkweb: 0, work: 0, faction: 0, infiltration: 0, gang: 0, augments: 0, advisor: 0, contracts: 0, budget: 0, stocks: 0, casino: 0, home: 0, corp: 0, blade: 0, hacknet: 0 },
+  pids: { nuke: 0, pserv: 0, share: 0, rep: 0, hack: 0, darkweb: 0, work: 0, faction: 0, infiltration: 0, gang: 0, augments: 0, advisor: 0, contracts: 0, budget: 0, stocks: 0, casino: 0, home: 0, corp: 0, blade: 0, hacknet: 0, focus: 0 },
   nukeStatus: null,
   pservStatus: null,
   shareStatus: null,
@@ -1292,6 +1339,7 @@ const cachedData: CachedData = {
   corpEnabled: true,
   bladeburnerStatus: null,
   hacknetStatus: null,
+  focusStatus: null,
   startupConfig: [],
 };
 
@@ -1375,6 +1423,8 @@ export function readStatusPorts(ns: NS): void {
 
   cachedData.hacknetStatus = peekStatus<HacknetStatus>(ns, STATUS_PORTS.hacknet, STALE_THRESHOLD_MS);
 
+  cachedData.focusStatus = peekStatus<FocusStatus>(ns, STATUS_PORTS.focus, STALE_THRESHOLD_MS);
+
   cachedData.startupConfig = readStartupConfig(ns);
 }
 
@@ -1428,6 +1478,7 @@ daemons/nuke.js
 daemons/hack.js
 daemons/queue.js
 daemons/darkweb.js
+daemons/focus.js
 daemons/work.js
 daemons/rep.js
 daemons/share.js
@@ -1484,6 +1535,7 @@ function clearToolStatus(tool: ToolName): void {
     case "corp": cachedData.corpStatus = null; break;
     case "blade": cachedData.bladeburnerStatus = null; break;
     case "hacknet": cachedData.hacknetStatus = null; break;
+    case "focus": cachedData.focusStatus = null; break;
   }
 }
 
@@ -1668,6 +1720,7 @@ export function getStateSnapshot(): DashboardState {
     corpEnabled: cachedData.corpEnabled,
     bladeburnerStatus: cachedData.bladeburnerStatus,
     hacknetStatus: cachedData.hacknetStatus,
+    focusStatus: cachedData.focusStatus,
     startupConfig: cachedData.startupConfig,
   };
 }

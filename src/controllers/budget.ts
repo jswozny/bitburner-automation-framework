@@ -38,6 +38,7 @@ export interface PersistedBudgetState {
   activeFlags: Record<string, boolean>;
   caps: Record<string, number | null>;
   rushBucket: string | null;
+  frozenWeights: Record<string, number>;
   lastCash?: number;
 }
 
@@ -58,6 +59,7 @@ export function createDefaultPersistedState(): PersistedBudgetState {
     activeFlags,
     caps,
     rushBucket: null,
+    frozenWeights: {},
   };
 }
 

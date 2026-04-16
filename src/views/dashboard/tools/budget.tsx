@@ -17,6 +17,8 @@ import { ToolControl } from "views/dashboard/components/ToolControl";
 import {
   rushBudgetBucket,
   cancelBudgetRush,
+  freezeBudgetBucket,
+  unfreezeBudgetBucket,
   updateBudgetWeight,
   resetBudgetWeights,
   runScript,
@@ -253,14 +255,15 @@ function BudgetDetailPanel({
               <th style={{ ...styles.tableHeader, width: "70px", textAlign: "right" }}>Lifetime</th>
               <th style={{ ...styles.tableHeader, width: "50px", textAlign: "right" }}>Weight</th>
               <th style={{ ...styles.tableHeader, width: "60px", textAlign: "center" }}>Status</th>
+              <th style={{ ...styles.tableHeader, width: "40px", textAlign: "center" }}>Freeze</th>
               <th style={{ ...styles.tableHeader, width: "50px", textAlign: "center" }}>Rush</th>
             </tr>
           </thead>
           <tbody>
             {allBuckets.map((b: BucketState, i: number) => {
               const rowStyle = i % 2 === 0 ? styles.tableRow : styles.tableRowAlt;
-              const statusLabel = !b.active ? "Done" : status.rushBucket === b.bucket ? "Rush" : "Active";
-              const statusColor = !b.active ? "#666" : status.rushBucket === b.bucket ? "#ffaa00" : "#00ff00";
+              const statusLabel = !b.active ? "Done" : b.frozen ? "Frozen" : status.rushBucket === b.bucket ? "Rush" : "Active";
+              const statusColor = !b.active ? "#666" : b.frozen ? "#4488ff" : status.rushBucket === b.bucket ? "#ffaa00" : "#00ff00";
               const isRushed = status.rushBucket === b.bucket;
 
               return (
@@ -286,6 +289,26 @@ function BudgetDetailPanel({
                   </td>
                   <td style={{ ...styles.tableCell, textAlign: "center" }}>
                     {b.active && (
+                      <span
+                        style={{
+                          cursor: "pointer",
+                          color: b.frozen ? "#4488ff" : "#555",
+                          fontSize: "14px",
+                        }}
+                        onClick={() => {
+                          if (b.frozen) {
+                            unfreezeBudgetBucket(b.bucket);
+                          } else {
+                            freezeBudgetBucket(b.bucket);
+                          }
+                        }}
+                      >
+                        {b.frozen ? "\u2744" : "\u25CB"}
+                      </span>
+                    )}
+                  </td>
+                  <td style={{ ...styles.tableCell, textAlign: "center" }}>
+                    {b.active && !b.frozen && (
                       <span
                         style={{
                           cursor: "pointer",

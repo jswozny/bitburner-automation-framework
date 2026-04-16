@@ -409,10 +409,12 @@ export async function main(ns: NS): Promise<void> {
     }
 
     // Tier 2: Hash spending — spend hashes using configured strategy
+    // "money" strategy always sells immediately; others wait for spendThreshold
     const hashUpgradeName = HASH_STRATEGY_MAP[spendStrategy];
     if (tier.tier >= 2 && hashCapacity > 0) {
       const currentH = ns.hacknet.numHashes(); // Re-read after potential purchases
-      if (currentH / hashCapacity >= spendThreshold) {
+      const shouldSpend = spendStrategy === "money" || currentH / hashCapacity >= spendThreshold;
+      if (shouldSpend) {
         const hashCost = ns.hacknet.hashCost(hashUpgradeName);
         while (ns.hacknet.numHashes() >= hashCost + reserveHashes) {
           if (ns.hacknet.spendHashes(hashUpgradeName)) {

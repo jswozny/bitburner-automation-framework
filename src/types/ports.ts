@@ -33,6 +33,7 @@ export const STATUS_PORTS = {
   corp: 28,
   blade: 30,
   hacknet: 31,
+  focus: 32,
 } as const;
 
 export const GANG_CONTROL_PORT = 15;
@@ -40,13 +41,14 @@ export const CONTRACTS_CONTROL_PORT = 21;
 export const BUDGET_CONTROL_PORT = 23;
 export const STOCKS_CONTROL_PORT = 25;
 export const CORP_CONTROL_PORT = 29;
+export const FOCUS_CONTROL_PORT = 33;
 
 export const QUEUE_PORT = 19;
 export const COMMAND_PORT = 20;
 
 // === TOOL NAMES ===
 
-export type ToolName = "nuke" | "pserv" | "share" | "rep" | "hack" | "darkweb" | "work" | "faction" | "infiltration" | "gang" | "augments" | "advisor" | "contracts" | "budget" | "stocks" | "casino" | "home" | "corp" | "blade" | "hacknet";
+export type ToolName = "nuke" | "pserv" | "share" | "rep" | "hack" | "darkweb" | "work" | "faction" | "infiltration" | "gang" | "augments" | "advisor" | "contracts" | "budget" | "stocks" | "casino" | "home" | "corp" | "blade" | "hacknet" | "focus";
 
 // === TOOL SCRIPTS (daemon paths) ===
 
@@ -71,7 +73,39 @@ export const TOOL_SCRIPTS: Record<ToolName, string> = {
   corp: "daemons/corp.js",
   blade: "daemons/blade.js",
   hacknet: "daemons/hacknet.js",
+  focus: "daemons/focus.js",
 };
+
+// === FOCUS TYPES ===
+
+export type FocusDaemon = "work" | "rep" | "blade" | "none";
+
+export interface SleeveAssignment {
+  sleeveIndex: number;
+  daemon: FocusDaemon;
+}
+
+export interface FocusStatus {
+  /** Primary focus holder */
+  holder: FocusDaemon;
+  /** Sleeve assignments (one per daemon, initially just sleeve 0) */
+  sleeves: SleeveAssignment[];
+  /** Whether Simulacrum augmentation is detected */
+  simulacrum: boolean;
+  /** Number of sleeves available (0 = not unlocked) */
+  numSleeves: number;
+  /** Which focus-relevant daemons are currently running */
+  runningDaemons: FocusDaemon[];
+  /** Boot default from config */
+  defaultHolder: FocusDaemon;
+}
+
+export interface FocusControlMessage {
+  action: "set-holder" | "set-sleeve" | "refresh";
+  holder?: FocusDaemon;
+  sleeveIndex?: number;
+  sleeveDaemon?: FocusDaemon;
+}
 
 // === PRIORITY CONSTANTS ===
 
@@ -98,7 +132,7 @@ export interface QueueEntry {
 
 export interface Command {
   tool: ToolName;
-  action: "start" | "stop" | "open-tail" | "run-script" | "start-faction-work" | "set-focus" | "start-training" | "install-augments" | "run-backdoors" | "restart-rep-daemon" | "join-faction" | "restart-faction-daemon" | "restart-hack-daemon" | "restart-share-daemon" | "stop-infiltration" | "kill-infiltration" | "configure-infiltration" | "set-gang-strategy" | "pin-gang-member" | "unpin-gang-member" | "ascend-gang-member" | "toggle-gang-purchases" | "toggle-gang-warfare" | "set-gang-wanted-threshold" | "set-gang-ascension-thresholds" | "set-gang-training-threshold" | "set-gang-grow-target" | "set-gang-grow-respect-reserve" | "set-gang-territory-threshold" | "force-buy-equipment" | "restart-gang-daemon" | "buy-selected-augments" | "claim-focus" | "claim-sleeve-focus" | "toggle-pserv-autobuy" | "set-pserv-max-ram" | "force-contract-attempt" | "restart-stocks-daemon" | "reset-stocks-pnl" | "stocks-control" | "set-stocks-profile" | "rush-budget-bucket" | "cancel-budget-rush" | "update-budget-weight" | "reset-budget-weights" | "toggle-home-autobuy" | "set-corp-directive" | "cancel-corp-pending" | "toggle-corp-pin" | "restart-corp-daemon" | "toggle-corp-auto-tea" | "set-corp-dividend-rate" | "toggle-corp-enabled" | "restart-blade-daemon" | "blade-buy-skill" | "blade-buy-all-skills" | "set-blade-config" | "reset-start-config" | "set-hacknet-strategy";
+  action: "start" | "stop" | "open-tail" | "run-script" | "start-faction-work" | "set-focus" | "start-training" | "install-augments" | "run-backdoors" | "restart-rep-daemon" | "join-faction" | "restart-faction-daemon" | "restart-hack-daemon" | "restart-share-daemon" | "stop-infiltration" | "kill-infiltration" | "configure-infiltration" | "set-gang-strategy" | "pin-gang-member" | "unpin-gang-member" | "ascend-gang-member" | "toggle-gang-purchases" | "toggle-gang-warfare" | "set-gang-wanted-threshold" | "set-gang-ascension-thresholds" | "set-gang-training-threshold" | "set-gang-grow-target" | "set-gang-grow-respect-reserve" | "set-gang-territory-threshold" | "force-buy-equipment" | "restart-gang-daemon" | "buy-selected-augments" | "claim-focus" | "claim-sleeve-focus" | "toggle-pserv-autobuy" | "set-pserv-max-ram" | "force-contract-attempt" | "restart-stocks-daemon" | "reset-stocks-pnl" | "stocks-control" | "set-stocks-profile" | "rush-budget-bucket" | "cancel-budget-rush" | "update-budget-weight" | "reset-budget-weights" | "toggle-home-autobuy" | "set-corp-directive" | "cancel-corp-pending" | "toggle-corp-pin" | "restart-corp-daemon" | "toggle-corp-auto-tea" | "set-corp-dividend-rate" | "toggle-corp-enabled" | "restart-blade-daemon" | "blade-buy-skill" | "blade-buy-all-skills" | "set-blade-config" | "reset-start-config" | "set-hacknet-strategy" | "freeze-budget-bucket" | "unfreeze-budget-bucket" | "set-focus-holder" | "set-focus-sleeve";
   scriptPath?: string;
   scriptArgs?: string[];
   factionName?: string;
@@ -126,8 +160,9 @@ export interface Command {
   gangGrowRespectReserve?: number;
   gangTerritoryAutoThreshold?: number;
   selectedAugs?: string[];
-  focusTarget?: "work" | "rep" | "blade" | "none";
-  focusSleeveTarget?: "work" | "rep" | "blade" | "none";
+  focusTarget?: FocusDaemon;
+  focusSleeveTarget?: FocusDaemon;
+  focusSleeveDaemon?: FocusDaemon;
   pservAutoBuy?: boolean;
   pservMaxRam?: number;
   contractHost?: string;
@@ -308,8 +343,6 @@ export interface RepStatus {
   currentWorkType?: string | null;
   isWorkable?: boolean;
   focusYielding?: boolean;
-  focusHolder?: string;
-  sleeveHolder?: string;
   pendingBackdoors?: string[];
   repGainRate?: number;
   eta?: string;
@@ -486,8 +519,6 @@ export interface WorkStatus {
     metric: string;
   } | null;
   focusYielding?: boolean;
-  focusHolder?: string;
-  sleeveHolder?: string;
 }
 
 // === HACK STRATEGY ===
@@ -976,6 +1007,7 @@ export interface BucketState {
   maxAllocation: number;
   maxAllocationFormatted: string;
   active: boolean;
+  frozen: boolean;
   cap: number | null;
   capFormatted: string | null;
 }
@@ -994,7 +1026,7 @@ export interface BudgetStatus {
   lastUpdated: number;
 }
 
-export type BudgetControlAction = "purchased" | "done" | "report-cap" | "rush" | "cancel-rush" | "update-weight" | "reset-weights" | "reactivate";
+export type BudgetControlAction = "purchased" | "done" | "report-cap" | "rush" | "cancel-rush" | "update-weight" | "reset-weights" | "reactivate" | "freeze" | "unfreeze";
 
 export interface BudgetControlMessage {
   action: BudgetControlAction;
@@ -1356,9 +1388,6 @@ export interface BladeburnerStatus {
   bonusTimeFormatted: string;
   currentAction: string;
   currentActionType: "general" | "contract" | "operation" | "blackop" | "idle";
-  focusHolder?: string;
-  sleeveHolder?: string;
-
   // Analysis (Tier 1+)
   contracts?: BladeActionInfo[];
   operations?: BladeActionInfo[];
@@ -1494,6 +1523,7 @@ export interface DashboardState {
   corpEnabled: boolean;
   bladeburnerStatus: BladeburnerStatus | null;
   hacknetStatus: HacknetStatus | null;
+  focusStatus: FocusStatus | null;
   startupConfig: StartupConfigEntry[];
 }
 

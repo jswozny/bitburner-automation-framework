@@ -60,6 +60,7 @@ function loadState(ns: NS): PersistedBudgetState {
         activeFlags: { ...defaults.activeFlags, ...loaded.activeFlags },
         caps: { ...defaults.caps, ...loaded.caps },
         rushBucket: loaded.rushBucket ?? null,
+        frozenWeights: loaded.frozenWeights ?? {},
       };
 
       // Clean up phantom buckets with empty keys
@@ -162,6 +163,22 @@ function handleMessage(ns: NS, msg: BudgetControlMessage): void {
       if (!state.activeFlags[msg.bucket]) {
         state.activeFlags[msg.bucket] = true;
         ns.print(`  ${C.green}REACTIVATE${C.reset} ${msg.bucket}: bucket re-enabled`);
+      }
+      break;
+
+    case "freeze":
+      if (msg.bucket && state.frozenWeights[msg.bucket] === undefined) {
+        state.frozenWeights[msg.bucket] = state.weights[msg.bucket] ?? 0;
+        state.weights[msg.bucket] = 0;
+        ns.print(`  ${C.cyan}FREEZE${C.reset} ${msg.bucket}: saved weight ${state.frozenWeights[msg.bucket]}, set to 0`);
+      }
+      break;
+
+    case "unfreeze":
+      if (msg.bucket && state.frozenWeights[msg.bucket] !== undefined) {
+        state.weights[msg.bucket] = state.frozenWeights[msg.bucket];
+        ns.print(`  ${C.green}UNFREEZE${C.reset} ${msg.bucket}: restored weight ${state.weights[msg.bucket]}`);
+        delete state.frozenWeights[msg.bucket];
       }
       break;
   }
@@ -314,6 +331,7 @@ async function daemon(ns: NS): Promise<void> {
         maxAllocation: a.maxAllocation,
         maxAllocationFormatted: ns.formatNumber(a.maxAllocation),
         active: state.activeFlags[bucket] ?? false,
+        frozen: state.frozenWeights[bucket] !== undefined,
         cap,
         capFormatted: cap !== null ? ns.formatNumber(cap) : null,
       };
