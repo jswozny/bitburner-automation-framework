@@ -144,6 +144,24 @@ export async function main(ns: NS): Promise<void> {
 
   let wasMonitorMode = false;
 
+  // On startup, clear stale "done" state if servers aren't actually finished.
+  // This handles the case where the daemon exited as done, but the user later
+  // changed config (e.g. increased maxRam) and restarted the daemon.
+  {
+    const startConfig = {
+      autoBuy: getConfigBool(ns, "pserv", "autoBuy", true),
+      maxRam: getConfigNumber(ns, "pserv", "maxRam", 0),
+    };
+    if (startConfig.autoBuy) {
+      const raw = getPservStatus(ns);
+      const effectiveMax = startConfig.maxRam > 0 ? startConfig.maxRam : raw.maxPossibleRam;
+      const fullyDone = raw.serverCount >= raw.serverCap && raw.minRam >= effectiveMax;
+      if (!fullyDone) {
+        reactivateBucket(ns, "servers");
+      }
+    }
+  }
+
   do {
     const config: PservConfig = {
       prefix: getConfigString(ns, "pserv", "prefix", "pserv"),

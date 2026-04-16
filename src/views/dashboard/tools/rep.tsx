@@ -509,7 +509,7 @@ function HighTierDetailPanel({
           alignItems: "center",
         }}>
           <span style={{ color: "#ffaa00", fontSize: "12px" }}>
-            Yielding to {status.focusHolder || "other"} daemon
+            Yielding focus to another daemon
           </span>
           <button
             style={{

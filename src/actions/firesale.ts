@@ -30,6 +30,21 @@ export async function main(ns: NS): Promise<void> {
     }
   }
 
+  // Sell all hashes for money (hacknet servers may not be available)
+  try {
+    const hashCost = ns.hacknet.hashCost("Sell for Money");
+    let sold = 0;
+    while (ns.hacknet.numHashes() >= hashCost) {
+      if (!ns.hacknet.spendHashes("Sell for Money")) break;
+      sold++;
+    }
+    if (sold > 0) {
+      ns.toast(`Sold ${sold} hash batches ($${ns.formatNumber(sold * 1e6)})`, "info", 3000);
+    }
+  } catch {
+    // Hacknet servers not available (e.g. no hacknet nodes)
+  }
+
   // Set hack to drain mode, disable pserv auto-buy
   setConfigValue(ns, "hack", "strategy", "drain");
   setConfigValue(ns, "pserv", "autoBuy", "false");

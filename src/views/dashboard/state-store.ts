@@ -23,6 +23,7 @@ import {
   BUDGET_CONTROL_PORT,
   CORP_CONTROL_PORT,
   STOCKS_CONTROL_PORT,
+  FOCUS_CONTROL_PORT,
   NukeStatus,
   PservStatus,
   ShareStatus,
@@ -46,6 +47,11 @@ import {
   HomeStatus,
   CorpStatus,
   BladeburnerStatus,
+  HacknetStatus,
+  FocusStatus,
+  FocusControlMessage,
+  HashSpendStrategy,
+  StartupConfigEntry,
   Command,
 } from "/types/ports";
 
@@ -161,12 +167,21 @@ export function runBackdoors(): void {
 }
 
 /**
- * Claim focus priority for a daemon (work or rep).
+ * Claim focus priority for a daemon, or pass "none" to park all daemons
+ * so nothing tries to take the player's focus.
  */
-export function claimFocus(target: "work" | "rep" | "blade" | ""): void {
+export function claimFocus(target: "work" | "rep" | "blade" | "none"): void {
   if (!commandPort) return;
-  const tool = target === "" ? "work" : target;
-  commandPort.write(JSON.stringify({ tool, action: "claim-focus", focusTarget: target }));
+  commandPort.write(JSON.stringify({ tool: "focus", action: "claim-focus", focusTarget: target }));
+}
+
+/**
+ * Claim sleeve focus for a daemon, letting it run actions via a sleeve
+ * in parallel with the primary focus holder.
+ */
+export function claimSleeveFocus(target: "work" | "rep" | "blade" | "none"): void {
+  if (!commandPort) return;
+  commandPort.write(JSON.stringify({ tool: "focus", action: "claim-sleeve-focus", focusSleeveTarget: target }));
 }
 
 /**
@@ -178,11 +193,29 @@ export function buyBladeSkill(skillName: string): void {
 }
 
 /**
+ * Keep buying the best recommended skill until SP is exhausted.
+ * The daemon loops internally, re-evaluating after each purchase so
+ * that increasing costs are accounted for.
+ */
+export function buyAllBladeSkills(): void {
+  if (!commandPort) return;
+  commandPort.write(JSON.stringify({ tool: "blade", action: "blade-buy-all-skills" }));
+}
+
+/**
  * Set a Bladeburner config value.
  */
 export function setBladeConfig(key: string, value: number): void {
   if (!commandPort) return;
   commandPort.write(JSON.stringify({ tool: "blade", action: "set-blade-config", bladeConfigKey: key, bladeConfigValue: String(value) }));
+}
+
+/**
+ * Reset /config/start.txt to defaults.
+ */
+export function sendResetStartConfig(): void {
+  if (!commandPort) return;
+  commandPort.write(JSON.stringify({ tool: "nuke", action: "reset-start-config" }));
 }
 
 /**
@@ -274,6 +307,14 @@ export function configureInfiltration(rewardMode?: "rep" | "money" | "manual"): 
 export function setGangStrategy(strategy: GangStrategy): void {
   if (!commandPort) return;
   commandPort.write(JSON.stringify({ tool: "gang", action: "set-gang-strategy", gangStrategy: strategy }));
+}
+
+/**
+ * Set hacknet hash spend strategy via command port.
+ */
+export function setHacknetStrategy(strategy: HashSpendStrategy): void {
+  if (!commandPort) return;
+  commandPort.write(JSON.stringify({ tool: "hacknet", action: "set-hacknet-strategy", hacknetSpendStrategy: strategy }));
 }
 
 /**
@@ -378,6 +419,22 @@ export function forceContractAttempt(host: string, file: string): void {
 export function rushBudgetBucket(bucket: string): void {
   if (!commandPort) return;
   commandPort.write(JSON.stringify({ tool: "budget", action: "rush-budget-bucket", budgetBucket: bucket }));
+}
+
+/**
+ * Freeze a budget bucket (saves weight, sets to 0).
+ */
+export function freezeBudgetBucket(bucket: string): void {
+  if (!commandPort) return;
+  commandPort.write(JSON.stringify({ tool: "budget", action: "freeze-budget-bucket", budgetBucket: bucket }));
+}
+
+/**
+ * Unfreeze a budget bucket (restores saved weight).
+ */
+export function unfreezeBudgetBucket(bucket: string): void {
+  if (!commandPort) return;
+  commandPort.write(JSON.stringify({ tool: "budget", action: "unfreeze-budget-bucket", budgetBucket: bucket }));
 }
 
 /**
@@ -710,6 +767,10 @@ function executeCommand(ns: NS, cmd: Command): void {
         ns.toast(`Gang: ${cmd.action.replace("gang-", "").replace(/-/g, " ")}`, "info", 2000);
       }
       break;
+    case "set-hacknet-strategy":
+      setConfigValue(ns, "hacknet", "spendStrategy", cmd.hacknetSpendStrategy ?? "money");
+      ns.toast(`Hacknet: ${cmd.hacknetSpendStrategy} strategy`, "info", 2000);
+      break;
     case "toggle-pserv-autobuy":
       setConfigValue(ns, "pserv", "autoBuy", cmd.pservAutoBuy ? "true" : "false");
       ns.toast(`Pserv: ${cmd.pservAutoBuy ? "auto-buy ON" : "monitor only"}`, "info", 2000);
@@ -727,11 +788,48 @@ function executeCommand(ns: NS, cmd: Command): void {
       break;
     case "claim-focus":
       if (cmd.focusTarget !== undefined) {
-        setConfigValue(ns, "focus", "holder", cmd.focusTarget);
-        if (cmd.focusTarget) {
-          ns.toast(`Focus claimed by ${cmd.focusTarget} daemon`, "success", 2000);
+        if (cachedData.pids.focus > 0) {
+          // Forward to focus daemon via control port
+          const focusCtrl = ns.getPortHandle(FOCUS_CONTROL_PORT);
+          focusCtrl.write(JSON.stringify({ action: "set-holder", holder: cmd.focusTarget } as FocusControlMessage));
         } else {
-          ns.toast("Focus released", "info", 2000);
+          // Fallback: write config directly when focus daemon not running
+          setConfigValue(ns, "focus", "holder", cmd.focusTarget);
+          const currentSleeve = getConfigString(ns, "focus", "sleeveHolder", "");
+          if (currentSleeve && currentSleeve === cmd.focusTarget) {
+            setConfigValue(ns, "focus", "sleeveHolder", "none");
+          }
+        }
+        if (cmd.focusTarget === "none") {
+          ns.toast("Focus disabled — all daemons yielding", "info", 2000);
+        } else {
+          ns.toast(`Focus claimed by ${cmd.focusTarget} daemon`, "success", 2000);
+        }
+      }
+      break;
+    case "claim-sleeve-focus":
+      if (cmd.focusSleeveTarget !== undefined) {
+        if (cachedData.pids.focus > 0) {
+          // Forward to focus daemon via control port
+          const focusCtrl = ns.getPortHandle(FOCUS_CONTROL_PORT);
+          focusCtrl.write(JSON.stringify({
+            action: "set-sleeve",
+            sleeveIndex: 0,
+            sleeveDaemon: cmd.focusSleeveTarget,
+          } as FocusControlMessage));
+        } else {
+          // Fallback: write config directly when focus daemon not running
+          const primaryHolder = getConfigString(ns, "focus", "holder", "");
+          if (cmd.focusSleeveTarget !== "none" && cmd.focusSleeveTarget === primaryHolder) {
+            ns.toast(`${cmd.focusSleeveTarget} already holds primary focus`, "warning", 2000);
+            break;
+          }
+          setConfigValue(ns, "focus", "sleeveHolder", cmd.focusSleeveTarget);
+        }
+        if (cmd.focusSleeveTarget === "none") {
+          ns.toast("Sleeve focus disabled", "info", 2000);
+        } else {
+          ns.toast(`Sleeve focus: ${cmd.focusSleeveTarget} daemon`, "success", 2000);
         }
       }
       break;
@@ -880,6 +978,20 @@ function executeCommand(ns: NS, cmd: Command): void {
         ns.toast("Budget: weights reset to defaults", "info", 2000);
       }
       break;
+    case "freeze-budget-bucket":
+      {
+        const budgetCtrl = ns.getPortHandle(BUDGET_CONTROL_PORT);
+        budgetCtrl.write(JSON.stringify({ action: "freeze", bucket: cmd.budgetBucket }));
+        ns.toast(`Budget: ${cmd.budgetBucket} frozen`, "info", 2000);
+      }
+      break;
+    case "unfreeze-budget-bucket":
+      {
+        const budgetCtrl = ns.getPortHandle(BUDGET_CONTROL_PORT);
+        budgetCtrl.write(JSON.stringify({ action: "unfreeze", bucket: cmd.budgetBucket }));
+        ns.toast(`Budget: ${cmd.budgetBucket} unfrozen`, "info", 2000);
+      }
+      break;
     case "toggle-home-autobuy":
       setConfigValue(ns, "home", "autoBuy", cmd.homeAutoBuy ? "true" : "false");
       ns.toast(`Home: ${cmd.homeAutoBuy ? "auto-buy ON" : "monitor only"}`, "info", 2000);
@@ -999,11 +1111,21 @@ function executeCommand(ns: NS, cmd: Command): void {
       }
       break;
 
+    case "blade-buy-all-skills":
+      setConfigValue(ns, "blade", "buyAllSkills", "true");
+      ns.toast("Buying all recommended skills...", "info", 2000);
+      break;
+
     case "set-blade-config":
       if (cmd.bladeConfigKey && cmd.bladeConfigValue !== undefined) {
         setConfigValue(ns, "blade", cmd.bladeConfigKey, cmd.bladeConfigValue);
         ns.toast(`Blade: ${cmd.bladeConfigKey} = ${cmd.bladeConfigValue}`, "info", 2000);
       }
+      break;
+
+    case "reset-start-config":
+      resetStartupConfig(ns);
+      ns.toast("Startup config reset to defaults", "success", 3000);
       break;
   }
 }
@@ -1064,6 +1186,8 @@ const uiState: UIState = {
     home: {},
     corp: {},
     blade: {},
+    hacknet: {},
+    focus: {},
   },
 };
 
@@ -1181,10 +1305,13 @@ interface CachedData {
   corpStatus: CorpStatus | null;
   corpEnabled: boolean;
   bladeburnerStatus: BladeburnerStatus | null;
+  hacknetStatus: HacknetStatus | null;
+  focusStatus: FocusStatus | null;
+  startupConfig: StartupConfigEntry[];
 }
 
 const cachedData: CachedData = {
-  pids: { nuke: 0, pserv: 0, share: 0, rep: 0, hack: 0, darkweb: 0, work: 0, faction: 0, infiltration: 0, gang: 0, augments: 0, advisor: 0, contracts: 0, budget: 0, stocks: 0, casino: 0, home: 0, corp: 0, blade: 0 },
+  pids: { nuke: 0, pserv: 0, share: 0, rep: 0, hack: 0, darkweb: 0, work: 0, faction: 0, infiltration: 0, gang: 0, augments: 0, advisor: 0, contracts: 0, budget: 0, stocks: 0, casino: 0, home: 0, corp: 0, blade: 0, hacknet: 0, focus: 0 },
   nukeStatus: null,
   pservStatus: null,
   shareStatus: null,
@@ -1211,6 +1338,9 @@ const cachedData: CachedData = {
   corpStatus: null,
   corpEnabled: true,
   bladeburnerStatus: null,
+  hacknetStatus: null,
+  focusStatus: null,
+  startupConfig: [],
 };
 
 // === PORT-BASED STATUS READING ===
@@ -1290,6 +1420,83 @@ export function readStatusPorts(ns: NS): void {
   cachedData.corpEnabled = getConfigBool(ns, "corp", "enabled", true);
 
   cachedData.bladeburnerStatus = peekStatus<BladeburnerStatus>(ns, STATUS_PORTS.blade, STALE_THRESHOLD_MS);
+
+  cachedData.hacknetStatus = peekStatus<HacknetStatus>(ns, STATUS_PORTS.hacknet, STALE_THRESHOLD_MS);
+
+  cachedData.focusStatus = peekStatus<FocusStatus>(ns, STATUS_PORTS.focus, STALE_THRESHOLD_MS);
+
+  cachedData.startupConfig = readStartupConfig(ns);
+}
+
+// === STARTUP CONFIG ===
+
+const START_CONFIG_PATH = "/config/start.txt";
+
+function readStartupConfig(ns: NS): StartupConfigEntry[] {
+  const raw = ns.read(START_CONFIG_PATH);
+  if (!raw) return [];
+
+  const entries: StartupConfigEntry[] = [];
+  let inCore = true;
+
+  for (const line of raw.split("\n")) {
+    const trimmed = line.trim();
+    if (trimmed === "") continue;
+
+    // Check section markers
+    if (trimmed.includes("[core]")) { inCore = true; continue; }
+    if (trimmed.includes("[optional]")) { inCore = false; continue; }
+
+    if (trimmed.startsWith("#")) {
+      // Commented-out daemon line (not a plain comment)
+      const uncommented = trimmed.replace(/^#+\s*/, "");
+      if (uncommented.endsWith(".js")) {
+        entries.push({ path: uncommented, enabled: false, core: inCore });
+      }
+      continue;
+    }
+
+    if (trimmed.endsWith(".js")) {
+      entries.push({ path: trimmed, enabled: true, core: inCore });
+    }
+  }
+
+  return entries;
+}
+
+export function resetStartupConfig(ns: NS): void {
+  // Import-free: just inline the default config from start.ts
+  const defaultConfig = `# Startup Config
+# Daemons listed here are launched by start.js in order.
+# Comment out a line with # to skip it.
+#
+# [core] — launched with ensureRamAndExec (will kill workers for RAM)
+# [optional] — launched only if free RAM is available
+
+# [core]
+daemons/nuke.js
+daemons/hack.js
+daemons/queue.js
+daemons/darkweb.js
+daemons/focus.js
+daemons/work.js
+daemons/rep.js
+daemons/share.js
+
+# [optional]
+daemons/pserv.js
+daemons/faction.js
+daemons/augments.js
+daemons/advisor.js
+daemons/contracts.js
+daemons/budget.js
+daemons/stocks.js
+daemons/gang.js
+daemons/home.js
+daemons/corp.js
+daemons/blade.js
+daemons/hacknet.js`;
+  ns.write(START_CONFIG_PATH, defaultConfig, "w");
 }
 
 // === TOOL CONTROL ===
@@ -1327,6 +1534,8 @@ function clearToolStatus(tool: ToolName): void {
     case "home": cachedData.homeStatus = null; break;
     case "corp": cachedData.corpStatus = null; break;
     case "blade": cachedData.bladeburnerStatus = null; break;
+    case "hacknet": cachedData.hacknetStatus = null; break;
+    case "focus": cachedData.focusStatus = null; break;
   }
 }
 
@@ -1426,6 +1635,10 @@ function stopTool(ns: NS, tool: ToolName): void {
       if (currentHolder === tool) {
         setConfigValue(ns, "focus", "holder", "");
       }
+      const currentSleeveHolder = getConfigString(ns, "focus", "sleeveHolder", "");
+      if (currentSleeveHolder === tool) {
+        setConfigValue(ns, "focus", "sleeveHolder", "none");
+      }
     }
     ns.toast(`Stopped ${tool}`, "warning", 2000);
   }
@@ -1506,5 +1719,8 @@ export function getStateSnapshot(): DashboardState {
     corpStatus: cachedData.corpStatus,
     corpEnabled: cachedData.corpEnabled,
     bladeburnerStatus: cachedData.bladeburnerStatus,
+    hacknetStatus: cachedData.hacknetStatus,
+    focusStatus: cachedData.focusStatus,
+    startupConfig: cachedData.startupConfig,
   };
 }

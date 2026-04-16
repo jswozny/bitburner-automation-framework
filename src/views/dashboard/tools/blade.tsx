@@ -12,7 +12,7 @@ import { ToolControl } from "views/dashboard/components/ToolControl";
 import { TierFooter } from "views/dashboard/components/TierFooter";
 import { ProgressBar } from "views/dashboard/components/ProgressBar";
 import { BladeburnerStatus, BladeActionInfo } from "/types/ports";
-import { buyBladeSkill, setBladeConfig } from "views/dashboard/state-store";
+import { buyBladeSkill, buyAllBladeSkills, setBladeConfig } from "views/dashboard/state-store";
 
 const { useState } = React;
 
@@ -51,6 +51,17 @@ const sectionHeaderStyle: React.CSSProperties = {
   userSelect: "none",
 };
 
+const configGroupHeaderStyle: React.CSSProperties = {
+  color: "#666",
+  fontSize: "10px",
+  textTransform: "uppercase",
+  letterSpacing: "0.5px",
+  marginTop: "8px",
+  marginBottom: "2px",
+  borderBottom: "1px solid #222",
+  paddingBottom: "1px",
+};
+
 const tableRowStyle: React.CSSProperties = {
   display: "flex",
   justifyContent: "space-between",
@@ -74,6 +85,17 @@ const buyBtnStyle: React.CSSProperties = {
   backgroundColor: "#003300",
   color: "#00ff00",
   border: "1px solid #005500",
+  borderRadius: "3px",
+  padding: "1px 8px",
+  fontSize: "10px",
+  fontFamily: "inherit",
+  cursor: "pointer",
+};
+
+const buyAllBtnStyle: React.CSSProperties = {
+  backgroundColor: "#002244",
+  color: "#44aaff",
+  border: "1px solid #004488",
   borderRadius: "3px",
   padding: "1px 8px",
   fontSize: "10px",
@@ -139,6 +161,18 @@ function ConfigNumber({ label, value, configKey, suffix, min, max, step }: {
         />
         {suffix && <span style={{ color: "#555", fontSize: "10px" }}>{suffix}</span>}
       </span>
+    </div>
+  );
+}
+
+function ConfigGroup({ title, children }: {
+  title: string;
+  children: React.ReactNode;
+}): React.ReactElement {
+  return (
+    <div>
+      <div style={configGroupHeaderStyle}>{title}</div>
+      {children}
     </div>
   );
 }
@@ -289,7 +323,7 @@ function BladeDetailPanel({
           marginBottom: "8px",
         }}>
           <span style={{ color: "#ffaa00", fontSize: "12px" }}>
-            Yielding to {status.focusHolder || "other"} daemon
+            Yielding focus to another daemon
           </span>
         </div>
       )}
@@ -391,12 +425,20 @@ function BladeDetailPanel({
               <span style={{ color: "#00ff00", fontSize: "11px" }}>
                 Recommended: {status.recommendedSkill.name} ({status.recommendedSkill.costFormatted} SP)
               </span>
-              <button
-                style={buyBtnStyle}
-                onClick={() => buyBladeSkill(status.recommendedSkill!.name)}
-              >
-                Buy
-              </button>
+              <div style={{ display: "flex", gap: "4px" }}>
+                <button
+                  style={buyBtnStyle}
+                  onClick={() => buyBladeSkill(status.recommendedSkill!.name)}
+                >
+                  Buy
+                </button>
+                <button
+                  style={buyAllBtnStyle}
+                  onClick={() => buyAllBladeSkills()}
+                >
+                  Buy All
+                </button>
+              </div>
             </div>
           )}
           {status.skills.map(s => (
@@ -452,15 +494,24 @@ function BladeDetailPanel({
       {/* Config */}
       {status.config && (
         <Section title="CONFIG" defaultOpen={false}>
-          <ConfigNumber label="Operation min success %" value={status.config.operationThreshold} configKey="operationThreshold" suffix="%" min={0} max={100} />
-          <ConfigNumber label="Black Op min success %" value={status.config.blackOpThreshold} configKey="blackOpThreshold" suffix="%" min={0} max={100} />
-          <ConfigNumber label="Contract min success %" value={status.config.contractThreshold} configKey="contractThreshold" suffix="%" min={0} max={100} />
-          <ConfigNumber label="Rest below stamina %" value={status.config.staminaMinPercent} configKey="staminaMinPercent" suffix="%" min={0} max={100} />
-          <ConfigNumber label="Train until max stamina" value={status.config.staminaTrainMax} configKey="staminaTrainMax" suffix="" min={0} />
-          <ConfigNumber label="Diplomacy above chaos" value={status.config.chaosMax} configKey="chaosMax" min={0} />
-          <ConfigNumber label="Diplomacy until chaos" value={status.config.chaosTarget} configKey="chaosTarget" min={0} />
-          <ConfigNumber label="Field Analysis spread %" value={status.config.successSpreadMax} configKey="successSpreadMax" suffix="%" min={0} max={100} />
-          <ConfigNumber label="Switch city below pop" value={status.config.populationMin} configKey="populationMin" min={0} step={100000} />
+          <ConfigGroup title="Action thresholds">
+            <ConfigNumber label="Operation min" value={status.config.operationThreshold} configKey="operationThreshold" suffix="%" min={0} max={100} />
+            <ConfigNumber label="Black Op min" value={status.config.blackOpThreshold} configKey="blackOpThreshold" suffix="%" min={0} max={100} />
+            <ConfigNumber label="Contract min" value={status.config.contractThreshold} configKey="contractThreshold" suffix="%" min={0} max={100} />
+          </ConfigGroup>
+          <ConfigGroup title="Stamina">
+            <ConfigNumber label="Rest below" value={status.config.staminaMinPercent} configKey="staminaMinPercent" suffix="%" min={0} max={100} />
+            <ConfigNumber label="Resume above" value={status.config.staminaRestoreTo} configKey="staminaRestoreTo" suffix="%" min={0} max={100} />
+            <ConfigNumber label="Train until max" value={status.config.staminaTrainMax} configKey="staminaTrainMax" min={0} />
+          </ConfigGroup>
+          <ConfigGroup title="Chaos / Diplomacy">
+            <ConfigNumber label="Trigger above" value={status.config.chaosMax} configKey="chaosMax" min={0} />
+            <ConfigNumber label="Reduce until" value={status.config.chaosTarget} configKey="chaosTarget" min={0} />
+          </ConfigGroup>
+          <ConfigGroup title="Other">
+            <ConfigNumber label="Field Analysis spread" value={status.config.successSpreadMax} configKey="successSpreadMax" suffix="%" min={0} max={100} />
+            <ConfigNumber label="Switch city below pop" value={status.config.populationMin} configKey="populationMin" min={0} step={100000} />
+          </ConfigGroup>
         </Section>
       )}
 

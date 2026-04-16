@@ -60,6 +60,7 @@ function loadState(ns: NS): PersistedBudgetState {
         activeFlags: { ...defaults.activeFlags, ...loaded.activeFlags },
         caps: { ...defaults.caps, ...loaded.caps },
         rushBucket: loaded.rushBucket ?? null,
+        frozenWeights: loaded.frozenWeights ?? {},
       };
 
       // Clean up phantom buckets with empty keys
@@ -87,18 +88,24 @@ function saveState(ns: NS): void {
 
 // === CONTROL PORT ===
 
-function drainControlPort(ns: NS): void {
+/** Drain control port, returning total spending from "purchased" messages. */
+function drainControlPort(ns: NS): number {
+  let spending = 0;
   const port = ns.getPortHandle(BUDGET_CONTROL_PORT);
   while (!port.empty()) {
     const data = port.read();
     if (data === "NULL PORT DATA") break;
     try {
       const msg = JSON.parse(data as string) as BudgetControlMessage;
+      if (msg.action === "purchased" && msg.amount && msg.amount > 0) {
+        spending += msg.amount;
+      }
       handleMessage(ns, msg);
     } catch {
       // Invalid message, skip
     }
   }
+  return spending;
 }
 
 function handleMessage(ns: NS, msg: BudgetControlMessage): void {
@@ -156,6 +163,22 @@ function handleMessage(ns: NS, msg: BudgetControlMessage): void {
       if (!state.activeFlags[msg.bucket]) {
         state.activeFlags[msg.bucket] = true;
         ns.print(`  ${C.green}REACTIVATE${C.reset} ${msg.bucket}: bucket re-enabled`);
+      }
+      break;
+
+    case "freeze":
+      if (msg.bucket && state.frozenWeights[msg.bucket] === undefined) {
+        state.frozenWeights[msg.bucket] = state.weights[msg.bucket] ?? 0;
+        state.weights[msg.bucket] = 0;
+        ns.print(`  ${C.cyan}FREEZE${C.reset} ${msg.bucket}: saved weight ${state.frozenWeights[msg.bucket]}, set to 0`);
+      }
+      break;
+
+    case "unfreeze":
+      if (msg.bucket && state.frozenWeights[msg.bucket] !== undefined) {
+        state.weights[msg.bucket] = state.frozenWeights[msg.bucket];
+        ns.print(`  ${C.green}UNFREEZE${C.reset} ${msg.bucket}: restored weight ${state.weights[msg.bucket]}`);
+        delete state.frozenWeights[msg.bucket];
       }
       break;
   }
@@ -225,7 +248,11 @@ async function daemon(ns: NS): Promise<void> {
   // Without this, prevCash = currentCash on first tick and the reset is missed.
   prevCash = state.lastCash ?? currentCash;
 
-  if (isAugReset(prevCash, currentCash)) {
+  // Drain any pending purchases before aug-reset check — spending that happened
+  // while we were down explains the cash drop and shouldn't trigger a false reset.
+  const startupSpending = drainControlPort(ns);
+
+  if (isAugReset(prevCash, currentCash + startupSpending)) {
     ns.print(`  ${C.yellow}AUG RESET DETECTED (startup)${C.reset} — zeroing lifetime spent`);
     for (const bucket of Object.keys(state.weights)) {
       state.lifetimeSpent[bucket] = 0;
@@ -244,14 +271,17 @@ async function daemon(ns: NS): Promise<void> {
   // eslint-disable-next-line no-constant-condition
   while (true) {
     // 1. Drain control port + check persistent done markers
-    drainControlPort(ns);
+    const tickSpending = drainControlPort(ns);
     checkDoneMarkers(ns);
 
     // 2. Get current cash
     const currentCash = ns.getPlayer().money;
 
     // 3. Check aug reset (cash drops >90%)
-    if (isAugReset(prevCash, currentCash)) {
+    // Add back known spending from port messages — daemon purchases explain the
+    // cash drop and shouldn't trigger a false reset. In a real aug reset the
+    // game clears all ports, so tickSpending is 0 and the check still fires.
+    if (isAugReset(prevCash, currentCash + tickSpending)) {
       ns.print(`  ${C.yellow}AUG RESET DETECTED${C.reset} — zeroing lifetime spent`);
       for (const bucket of Object.keys(state.weights)) {
         state.lifetimeSpent[bucket] = 0;
@@ -302,6 +332,7 @@ async function daemon(ns: NS): Promise<void> {
         maxAllocation: a.maxAllocation,
         maxAllocationFormatted: ns.format.number(a.maxAllocation),
         active: state.activeFlags[bucket] ?? false,
+        frozen: state.frozenWeights[bucket] !== undefined,
         cap,
         capFormatted: cap !== null ? ns.format.number(cap) : null,
       };

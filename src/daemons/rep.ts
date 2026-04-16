@@ -428,6 +428,7 @@ function computeHighTierStatus(
   targetFactionOverride = "",
   focusYielding = false,
   focusHolder = "",
+  sleeveHolder = "",
 ): RepStatus {
   const player = ns.getPlayer();
   const ownedAugs = getOwnedAugs(ns);
@@ -568,7 +569,6 @@ function computeHighTierStatus(
     currentWorkType: workStatus.currentWorkType,
     isWorkable: workStatus.isWorkable,
     focusYielding,
-    focusHolder,
   };
 }
 
@@ -661,7 +661,7 @@ function printHighTierStatus(
 
   // Focus yielding indicator
   if (status.focusYielding) {
-    ns.print(`${C.yellow}YIELDING: Focus held by ${status.focusHolder || "other"} daemon${C.reset}`);
+    ns.print(`${C.yellow}YIELDING: Focus held by another daemon${C.reset}`);
   }
 
   // Work status (Tier 6)
@@ -844,14 +844,6 @@ async function runFullMode(
   let cyclesSinceUpgradeCheck = 0;
   const UPGRADE_CHECK_INTERVAL = 10;
 
-  // Claim focus if tier 6 and no current holder
-  if (tier.tier >= 6) {
-    const currentHolder = getConfigString(ns, "focus", "holder", "");
-    if (!currentHolder) {
-      setConfigValue(ns, "focus", "holder", "rep");
-    }
-  }
-
   do {
     const targetFactionOverride = getConfigString(ns, "rep", "faction", "");
     const noWork = getConfigBool(ns, "rep", "noWork", false);
@@ -860,7 +852,8 @@ async function runFullMode(
 
     // Check focus priority
     const focusHolder = getConfigString(ns, "focus", "holder", "");
-    const focusYielding = focusHolder !== "" && focusHolder !== "rep";
+    const sleeveHolder = getConfigString(ns, "focus", "sleeveHolder", "");
+    const focusYielding = focusHolder !== "" && focusHolder !== "rep" && sleeveHolder !== "rep";
 
     ns.clearLog();
 
@@ -970,7 +963,7 @@ async function runFullMode(
     // Compute and publish RepStatus
     // Calculate next tier RAM for display
     const nextTierRam = tier.tier < 6 ? tierRamCosts[tier.tier + 1] : null;
-    const repStatus = computeHighTierStatus(ns, tier, currentTierRam, nextTierRam, repGainRate, noWork, targetFactionOverride, focusYielding, focusHolder);
+    const repStatus = computeHighTierStatus(ns, tier, currentTierRam, nextTierRam, repGainRate, noWork, targetFactionOverride, focusYielding, focusHolder, sleeveHolder);
     publishStatus(ns, STATUS_PORTS.rep, repStatus);
 
     // Compute and publish BitnodeStatus

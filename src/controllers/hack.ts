@@ -83,9 +83,10 @@ export const SCRIPTS = {
 // === CORE LOGIC ===
 
 /**
- * Get all servers with available RAM, sorted by RAM descending
+ * Get all servers with available RAM, sorted by RAM descending.
+ * Set excludeHacknet to filter out hacknet-server-* hosts (preserves hash production).
  */
-export function getUsableServers(ns: NS, homeReserve: number): ServerInfo[] {
+export function getUsableServers(ns: NS, homeReserve: number, excludeHacknet = false): ServerInfo[] {
   const servers: ServerInfo[] = [];
 
   for (const hostname of getCachedServers(ns)) {
@@ -93,6 +94,7 @@ export function getUsableServers(ns: NS, homeReserve: number): ServerInfo[] {
     try { server = ns.getServer(hostname); } catch { continue; }
     if (!server.hasAdminRights) continue;
     if (server.maxRam === 0) continue;
+    if (excludeHacknet && hostname.startsWith("hacknet-")) continue;
 
     const reserved = hostname === "home" ? homeReserve : 0;
     const available = server.maxRam - server.ramUsed - reserved;

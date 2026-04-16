@@ -18,7 +18,7 @@ import { COLORS } from "/lib/utils";
 import {
   selectAction,
   recommendSkillUpgrade,
-  shouldSwitchCity,
+  selectBestCity,
   DEFAULT_BLADE_CONFIG,
   BLADEBURNER_CITIES,
   BladeState,
@@ -172,6 +172,7 @@ function readBladeConfig(ns: NS): BladeConfig {
     blackOpThreshold: getConfigNumber(ns, "blade", "blackOpThreshold", DEFAULT_BLADE_CONFIG.blackOpThreshold),
     contractThreshold: getConfigNumber(ns, "blade", "contractThreshold", DEFAULT_BLADE_CONFIG.contractThreshold),
     staminaMinPercent: getConfigNumber(ns, "blade", "staminaMinPercent", DEFAULT_BLADE_CONFIG.staminaMinPercent),
+    staminaRestoreTo: getConfigNumber(ns, "blade", "staminaRestoreTo", DEFAULT_BLADE_CONFIG.staminaRestoreTo),
     staminaTrainMax: getConfigNumber(ns, "blade", "staminaTrainMax", DEFAULT_BLADE_CONFIG.staminaTrainMax),
     chaosMax: getConfigNumber(ns, "blade", "chaosMax", DEFAULT_BLADE_CONFIG.chaosMax),
     chaosTarget: getConfigNumber(ns, "blade", "chaosTarget", DEFAULT_BLADE_CONFIG.chaosTarget),
@@ -265,6 +266,17 @@ function formatCity(ns: NS, city: CityData): BladeCityInfo {
   };
 }
 
+function formatBonusTime(ms: number): string {
+  if (ms <= 1000) return "0s";
+  const totalSec = Math.floor(ms / 1000);
+  const h = Math.floor(totalSec / 3600);
+  const m = Math.floor((totalSec % 3600) / 60);
+  const s = totalSec % 60;
+  if (h > 0) return `${h}h ${m}m`;
+  if (m > 0) return `${m}m ${s}s`;
+  return `${s}s`;
+}
+
 function currentActionDisplay(action: ReturnType<NS["bladeburner"]["getCurrentAction"]>): { text: string; type: BladeburnerStatus["currentActionType"] } {
   if (!action) return { text: "Idle", type: "idle" };
   const typeName = action.type.toLowerCase();
@@ -306,8 +318,6 @@ async function runMonitorMode(
     const pop = ns.bladeburner.getCityEstimatedPopulation(city);
     const sp = ns.bladeburner.getSkillPoints();
     const bt = ns.bladeburner.getBonusTime();
-    const focusHolder = getConfigString(ns, "focus", "holder", "");
-
     const status: BladeburnerStatus = {
       tier: 0,
       tierName: "monitor",
@@ -329,10 +339,9 @@ async function runMonitorMode(
       cityPopulation: pop,
       cityPopulationFormatted: ns.formatNumber(pop, 1),
       bonusTime: bt,
-      bonusTimeFormatted: bt > 1000 ? `${(bt / 1000).toFixed(0)}s` : "0s",
+      bonusTimeFormatted: formatBonusTime(bt),
       currentAction: actionText,
       currentActionType: actionType,
-      focusHolder,
     };
 
     publishStatus(ns, STATUS_PORTS.blade, status);
@@ -401,6 +410,7 @@ async function runAutomationMode(
   currentRam: number,
 ): Promise<void> {
   let isDiplomacyActive = false;
+  let isResting = false;
 
   // Try to join BB division if not already in
   if (!ns.bladeburner.inBladeburner()) {
@@ -446,7 +456,9 @@ async function runAutomationMode(
 
     const config = readBladeConfig(ns);
     const focusHolder = getConfigString(ns, "focus", "holder", "");
-    const focusYielding = focusHolder !== "" && focusHolder !== "blade";
+    const sleeveHolder = getConfigString(ns, "focus", "sleeveHolder", "");
+    const hasSimulacrum = getConfigBool(ns, "focus", "simulacrum", false);
+    const focusYielding = !hasSimulacrum && focusHolder !== "" && focusHolder !== "blade" && sleeveHolder !== "blade";
 
     // Gather full state
     const contracts = gatherActionData(ns, "Contracts", ns.bladeburner.getContractNames());
@@ -469,6 +481,12 @@ async function runAutomationMode(
       };
     }
 
+    // Determine best city before action selection so diplomacy/chaos
+    // checks use the city we'll actually work in
+    const bestCity = selectBestCity(city, cities, config.chaosMax);
+    const effectiveCity = bestCity || city;
+    const effectiveCityData = cities.find(c => c.name === effectiveCity);
+
     const bladeState: BladeState = {
       inBladeburner: true,
       rank,
@@ -476,9 +494,9 @@ async function runAutomationMode(
       maxStamina: maxStam,
       staminaPercent: maxStam > 0 ? (stam / maxStam) * 100 : 0,
       skillPoints: ns.bladeburner.getSkillPoints(),
-      city,
-      cityChaos: ns.bladeburner.getCityChaos(city),
-      cityPopulation: ns.bladeburner.getCityEstimatedPopulation(city),
+      city: effectiveCity,
+      cityChaos: effectiveCityData?.chaos ?? ns.bladeburner.getCityChaos(city),
+      cityPopulation: effectiveCityData?.population ?? ns.bladeburner.getCityEstimatedPopulation(city),
       bonusTime: ns.bladeburner.getBonusTime(),
       currentAction: null,
       contracts,
@@ -487,14 +505,19 @@ async function runAutomationMode(
       skills,
       cities,
       isDiplomacyActive,
+      isResting,
     };
 
     // Determine recommended action
     const recommended = selectAction(bladeState, config);
     isDiplomacyActive = recommended?.name === "Diplomacy";
+    isResting = recommended?.name === "Hyperbolic Regeneration Chamber";
 
-    // City switching
-    const targetCity = shouldSwitchCity(city, cities, config.populationMin);
+    // Raid quarantine: override city for Raids to protect high-pop cities
+    let targetCity: string | null = bestCity;
+    if (recommended?.name === "Raid") {
+      targetCity = selectBestCity(city, cities, config.chaosMax, "Raid") || targetCity;
+    }
 
     // Execute actions if we hold focus
     if (!focusYielding && recommended) {
@@ -528,6 +551,24 @@ async function runAutomationMode(
       setConfigValue(ns, "blade", "buySkill", "");
     }
 
+    // Handle "buy all" — loop: recommend → buy → re-read → repeat
+    if (getConfigString(ns, "blade", "buyAllSkills", "") === "true") {
+      setConfigValue(ns, "blade", "buyAllSkills", "");
+      let bought = 0;
+      while (true) {
+        const freshSkills = gatherSkillData(ns);
+        const sp = ns.bladeburner.getSkillPoints();
+        const rec = recommendSkillUpgrade(freshSkills, sp);
+        if (!rec) break;
+        const success = ns.bladeburner.upgradeSkill(rec.name as any);
+        if (!success) break;
+        bought++;
+      }
+      if (bought > 0) {
+        ns.tprint(`SUCCESS: Bought ${bought} skill upgrade${bought > 1 ? "s" : ""}`);
+      }
+    }
+
     // Try to join BB faction if eligible
     ns.bladeburner.joinBladeburnerFaction();
 
@@ -540,7 +581,6 @@ async function runAutomationMode(
       nextBlackOp,
       recommended,
       focusYielding,
-      focusHolder,
       config,
     });
     publishStatus(ns, STATUS_PORTS.blade, status);
@@ -589,7 +629,6 @@ interface FullStatusData {
   nextBlackOp?: BladeState["nextBlackOp"];
   recommended?: { type: string; name: string } | null;
   focusYielding?: boolean;
-  focusHolder?: string;
   config?: BladeConfig;
 }
 
@@ -609,7 +648,6 @@ function computeFullStatus(
   const pop = ns.bladeburner.getCityEstimatedPopulation(city);
   const sp = ns.bladeburner.getSkillPoints();
   const bt = ns.bladeburner.getBonusTime();
-  const focusHolder = data?.focusHolder ?? getConfigString(ns, "focus", "holder", "");
 
   // Gather data at analysis+ tiers if not provided
   const contracts = data?.contracts ?? (tier >= 1 ? gatherActionData(ns, "Contracts", ns.bladeburner.getContractNames()) : undefined);
@@ -651,10 +689,9 @@ function computeFullStatus(
     cityPopulation: pop,
     cityPopulationFormatted: ns.formatNumber(pop, 1),
     bonusTime: bt,
-    bonusTimeFormatted: bt > 1000 ? `${(bt / 1000).toFixed(0)}s` : "0s",
+    bonusTimeFormatted: formatBonusTime(bt),
     currentAction: actionText,
     currentActionType: actionType,
-    focusHolder,
   };
 
   if (contracts) status.contracts = contracts.map(formatAction);
@@ -721,7 +758,7 @@ function printFullStatus(ns: NS, s: BladeburnerStatus): void {
     ns.print(`Next: ${COLORS.green}${s.recommendedAction}${COLORS.reset}`);
   }
   if (s.focusYielding) {
-    ns.print(`${COLORS.yellow}Yielding to ${s.focusHolder || "other"} daemon${COLORS.reset}`);
+    ns.print(`${COLORS.yellow}Yielding focus${COLORS.reset}`);
   }
 
   if (s.nextBlackOp) {
@@ -764,6 +801,7 @@ export async function main(ns: NS): Promise<void> {
     blackOpThreshold: String(DEFAULT_BLADE_CONFIG.blackOpThreshold),
     contractThreshold: String(DEFAULT_BLADE_CONFIG.contractThreshold),
     staminaMinPercent: String(DEFAULT_BLADE_CONFIG.staminaMinPercent),
+    staminaRestoreTo: String(DEFAULT_BLADE_CONFIG.staminaRestoreTo),
     staminaTrainMax: String(DEFAULT_BLADE_CONFIG.staminaTrainMax),
     chaosMax: String(DEFAULT_BLADE_CONFIG.chaosMax),
     chaosTarget: String(DEFAULT_BLADE_CONFIG.chaosTarget),
