@@ -505,7 +505,7 @@ async function daemon(ns: NS, maxTier: number, tierName: string): Promise<void> 
       }
       sessionStartOffset = inheritedPnL;
       if (Math.abs(sessionStartOffset) > 0) {
-        ns.print(`  ${C.dim}Session P&L offset: ${ns.formatNumber(sessionStartOffset)} (inherited positions)${C.reset}`);
+        ns.print(`  ${C.dim}Session P&L offset: ${ns.format.number(sessionStartOffset)} (inherited positions)${C.reset}`);
       }
     }
 
@@ -703,7 +703,7 @@ async function daemon(ns: NS, maxTier: number, tierName: string): Promise<void> 
           currentPrice: price,
           direction: "long",
           profit,
-          profitFormatted: ns.formatNumber(profit),
+          profitFormatted: ns.format.number(profit),
           confidence: displayConfidence,
           hackAdjustment: hackAdj || undefined,
         });
@@ -739,7 +739,7 @@ async function daemon(ns: NS, maxTier: number, tierName: string): Promise<void> 
               });
               positionTracking.delete(longKey);
               sellCooldowns.set(sym, tickCount);
-              ns.print(`  ${C.red}STOP ${stopCheck.reason.toUpperCase()}${C.reset} ${sym} LONG: ${ns.formatNumber(saleProfit)}`);
+              ns.print(`  ${C.red}STOP ${stopCheck.reason.toUpperCase()}${C.reset} ${sym} LONG: ${ns.format.number(saleProfit)}`);
               sold = true;
             }
           }
@@ -758,7 +758,7 @@ async function daemon(ns: NS, maxTier: number, tierName: string): Promise<void> 
               });
               positionTracking.delete(longKey);
               sellCooldowns.set(sym, tickCount);
-              ns.print(`  ${C.green}SELL LONG${C.reset} ${sym}: ${ns.formatNumber(saleProfit)}`);
+              ns.print(`  ${C.green}SELL LONG${C.reset} ${sym}: ${ns.format.number(saleProfit)}`);
             }
           }
         }
@@ -776,7 +776,7 @@ async function daemon(ns: NS, maxTier: number, tierName: string): Promise<void> 
           currentPrice: price,
           direction: "short",
           profit,
-          profitFormatted: ns.formatNumber(profit),
+          profitFormatted: ns.format.number(profit),
           confidence: displayConfidence,
           hackAdjustment: hackAdj || undefined,
         });
@@ -812,7 +812,7 @@ async function daemon(ns: NS, maxTier: number, tierName: string): Promise<void> 
               });
               positionTracking.delete(shortKey);
               sellCooldowns.set(sym, tickCount);
-              ns.print(`  ${C.red}STOP ${stopCheck.reason.toUpperCase()}${C.reset} ${sym} SHORT: ${ns.formatNumber(saleProfit)}`);
+              ns.print(`  ${C.red}STOP ${stopCheck.reason.toUpperCase()}${C.reset} ${sym} SHORT: ${ns.format.number(saleProfit)}`);
               sold = true;
             }
           }
@@ -831,7 +831,7 @@ async function daemon(ns: NS, maxTier: number, tierName: string): Promise<void> 
               });
               positionTracking.delete(shortKey);
               sellCooldowns.set(sym, tickCount);
-              ns.print(`  ${C.yellow}SELL SHORT${C.reset} ${sym}: ${ns.formatNumber(saleProfit)}`);
+              ns.print(`  ${C.yellow}SELL SHORT${C.reset} ${sym}: ${ns.format.number(saleProfit)}`);
             }
           }
         }
@@ -902,7 +902,7 @@ async function daemon(ns: NS, maxTier: number, tierName: string): Promise<void> 
             forecastAtEntry: cand.forecast,
           });
           notifyPurchase(ns, "stocks", cost * sharesToBuy, `Buy ${cand.sym} LONG`);
-          ns.print(`  ${C.green}BUY LONG${C.reset} ${cand.sym}: ${sharesToBuy} @ ${ns.formatNumber(cost)}`);
+          ns.print(`  ${C.green}BUY LONG${C.reset} ${cand.sym}: ${sharesToBuy} @ ${ns.format.number(cost)}`);
           newPositions++;
         }
       } else {
@@ -916,7 +916,7 @@ async function daemon(ns: NS, maxTier: number, tierName: string): Promise<void> 
             forecastAtEntry: cand.forecast,
           });
           notifyPurchase(ns, "stocks", cost * sharesToBuy, `Buy ${cand.sym} SHORT`);
-          ns.print(`  ${C.cyan}BUY SHORT${C.reset} ${cand.sym}: ${sharesToBuy} @ ${ns.formatNumber(cost)}`);
+          ns.print(`  ${C.cyan}BUY SHORT${C.reset} ${cand.sym}: ${sharesToBuy} @ ${ns.format.number(cost)}`);
           newPositions++;
         }
       }
@@ -970,19 +970,19 @@ async function daemon(ns: NS, maxTier: number, tierName: string): Promise<void> 
       hasTIX: apis.hasTIX,
       has4S: apis.has4S,
       portfolioValue,
-      portfolioValueFormatted: ns.formatNumber(portfolioValue),
+      portfolioValueFormatted: ns.format.number(portfolioValue),
       totalProfit,
-      totalProfitFormatted: ns.formatNumber(totalProfit),
+      totalProfitFormatted: ns.format.number(totalProfit),
       realizedProfit,
-      realizedProfitFormatted: ns.formatNumber(realizedProfit),
+      realizedProfitFormatted: ns.format.number(realizedProfit),
       profitPerSec,
-      profitPerSecFormatted: ns.formatNumber(profitPerSec) + "/s",
+      profitPerSecFormatted: ns.format.number(profitPerSec) + "/s",
       longPositions: longCount,
       shortPositions: shortCount,
       positions: positions.sort((a, b) => Math.abs(b.profit) - Math.abs(a.profit)),
       signals: signals.slice(0, 10),
       tradingCapital: tradingCapital === Infinity ? -1 : tradingCapital,
-      tradingCapitalFormatted: tradingCapital === Infinity ? "unlimited" : ns.formatNumber(tradingCapital),
+      tradingCapitalFormatted: tradingCapital === Infinity ? "unlimited" : ns.format.number(tradingCapital),
       smartMode,
       activeProfile,
       pollInterval,
@@ -1031,9 +1031,9 @@ async function daemon(ns: NS, maxTier: number, tierName: string): Promise<void> 
       `${C.cyan}=== Stocks ===${C.reset} ` +
       `[${mode.toUpperCase()}] ` +
       `Pos: ${longCount}L/${shortCount}S | ` +
-      `Value: ${ns.formatNumber(portfolioValue)} | ` +
-      `P&L: ${ns.formatNumber(totalProfit)} | ` +
-      `${ns.formatNumber(profitPerSec)}/s`
+      `Value: ${ns.format.number(portfolioValue)} | ` +
+      `P&L: ${ns.format.number(totalProfit)} | ` +
+      `${ns.format.number(profitPerSec)}/s`
     );
 
     await ns.sleep(pollInterval);

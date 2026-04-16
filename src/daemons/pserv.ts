@@ -26,7 +26,7 @@ import { DEFAULT_WEIGHTS } from "/controllers/budget";
  */
 function computePservStatus(ns: NS, reserve: number, autoBuy: boolean, maxRamCap: number): PservStatus {
   const raw = getPservStatus(ns);
-  const maxPossibleRam = ns.getPurchasedServerMaxRam();
+  const maxPossibleRam = ns.cloud.getRamLimit()
   const effectiveMaxRam = maxRamCap > 0 ? maxRamCap : maxPossibleRam;
 
   // Map servers to formatted entries
@@ -35,7 +35,7 @@ function computePservStatus(ns: NS, reserve: number, autoBuy: boolean, maxRamCap
     return {
       hostname,
       ram,
-      ramFormatted: ns.formatRam(ram),
+      ramFormatted: ns.format.ram(ram),
     };
   });
 
@@ -53,17 +53,17 @@ function computePservStatus(ns: NS, reserve: number, autoBuy: boolean, maxRamCap
   let nextUpgrade: PservStatus["nextUpgrade"] = null;
   if (raw.serverCount > 0 && !allMaxed) {
     const smallest = servers.reduce((min, s) => (s.ram < min.ram ? s : min));
-    if (smallest.ram < effectiveMaxRam) {
+    if (smallest.ram < maxPossibleRam) {
       const nextRam = Math.min(smallest.ram * 2, effectiveMaxRam);
-      const cost = ns.getPurchasedServerUpgradeCost(smallest.hostname, nextRam);
+      const cost = ns.cloud.getServerUpgradeCost(smallest.hostname, nextRam);
       const budget = ns.getServerMoneyAvailable("home") - reserve;
 
       nextUpgrade = {
         hostname: smallest.hostname,
-        currentRam: ns.formatRam(smallest.ram),
-        nextRam: ns.formatRam(nextRam),
+        currentRam: ns.format.ram(smallest.ram),
+        nextRam: ns.format.ram(nextRam),
         cost,
-        costFormatted: ns.formatNumber(cost),
+        costFormatted: ns.format.number(cost),
         canAfford: cost <= budget,
       };
     }
@@ -72,10 +72,10 @@ function computePservStatus(ns: NS, reserve: number, autoBuy: boolean, maxRamCap
   return {
     serverCount: raw.serverCount,
     serverCap: raw.serverCap,
-    totalRam: ns.formatRam(raw.totalRam),
-    minRam: ns.formatRam(raw.minRam),
-    maxRam: ns.formatRam(raw.maxRam),
-    maxPossibleRam: ns.formatRam(maxPossibleRam),
+    totalRam: ns.format.ram(raw.totalRam),
+    minRam: ns.format.ram(raw.minRam),
+    maxRam: ns.format.ram(raw.maxRam),
+    maxPossibleRam: ns.format.ram(maxPossibleRam),
     maxPossibleRamNum: maxPossibleRam,
     maxRamCap,
     maxRamCapFormatted: maxRamCap > 0 ? ns.formatRam(maxRamCap) : "Game Max",
@@ -208,11 +208,22 @@ export async function main(ns: NS): Promise<void> {
         let totalRemainingCost = 0;
         if (pstat.serverCount < pstat.serverCap) {
           const slotsLeft = pstat.serverCap - pstat.serverCount;
-          totalRemainingCost += ns.getPurchasedServerCost(config.minRam) * slotsLeft;
+          totalRemainingCost += ns.cloud.getServerCost(config.minRam) * slotsLeft;
+        // Cost to upgrade each new server from minRam to max
           let ram = config.minRam;
           while (ram < effectiveMax) {
             const nextRam = ram * 2;
-            totalRemainingCost += ns.getPurchasedServerUpgradeCost(`${config.prefix}-0`, nextRam) * slotsLeft;
+            totalRemainingCost += ns.cloud.getServerUpgradeCost(`${config.prefix}-0`, nextRam) * slotsLeft;
+            ram = nextRam;
+          }
+        }
+      if (pstat.servers.length > 0) {
+        // Cost to max all existing servers
+        for (const hostname of pstat.servers) {
+          let ram = ns.getServerMaxRam(hostname);
+          while (ram < pstat.maxPossibleRam) {
+            const nextRam = ram * 2;
+            totalRemainingCost += ns.cloud.getServerUpgradeCost(hostname, nextRam);
             ram = nextRam;
           }
         }

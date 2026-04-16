@@ -2,7 +2,8 @@ import { NS } from "@ns";
 import {discoverAllWithDepthAndPath, pathTo, pathToArray} from "/lib/utils";
 
 export async function main(ns: NS): Promise<void> {
-    const BACKDOOR = [
+
+  const BACKDOOR = [
         "CSEC",
         "avmnite-02h",
         "I.I.I.I",

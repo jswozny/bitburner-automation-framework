@@ -6,6 +6,7 @@
 import { NS } from "@ns";
 
 export async function main(ns: NS): Promise<void> {
+
   const city = "Aevum";
   const player = ns.getPlayer();
   if (player.city === city) {
