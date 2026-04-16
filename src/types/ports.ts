@@ -98,7 +98,7 @@ export interface QueueEntry {
 
 export interface Command {
   tool: ToolName;
-  action: "start" | "stop" | "open-tail" | "run-script" | "start-faction-work" | "set-focus" | "start-training" | "install-augments" | "run-backdoors" | "restart-rep-daemon" | "join-faction" | "restart-faction-daemon" | "restart-hack-daemon" | "restart-share-daemon" | "stop-infiltration" | "kill-infiltration" | "configure-infiltration" | "set-gang-strategy" | "pin-gang-member" | "unpin-gang-member" | "ascend-gang-member" | "toggle-gang-purchases" | "toggle-gang-warfare" | "set-gang-wanted-threshold" | "set-gang-ascension-thresholds" | "set-gang-training-threshold" | "set-gang-grow-target" | "set-gang-grow-respect-reserve" | "set-gang-territory-threshold" | "force-buy-equipment" | "restart-gang-daemon" | "buy-selected-augments" | "claim-focus" | "claim-sleeve-focus" | "toggle-pserv-autobuy" | "set-pserv-max-ram" | "force-contract-attempt" | "restart-stocks-daemon" | "reset-stocks-pnl" | "stocks-control" | "set-stocks-profile" | "rush-budget-bucket" | "cancel-budget-rush" | "update-budget-weight" | "reset-budget-weights" | "toggle-home-autobuy" | "set-corp-directive" | "cancel-corp-pending" | "toggle-corp-pin" | "restart-corp-daemon" | "toggle-corp-auto-tea" | "set-corp-dividend-rate" | "toggle-corp-enabled" | "restart-blade-daemon" | "blade-buy-skill" | "blade-buy-all-skills" | "set-blade-config" | "reset-start-config";
+  action: "start" | "stop" | "open-tail" | "run-script" | "start-faction-work" | "set-focus" | "start-training" | "install-augments" | "run-backdoors" | "restart-rep-daemon" | "join-faction" | "restart-faction-daemon" | "restart-hack-daemon" | "restart-share-daemon" | "stop-infiltration" | "kill-infiltration" | "configure-infiltration" | "set-gang-strategy" | "pin-gang-member" | "unpin-gang-member" | "ascend-gang-member" | "toggle-gang-purchases" | "toggle-gang-warfare" | "set-gang-wanted-threshold" | "set-gang-ascension-thresholds" | "set-gang-training-threshold" | "set-gang-grow-target" | "set-gang-grow-respect-reserve" | "set-gang-territory-threshold" | "force-buy-equipment" | "restart-gang-daemon" | "buy-selected-augments" | "claim-focus" | "claim-sleeve-focus" | "toggle-pserv-autobuy" | "set-pserv-max-ram" | "force-contract-attempt" | "restart-stocks-daemon" | "reset-stocks-pnl" | "stocks-control" | "set-stocks-profile" | "rush-budget-bucket" | "cancel-budget-rush" | "update-budget-weight" | "reset-budget-weights" | "toggle-home-autobuy" | "set-corp-directive" | "cancel-corp-pending" | "toggle-corp-pin" | "restart-corp-daemon" | "toggle-corp-auto-tea" | "set-corp-dividend-rate" | "toggle-corp-enabled" | "restart-blade-daemon" | "blade-buy-skill" | "blade-buy-all-skills" | "set-blade-config" | "reset-start-config" | "set-hacknet-strategy";
   scriptPath?: string;
   scriptArgs?: string[];
   factionName?: string;
@@ -146,6 +146,7 @@ export interface Command {
   bladeSkillName?: string;
   bladeConfigKey?: string;
   bladeConfigValue?: string;
+  hacknetSpendStrategy?: HashSpendStrategy;
 }
 
 // === STATUS INTERFACES ===
@@ -492,6 +493,10 @@ export interface WorkStatus {
 // === HACK STRATEGY ===
 
 export type HackStrategy = "money" | "xp" | "drain" | "stocks";
+
+// === HACKNET SPEND STRATEGY ===
+
+export type HashSpendStrategy = "money" | "study" | "gym" | "bladeburner-rank" | "bladeburner-sp" | "coding-contract";
 
 // === FLEET ALLOCATION ===
 
@@ -1435,8 +1440,12 @@ export interface HacknetStatus {
   hashesSpentTotal: number;
   moneyEarnedFromHashes: number;
   moneyEarnedFormatted: string;
-  spendStrategy: "money";
+  spendStrategy: HashSpendStrategy;
   autoBuy: boolean;
+
+  // Next target
+  nextTarget: { type: string; serverIndex: number; cost: number; costFormatted: string; canAfford: boolean; roi: number } | null;
+  purchasesThisTick: number;
 
   // Per-server breakdown
   servers: HacknetServerInfo[];

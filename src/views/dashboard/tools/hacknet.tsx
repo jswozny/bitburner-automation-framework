@@ -10,13 +10,34 @@ import {
   OverviewCardProps,
   DetailPanelProps,
 } from "views/dashboard/types";
-import { HacknetStatus } from "/types/ports";
+import { HacknetStatus, HashSpendStrategy } from "/types/ports";
 import { styles } from "views/dashboard/styles";
 import { ToolControl } from "views/dashboard/components/ToolControl";
 import { TierFooter } from "views/dashboard/components/TierFooter";
+import { setHacknetStrategy } from "views/dashboard/state-store";
 
 // Re-export type alias for consistency
 type FormattedHacknetStatus = HacknetStatus;
+
+const controlSelectStyle: React.CSSProperties = {
+  backgroundColor: "#1a1a1a",
+  color: "#00ff00",
+  border: "1px solid #333",
+  borderRadius: "3px",
+  padding: "1px 4px",
+  fontSize: "12px",
+  fontFamily: "inherit",
+  cursor: "pointer",
+};
+
+const STRATEGY_LABELS: Record<HashSpendStrategy, string> = {
+  "money": "Sell for Money",
+  "study": "Improve Studying",
+  "gym": "Improve Gym Training",
+  "bladeburner-rank": "Bladeburner Rank",
+  "bladeburner-sp": "Bladeburner SP",
+  "coding-contract": "Coding Contract",
+};
 
 // === OVERVIEW CARD ===
 
@@ -52,6 +73,14 @@ function HacknetOverviewCard({
             <div style={styles.stat}>
               <span style={styles.statLabel}>Earned</span>
               <span style={{ color: "#00ff00" }}>${status.moneyEarnedFormatted}</span>
+            </div>
+          )}
+          {status.nextTarget && (
+            <div style={styles.stat}>
+              <span style={styles.statLabel}>Next</span>
+              <span style={{ color: status.nextTarget.canAfford ? "#00ff00" : "#ff4444" }}>
+                {status.nextTarget.canAfford ? "\u2713" : "\u2717"} {status.nextTarget.costFormatted}
+              </span>
             </div>
           )}
         </>
@@ -137,23 +166,36 @@ function HacknetDetailPanel({
       </div>
 
       {/* Hash Spending */}
-      {status.moneyEarnedFromHashes > 0 && (
-        <div style={styles.section}>
-          <div style={styles.sectionTitle}>HASH SPENDING</div>
-          <div style={styles.stat}>
-            <span style={styles.statLabel}>Strategy</span>
-            <span style={styles.statValue}>Sell for Money</span>
-          </div>
+      <div style={styles.section}>
+        <div style={styles.sectionTitle}>HASH SPENDING</div>
+        <div style={styles.stat}>
+          <span style={styles.statLabel}>Strategy</span>
+          <select
+            style={controlSelectStyle}
+            value={status.spendStrategy}
+            onChange={(e) => {
+              const val = (e.target as HTMLSelectElement).value as HashSpendStrategy;
+              if (running) setHacknetStrategy(val);
+            }}
+          >
+            {(Object.keys(STRATEGY_LABELS) as HashSpendStrategy[]).map(k => (
+              <option key={k} value={k}>{STRATEGY_LABELS[k]}</option>
+            ))}
+          </select>
+        </div>
+        {status.moneyEarnedFromHashes > 0 && (
           <div style={styles.stat}>
             <span style={styles.statLabel}>Earned</span>
             <span style={{ color: "#00ff00" }}>${status.moneyEarnedFormatted}</span>
           </div>
+        )}
+        {status.hashesSpentTotal > 0 && (
           <div style={styles.stat}>
             <span style={styles.statLabel}>Hashes Spent</span>
             <span style={styles.statValue}>{status.hashesSpentTotal.toFixed(0)}</span>
           </div>
-        </div>
-      )}
+        )}
+      </div>
 
       {/* Upgrade Costs */}
       <div style={styles.section}>
@@ -177,6 +219,23 @@ function HacknetDetailPanel({
           </div>
         )}
       </div>
+
+      {/* Next Target */}
+      {status.nextTarget && (
+        <div style={styles.section}>
+          <div style={styles.sectionTitle}>NEXT TARGET</div>
+          <div style={styles.stat}>
+            <span style={styles.statLabel}>
+              {status.nextTarget.type === "new"
+                ? "New Server"
+                : `${status.nextTarget.type.charAt(0).toUpperCase() + status.nextTarget.type.slice(1)} #${status.nextTarget.serverIndex}`}
+            </span>
+            <span style={{ color: status.nextTarget.canAfford ? "#00ff00" : "#ff4444" }}>
+              {status.nextTarget.canAfford ? "\u2713" : "\u2717"} {status.nextTarget.costFormatted}
+            </span>
+          </div>
+        </div>
+      )}
 
       {/* Per-server table */}
       {status.servers.length > 0 && (
@@ -211,6 +270,12 @@ function HacknetDetailPanel({
             <span style={styles.statLabel}>Total Spent</span>
             <span style={{ color: "#ff8800" }}>{status.totalSpentFormatted}</span>
           </div>
+          {status.purchasesThisTick > 0 && (
+            <div style={styles.stat}>
+              <span style={styles.statLabel}>Last Tick</span>
+              <span style={{ color: "#00ff00" }}>{status.purchasesThisTick} purchases</span>
+            </div>
+          )}
         </div>
       )}
 

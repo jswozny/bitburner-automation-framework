@@ -14,8 +14,8 @@
 import { NS, NodeStats } from "@ns";
 import { COLORS } from "/lib/utils";
 import { publishStatus } from "/lib/ports";
-import { writeDefaultConfig, getConfigNumber, getConfigBool } from "/lib/config";
-import { STATUS_PORTS, HacknetStatus, HacknetServerInfo } from "/types/ports";
+import { writeDefaultConfig, getConfigNumber, getConfigBool, getConfigString } from "/lib/config";
+import { STATUS_PORTS, HacknetStatus, HacknetServerInfo, HashSpendStrategy } from "/types/ports";
 import { getBudgetBalance, notifyPurchase, reportCap } from "/lib/budget";
 
 const C = COLORS;
@@ -188,8 +188,18 @@ let upgradesBought = 0;
 let totalSpent = 0;
 let hashesSpentTotal = 0;
 let moneyEarnedFromHashes = 0;
-const HASH_SELL_NAME = "Sell for Money";
 const HASH_SELL_MONEY = 1_000_000; // $1M per sell
+
+const HASH_STRATEGY_MAP: Record<HashSpendStrategy, string> = {
+  "money": "Sell for Money",
+  "study": "Improve Studying",
+  "gym": "Improve Gym Training",
+  "bladeburner-rank": "Exchange for Bladeburner Rank",
+  "bladeburner-sp": "Exchange for Bladeburner SP",
+  "coding-contract": "Generate Coding Contract",
+};
+
+const VALID_STRATEGIES = new Set(Object.keys(HASH_STRATEGY_MAP));
 
 // === DAEMON ===
 
@@ -205,6 +215,7 @@ export async function main(ns: NS): Promise<void> {
     spendThreshold: "0.5",
     reserveHashes: "0",
     allowWorkers: "false",
+    spendStrategy: "money",
   });
 
   const tierRamCosts = HACKNET_TIERS.map((_, i) => calculateTierRam(ns, i));
@@ -234,6 +245,8 @@ export async function main(ns: NS): Promise<void> {
     const maxServers = getConfigNumber(ns, "hacknet", "maxServers", 20);
     const spendThreshold = getConfigNumber(ns, "hacknet", "spendThreshold", 0.5);
     const reserveHashes = getConfigNumber(ns, "hacknet", "reserveHashes", 0);
+    const rawStrategy = getConfigString(ns, "hacknet", "spendStrategy", "money");
+    const spendStrategy: HashSpendStrategy = VALID_STRATEGIES.has(rawStrategy) ? rawStrategy as HashSpendStrategy : "money";
 
     // Read hacknet state
     const numNodes = ns.hacknet.numNodes();
@@ -269,12 +282,99 @@ export async function main(ns: NS): Promise<void> {
     // Next node cost
     const nextNodeCost = numNodes < maxNodes ? ns.hacknet.getPurchaseNodeCost() : null;
 
-    // Evaluate all upgrade candidates once per cycle
-    const candidates = numNodes > 0 ? evaluateUpgrades(ns, hacknetMult, maxServers) : [];
+    // Tier 1: Auto-buy — batch purchase upgrades within budget
+    let purchasesThisTick = 0;
+    if (tier.tier >= 1 && autoBuy) {
+      let keepBuying = true;
+      while (keepBuying && purchasesThisTick < 100) {
+        const currentNodes = ns.hacknet.numNodes();
+        if (currentNodes === 0) {
+          // No nodes yet — buy the first one
+          const cost = ns.hacknet.getPurchaseNodeCost();
+          const budget = getBudgetBalance(ns, "hacknet");
+          if (cost <= budget && cost <= ns.getPlayer().money) {
+            const result = ns.hacknet.purchaseNode();
+            if (result !== -1) {
+              notifyPurchase(ns, "hacknet", cost, "First hacknet server");
+              totalSpent += cost;
+              nodesBought++;
+              purchasesThisTick++;
+              ns.print(`  ${C.green}BOUGHT${C.reset} First hacknet server (${ns.formatNumber(cost)})`);
+              continue; // Re-evaluate with the new node
+            }
+          }
+          break; // Can't afford first node
+        }
 
-    // Find cheapest upgrade for display
+        // Re-evaluate candidates each iteration (costs change after purchases)
+        const currentCandidates = evaluateUpgrades(ns, hacknetMult, maxServers);
+        if (currentCandidates.length === 0) break;
+
+        // If hash utilization > 90%, prioritize cache upgrades
+        if (hashUtilization > 0.9) {
+          const cacheIdx = currentCandidates.findIndex(c => c.type === "cache");
+          if (cacheIdx > 0) {
+            const [cacheUpgrade] = currentCandidates.splice(cacheIdx, 1);
+            currentCandidates.unshift(cacheUpgrade);
+          }
+        }
+
+        const budget = getBudgetBalance(ns, "hacknet");
+        keepBuying = false;
+
+        for (const candidate of currentCandidates) {
+          if (candidate.cost > budget) continue;
+          if (candidate.cost > ns.getPlayer().money) continue;
+
+          let success = false;
+          let reason = "";
+          switch (candidate.type) {
+            case "new":
+              success = ns.hacknet.purchaseNode() !== -1;
+              reason = `New server #${currentNodes}`;
+              if (success) nodesBought++;
+              break;
+            case "level":
+              success = ns.hacknet.upgradeLevel(candidate.serverIndex, 1);
+              reason = `Level +1 on #${candidate.serverIndex}`;
+              if (success) upgradesBought++;
+              break;
+            case "ram":
+              success = ns.hacknet.upgradeRam(candidate.serverIndex, 1);
+              reason = `RAM x2 on #${candidate.serverIndex}`;
+              if (success) upgradesBought++;
+              break;
+            case "cores":
+              success = ns.hacknet.upgradeCore(candidate.serverIndex, 1);
+              reason = `Core +1 on #${candidate.serverIndex}`;
+              if (success) upgradesBought++;
+              break;
+            case "cache":
+              success = ns.hacknet.upgradeCache(candidate.serverIndex, 1);
+              reason = `Cache +1 on #${candidate.serverIndex}`;
+              if (success) upgradesBought++;
+              break;
+          }
+          if (success) {
+            notifyPurchase(ns, "hacknet", candidate.cost, reason);
+            totalSpent += candidate.cost;
+            purchasesThisTick++;
+            keepBuying = true; // Try again with remaining budget
+            break; // Re-evaluate candidates since costs changed
+          }
+        }
+        if (keepBuying) await ns.sleep(5); // Yield between purchases
+      }
+      if (purchasesThisTick > 1) {
+        ns.print(`  ${C.green}BOUGHT${C.reset} ${purchasesThisTick} upgrades this tick (${ns.formatNumber(totalSpent)})`);
+      }
+    }
+
+    // Evaluate remaining candidates for next target + cheapest upgrade display
+    const remainingCandidates = ns.hacknet.numNodes() > 0 ? evaluateUpgrades(ns, hacknetMult, maxServers) : [];
+
     let cheapestUpgrade: HacknetStatus["cheapestUpgrade"] = null;
-    const upgradeOnly = candidates.filter(c => c.type !== "new" && isFinite(c.cost));
+    const upgradeOnly = remainingCandidates.filter(c => c.type !== "new" && isFinite(c.cost));
     if (upgradeOnly.length > 0) {
       const cheapest = upgradeOnly.reduce((a, b) => a.cost < b.cost ? a : b);
       cheapestUpgrade = {
@@ -285,96 +385,41 @@ export async function main(ns: NS): Promise<void> {
       };
     }
 
-    // Tier 1: Auto-buy — purchase best ROI upgrade within budget
-    if (tier.tier >= 1 && autoBuy && numNodes > 0) {
-      // If hash utilization > 90%, prioritize cache upgrades
-      if (hashUtilization > 0.9) {
-        const cacheIdx = candidates.findIndex(c => c.type === "cache");
-        if (cacheIdx > 0) {
-          const [cacheUpgrade] = candidates.splice(cacheIdx, 1);
-          candidates.unshift(cacheUpgrade);
-        }
-      }
-
-      // Try to purchase the best candidate within budget
-      const budget = getBudgetBalance(ns, "hacknet");
-      for (const candidate of candidates) {
-        if (candidate.cost > budget) continue;
-        if (candidate.cost > player.money) continue;
-
-        let success = false;
-        let reason = "";
-        switch (candidate.type) {
-          case "new":
-            success = ns.hacknet.purchaseNode() !== -1;
-            reason = `New server #${numNodes}`;
-            if (success) nodesBought++;
-            break;
-          case "level":
-            success = ns.hacknet.upgradeLevel(candidate.serverIndex, 1);
-            reason = `Level +1 on #${candidate.serverIndex}`;
-            if (success) upgradesBought++;
-            break;
-          case "ram":
-            success = ns.hacknet.upgradeRam(candidate.serverIndex, 1);
-            reason = `RAM x2 on #${candidate.serverIndex}`;
-            if (success) upgradesBought++;
-            break;
-          case "cores":
-            success = ns.hacknet.upgradeCore(candidate.serverIndex, 1);
-            reason = `Core +1 on #${candidate.serverIndex}`;
-            if (success) upgradesBought++;
-            break;
-          case "cache":
-            success = ns.hacknet.upgradeCache(candidate.serverIndex, 1);
-            reason = `Cache +1 on #${candidate.serverIndex}`;
-            if (success) upgradesBought++;
-            break;
-        }
-        if (success) {
-          notifyPurchase(ns, "hacknet", candidate.cost, reason);
-          totalSpent += candidate.cost;
-          ns.print(`  ${C.green}BOUGHT${C.reset} ${reason} (${ns.formatNumber(candidate.cost)})`);
-          break; // One purchase per cycle to stay responsive
-        }
-      }
-    } else if (tier.tier >= 1 && autoBuy && numNodes === 0) {
-      // No nodes yet — buy the first one
-      const cost = ns.hacknet.getPurchaseNodeCost();
-      const budget = getBudgetBalance(ns, "hacknet");
-      if (cost <= budget && cost <= player.money) {
-        const result = ns.hacknet.purchaseNode();
-        if (result !== -1) {
-          notifyPurchase(ns, "hacknet", cost, "First hacknet server");
-          totalSpent += cost;
-          nodesBought++;
-          ns.print(`  ${C.green}BOUGHT${C.reset} First hacknet server (${ns.formatNumber(cost)})`);
-        }
-      }
-    }
+    // Best remaining candidate = next target
+    const bestRemaining = remainingCandidates.length > 0 ? remainingCandidates[0] : null;
+    const nextTarget: HacknetStatus["nextTarget"] = bestRemaining ? {
+      type: bestRemaining.type,
+      serverIndex: bestRemaining.serverIndex,
+      cost: bestRemaining.cost,
+      costFormatted: ns.formatNumber(bestRemaining.cost),
+      canAfford: bestRemaining.cost <= getBudgetBalance(ns, "hacknet") && bestRemaining.cost <= ns.getPlayer().money,
+      roi: bestRemaining.roi,
+    } : null;
 
     // Report remaining costs to budget
     if (tier.tier >= 1) {
-      if (candidates.length > 0) {
-        const totalRemainingCost = candidates.reduce((sum, c) => sum + (isFinite(c.cost) ? c.cost : 0), 0);
+      if (remainingCandidates.length > 0) {
+        const totalRemainingCost = remainingCandidates.reduce((sum, c) => sum + (isFinite(c.cost) ? c.cost : 0), 0);
         if (totalRemainingCost > 0) {
           reportCap(ns, "hacknet", totalRemainingCost);
         }
       } else if (nextNodeCost !== null) {
-        // No nodes yet — report cost of first node
         reportCap(ns, "hacknet", nextNodeCost);
       }
     }
 
-    // Tier 2: Hash spending — sell for money when above threshold
+    // Tier 2: Hash spending — spend hashes using configured strategy
+    const hashUpgradeName = HASH_STRATEGY_MAP[spendStrategy];
     if (tier.tier >= 2 && hashCapacity > 0) {
       const currentH = ns.hacknet.numHashes(); // Re-read after potential purchases
       if (currentH / hashCapacity >= spendThreshold) {
-        const hashCost = ns.hacknet.hashCost(HASH_SELL_NAME);
+        const hashCost = ns.hacknet.hashCost(hashUpgradeName);
         while (ns.hacknet.numHashes() >= hashCost + reserveHashes) {
-          if (ns.hacknet.spendHashes(HASH_SELL_NAME)) {
+          if (ns.hacknet.spendHashes(hashUpgradeName)) {
             hashesSpentTotal += hashCost;
-            moneyEarnedFromHashes += HASH_SELL_MONEY;
+            if (spendStrategy === "money") {
+              moneyEarnedFromHashes += HASH_SELL_MONEY;
+            }
           } else {
             break;
           }
@@ -420,8 +465,11 @@ export async function main(ns: NS): Promise<void> {
       hashesSpentTotal,
       moneyEarnedFromHashes,
       moneyEarnedFormatted: ns.formatNumber(moneyEarnedFromHashes),
-      spendStrategy: "money",
+      spendStrategy,
       autoBuy: autoBuy && tier.tier >= 1,
+
+      nextTarget,
+      purchasesThisTick,
 
       servers,
 

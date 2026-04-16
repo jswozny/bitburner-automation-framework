@@ -47,6 +47,7 @@ import {
   CorpStatus,
   BladeburnerStatus,
   HacknetStatus,
+  HashSpendStrategy,
   StartupConfigEntry,
   Command,
 } from "/types/ports";
@@ -305,6 +306,14 @@ export function configureInfiltration(rewardMode?: "rep" | "money" | "manual"): 
 export function setGangStrategy(strategy: GangStrategy): void {
   if (!commandPort) return;
   commandPort.write(JSON.stringify({ tool: "gang", action: "set-gang-strategy", gangStrategy: strategy }));
+}
+
+/**
+ * Set hacknet hash spend strategy via command port.
+ */
+export function setHacknetStrategy(strategy: HashSpendStrategy): void {
+  if (!commandPort) return;
+  commandPort.write(JSON.stringify({ tool: "hacknet", action: "set-hacknet-strategy", hacknetSpendStrategy: strategy }));
 }
 
 /**
@@ -740,6 +749,10 @@ function executeCommand(ns: NS, cmd: Command): void {
         gangCtrl.write(JSON.stringify(cmd));
         ns.toast(`Gang: ${cmd.action.replace("gang-", "").replace(/-/g, " ")}`, "info", 2000);
       }
+      break;
+    case "set-hacknet-strategy":
+      setConfigValue(ns, "hacknet", "spendStrategy", cmd.hacknetSpendStrategy ?? "money");
+      ns.toast(`Hacknet: ${cmd.hacknetSpendStrategy} strategy`, "info", 2000);
       break;
     case "toggle-pserv-autobuy":
       setConfigValue(ns, "pserv", "autoBuy", cmd.pservAutoBuy ? "true" : "false");
