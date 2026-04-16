@@ -386,8 +386,6 @@ function computeWorkStatus(
     crimeInfo,
     pendingCrimeSwitch,
     focusYielding,
-    focusHolder,
-    sleeveHolder,
   };
 }
 
@@ -683,12 +681,6 @@ export async function main(ns: NS): Promise<void> {
       ns.tprint(`Valid options: ${VALID_FOCUSES.join(", ")}`);
       return;
     }
-  }
-
-  // Claim focus if no current holder
-  const currentHolder = getConfigString(ns, "focus", "holder", "");
-  if (!currentHolder) {
-    setConfigValue(ns, "focus", "holder", "work");
   }
 
   // Calculate tier RAM costs

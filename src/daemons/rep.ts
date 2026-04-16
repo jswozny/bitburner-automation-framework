@@ -569,8 +569,6 @@ function computeHighTierStatus(
     currentWorkType: workStatus.currentWorkType,
     isWorkable: workStatus.isWorkable,
     focusYielding,
-    focusHolder,
-    sleeveHolder,
   };
 }
 
@@ -663,7 +661,7 @@ function printHighTierStatus(
 
   // Focus yielding indicator
   if (status.focusYielding) {
-    ns.print(`${C.yellow}YIELDING: Focus held by ${status.focusHolder || "other"} daemon${C.reset}`);
+    ns.print(`${C.yellow}YIELDING: Focus held by another daemon${C.reset}`);
   }
 
   // Work status (Tier 6)
@@ -845,14 +843,6 @@ async function runFullMode(
   let lastNotifiedFaction = "";
   let cyclesSinceUpgradeCheck = 0;
   const UPGRADE_CHECK_INTERVAL = 10;
-
-  // Claim focus if tier 6 and no current holder
-  if (tier.tier >= 6) {
-    const currentHolder = getConfigString(ns, "focus", "holder", "");
-    if (!currentHolder) {
-      setConfigValue(ns, "focus", "holder", "rep");
-    }
-  }
 
   do {
     const targetFactionOverride = getConfigString(ns, "rep", "faction", "");

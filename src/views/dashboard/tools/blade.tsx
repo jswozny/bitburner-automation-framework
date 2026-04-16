@@ -323,9 +323,7 @@ function BladeDetailPanel({
           marginBottom: "8px",
         }}>
           <span style={{ color: "#ffaa00", fontSize: "12px" }}>
-            {status.focusHolder === "none"
-              ? "Focus disabled (parked)"
-              : `Yielding to ${status.focusHolder || "other"} daemon`}
+            Yielding focus to another daemon
           </span>
         </div>
       )}

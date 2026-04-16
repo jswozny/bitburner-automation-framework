@@ -50,7 +50,7 @@ import { homePlugin } from "views/dashboard/tools/home";
 import { corpPlugin } from "views/dashboard/tools/corp";
 import { bladePlugin } from "views/dashboard/tools/blade";
 import { hacknetPlugin } from "views/dashboard/tools/hacknet";
-import { FocusToggle } from "views/dashboard/components/FocusToggle";
+import { focusPlugin, FocusStickyHeader } from "views/dashboard/tools/focus";
 
 // === PLUGIN REGISTRY ===
 
@@ -89,6 +89,7 @@ const PLUGIN_REGISTRY: PluginEntry[] = [
   { toolId: "corp",         plugin: corpPlugin,         tabLabel: "Corp",       getStatus: pick("corpStatus"),         getError: () => null },
   { toolId: "blade",        plugin: bladePlugin,        tabLabel: "Blade",      getStatus: pick("bladeburnerStatus"),  getError: () => null },
   { toolId: "hacknet",      plugin: hacknetPlugin,      tabLabel: "Hacknet",    getStatus: pick("hacknetStatus"),      getError: () => null },
+  { toolId: "focus",        plugin: focusPlugin,        tabLabel: "Focus",      getStatus: pick("focusStatus"),        getError: () => null },
 ];
 
 /** Lookup a PluginEntry by toolId. */
@@ -107,7 +108,7 @@ const FOCUS_GROUP_INDEX = 1;
 
 const TAB_GROUPS: TabGroupDef[] = [
   { label: "Servers",  entries: [findEntry("home"), findEntry("nuke"), findEntry("hack"), findEntry("pserv"), findEntry("darkweb")] },
-  { label: "Focus",    entries: [findEntry("work"), findEntry("rep"), findEntry("blade")] },
+  { label: "Focus",    entries: [findEntry("focus"), findEntry("work"), findEntry("rep"), findEntry("blade")] },
   { label: "Factions", entries: [findEntry("faction"), findEntry("share"), findEntry("augments")] },
   { label: "Money",    entries: [findEntry("budget"), findEntry("stocks"), findEntry("hacknet"), findEntry("gang"), findEntry("corp")] },
   { label: "Tools",    entries: [findEntry("casino"), findEntry("infiltration"), findEntry("contracts")] },
@@ -321,7 +322,7 @@ function Dashboard(): React.ReactElement {
 
     return (
       <div>
-        {isFocusGroup && <FocusToggle />}
+        {isFocusGroup && tabState.sub !== 0 && <FocusStickyHeader status={state.focusStatus} />}
         <ErrorBoundary label={entry.tabLabel}>
           <Panel
             status={entry.getStatus(state)}

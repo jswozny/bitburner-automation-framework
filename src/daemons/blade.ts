@@ -318,9 +318,6 @@ async function runMonitorMode(
     const pop = ns.bladeburner.getCityEstimatedPopulation(city);
     const sp = ns.bladeburner.getSkillPoints();
     const bt = ns.bladeburner.getBonusTime();
-    const focusHolder = getConfigString(ns, "focus", "holder", "");
-    const sleeveHolder = getConfigString(ns, "focus", "sleeveHolder", "");
-
     const status: BladeburnerStatus = {
       tier: 0,
       tierName: "monitor",
@@ -345,8 +342,6 @@ async function runMonitorMode(
       bonusTimeFormatted: formatBonusTime(bt),
       currentAction: actionText,
       currentActionType: actionType,
-      focusHolder,
-      sleeveHolder,
     };
 
     publishStatus(ns, STATUS_PORTS.blade, status);
@@ -462,7 +457,8 @@ async function runAutomationMode(
     const config = readBladeConfig(ns);
     const focusHolder = getConfigString(ns, "focus", "holder", "");
     const sleeveHolder = getConfigString(ns, "focus", "sleeveHolder", "");
-    const focusYielding = focusHolder !== "" && focusHolder !== "blade" && sleeveHolder !== "blade";
+    const hasSimulacrum = getConfigBool(ns, "focus", "simulacrum", false);
+    const focusYielding = !hasSimulacrum && focusHolder !== "" && focusHolder !== "blade" && sleeveHolder !== "blade";
 
     // Gather full state
     const contracts = gatherActionData(ns, "Contracts", ns.bladeburner.getContractNames());
@@ -585,8 +581,6 @@ async function runAutomationMode(
       nextBlackOp,
       recommended,
       focusYielding,
-      focusHolder,
-      sleeveHolder,
       config,
     });
     publishStatus(ns, STATUS_PORTS.blade, status);
@@ -635,8 +629,6 @@ interface FullStatusData {
   nextBlackOp?: BladeState["nextBlackOp"];
   recommended?: { type: string; name: string } | null;
   focusYielding?: boolean;
-  focusHolder?: string;
-  sleeveHolder?: string;
   config?: BladeConfig;
 }
 
@@ -656,8 +648,6 @@ function computeFullStatus(
   const pop = ns.bladeburner.getCityEstimatedPopulation(city);
   const sp = ns.bladeburner.getSkillPoints();
   const bt = ns.bladeburner.getBonusTime();
-  const focusHolder = data?.focusHolder ?? getConfigString(ns, "focus", "holder", "");
-  const sleeveHolder = data?.sleeveHolder ?? getConfigString(ns, "focus", "sleeveHolder", "");
 
   // Gather data at analysis+ tiers if not provided
   const contracts = data?.contracts ?? (tier >= 1 ? gatherActionData(ns, "Contracts", ns.bladeburner.getContractNames()) : undefined);
@@ -702,8 +692,6 @@ function computeFullStatus(
     bonusTimeFormatted: formatBonusTime(bt),
     currentAction: actionText,
     currentActionType: actionType,
-    focusHolder,
-    sleeveHolder,
   };
 
   if (contracts) status.contracts = contracts.map(formatAction);
@@ -770,7 +758,7 @@ function printFullStatus(ns: NS, s: BladeburnerStatus): void {
     ns.print(`Next: ${COLORS.green}${s.recommendedAction}${COLORS.reset}`);
   }
   if (s.focusYielding) {
-    ns.print(`${COLORS.yellow}Yielding to ${s.focusHolder || "other"} daemon${COLORS.reset}`);
+    ns.print(`${COLORS.yellow}Yielding focus${COLORS.reset}`);
   }
 
   if (s.nextBlackOp) {

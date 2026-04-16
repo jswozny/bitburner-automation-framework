@@ -33,6 +33,7 @@ daemons/nuke.js
 daemons/hack.js
 daemons/queue.js
 daemons/darkweb.js
+daemons/focus.js
 daemons/work.js
 daemons/rep.js
 daemons/share.js
